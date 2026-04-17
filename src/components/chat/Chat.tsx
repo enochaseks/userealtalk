@@ -48,33 +48,48 @@ export function Chat() {
     setConvId(search?.c ?? null);
   }, [search?.c]);
 
-  // load existing conversation if id passed
- useEffect(() => {
-  if (!convId) {
-    setMessages([]);
-    return;
-  }
+   // load + live-sync current conversation messages
+   useEffect(() => {
+    if (!convId || !user) {
+      setMessages([]);
+      return;
+    }
 
-  let cancelled = false;
+    let cancelled = false;
 
-  const loadMessages = async () => {
-    const { data } = await supabase
-      .from("messages")
-      .select("id,role,content")
-      .eq("conversation_id", convId)
-      .order("created_at");
+    const loadMessages = async () => {
+      const { data } = await supabase
+        .from("messages")
+        .select("id,role,content")
+        .eq("conversation_id", convId)
+        .order("created_at");
 
-   if (!cancelled && data && !isSendingRef.current) {
-  setMessages(data as Msg[]);
-}
-  };
+      if (!cancelled && data && !isSendingRef.current) {
+        setMessages(data as Msg[]);
+      }
+    };
 
-  loadMessages();
+    void loadMessages();
 
-  return () => {
-    cancelled = true;
-  };
-}, [convId]);
+    const channel = supabase
+      .channel(`messages-${convId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "messages",
+          filter: `conversation_id=eq.${convId}`,
+        },
+        () => void loadMessages(),
+      )
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(channel);
+    };
+  }, [convId, user]);
 
   useLayoutEffect(() => {
     const scrollContainer = scrollRef.current;

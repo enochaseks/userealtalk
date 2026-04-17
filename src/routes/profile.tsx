@@ -121,34 +121,81 @@ function ProfilePage() {
       typeof window !== "undefined" ? localStorage.getItem(`avatar_local_${user.id}`) || "" : "";
     const rawAvatar = (user.user_metadata?.avatar_url as string | undefined) || "";
     const remoteAvatar = rawAvatar.startsWith("data:") ? "" : rawAvatar;
-    setAvatarDataUrl(localAvatar || remoteAvatar);
+    setAvatarDataUrl(remoteAvatar || localAvatar);
 
-    supabase
-      .from("plans")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .then(({ data }) => setPlans(data ?? []));
-    supabase
-      .from("conversations")
-      .select("id,title,updated_at")
-      .order("updated_at", { ascending: false })
-      .then(({ data }) => setConvs(data ?? []));
+    const loadPlans = async () => {
+      const { data } = await supabase
+        .from("plans")
+        .select("*")
+        .order("created_at", { ascending: false });
+      setPlans(data ?? []);
+    };
 
-    supabase
-      .from("user_insight_settings")
-      .select("monitor_enabled")
-      .eq("user_id", user.id)
-      .maybeSingle()
-      .then(({ data }) => setInsightMonitoringEnabled(Boolean(data?.monitor_enabled)));
+    const loadConversations = async () => {
+      const { data } = await supabase
+        .from("conversations")
+        .select("id,title,updated_at")
+        .order("updated_at", { ascending: false });
+      setConvs(data ?? []);
+    };
 
-    supabase
-      .from("conversation_weekly_insights")
-      .select(
-        "id,conversation_id,week_start,emotion_trend,thought_patterns,calm_progress,overthinking_reduction,ai_help_summary,updated_at",
+    const loadInsightSettings = async () => {
+      const { data } = await supabase
+        .from("user_insight_settings")
+        .select("monitor_enabled")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      setInsightMonitoringEnabled(Boolean(data?.monitor_enabled));
+    };
+
+    const loadInsights = async () => {
+      const { data } = await supabase
+        .from("conversation_weekly_insights")
+        .select(
+          "id,conversation_id,week_start,emotion_trend,thought_patterns,calm_progress,overthinking_reduction,ai_help_summary,updated_at",
+        )
+        .order("week_start", { ascending: false })
+        .order("updated_at", { ascending: false });
+      setInsights(data ?? []);
+    };
+
+    void loadPlans();
+    void loadConversations();
+    void loadInsightSettings();
+    void loadInsights();
+
+    const channel = supabase
+      .channel(`profile-sync-${user.id}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "plans", filter: `user_id=eq.${user.id}` },
+        () => void loadPlans(),
       )
-      .order("week_start", { ascending: false })
-      .order("updated_at", { ascending: false })
-      .then(({ data }) => setInsights(data ?? []));
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "conversations", filter: `user_id=eq.${user.id}` },
+        () => void loadConversations(),
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "user_insight_settings", filter: `user_id=eq.${user.id}` },
+        () => void loadInsightSettings(),
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "conversation_weekly_insights",
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => void loadInsights(),
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [user]);
 
   if (!user) return null;

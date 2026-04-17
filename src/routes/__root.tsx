@@ -182,8 +182,8 @@ function TopNav() {
         "Profile";
       const nextAvatar =
         detail?.avatarUrl ||
-        localAvatar ||
         (user?.user_metadata?.avatar_url as string | undefined) ||
+        localAvatar ||
         "";
       setProfileName(nextName);
       setAvatarUrl(nextAvatar);
@@ -228,10 +228,20 @@ function TopNav() {
     window.addEventListener("conversationDeleted", refreshConversations);
     window.addEventListener("conversationUpdated", refreshConversations);
 
+    const channel = supabase
+      .channel(`topnav-conversations-${user.id}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "conversations", filter: `user_id=eq.${user.id}` },
+        refreshConversations,
+      )
+      .subscribe();
+
     return () => {
       window.removeEventListener("conversationCreated", refreshConversations);
       window.removeEventListener("conversationDeleted", refreshConversations);
       window.removeEventListener("conversationUpdated", refreshConversations);
+      supabase.removeChannel(channel);
     };
   }, [user, loadConversations]);
 

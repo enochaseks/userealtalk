@@ -50,6 +50,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    if (!session) return;
+
+    let disposed = false;
+
+    const refreshUser = async () => {
+      const { data } = await supabase.auth.getUser();
+      if (disposed || !data.user) return;
+      setSession((prev) => (prev ? { ...prev, user: data.user } : prev));
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void refreshUser();
+      }
+    };
+
+    const timer = window.setInterval(() => {
+      void refreshUser();
+    }, 30000);
+
+    window.addEventListener("focus", refreshUser);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refreshUser);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [session?.access_token]);
+
+  useEffect(() => {
     if (!session?.user) return;
 
     const avatarUrl = session.user.user_metadata?.avatar_url as string | undefined;
