@@ -611,6 +611,10 @@ export function Chat() {
   };
 
   const isEmpty = messages.length === 0;
+  const userName =
+    (user?.user_metadata?.full_name as string | undefined) ||
+    (user?.user_metadata?.name as string | undefined) ||
+    (user?.email?.split("@")[0] ?? "there");
 
   return (
     <div className="flex-1 flex flex-col relative">
@@ -624,7 +628,8 @@ export function Chat() {
               className="text-center pt-16 pb-10"
             >
               <img src={logo} alt="RealTalk" className="h-35 w-auto mx-auto" />
-              <p className="mt-3 text-muted-foreground">What's on your mind?</p>
+              <p className="mt-3 text-xl font-semibold">Hello, {userName}</p>
+              <p className="mt-1 text-muted-foreground">What's on your mind?</p>
               <div className="mt-6 flex flex-wrap justify-center gap-2">
                 {suggestions.map((suggestion) => (
                   <button
