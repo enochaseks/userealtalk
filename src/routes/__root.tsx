@@ -176,7 +176,7 @@ function TopNav() {
 
   return (
     <header className="border-b border-border/60 backdrop-blur supports-[backdrop-filter]:bg-background/70 sticky top-0 z-30">
-      <div className="max-w-3xl mx-auto px-5 h-14 flex items-center justify-between">
+      <div className="max-w-3xl mx-auto px-5 h-14 flex items-center relative">
         <div className="flex items-center gap-2">
           <Sheet open={open} onOpenChange={setOpen}>
             <SheetTrigger asChild>
@@ -243,10 +243,11 @@ function TopNav() {
               </div>
             </SheetContent>
           </Sheet>
-          <Link to="/" className="flex items-center">
-            <img src={logo} alt="RealTalk" className="h-8 w-auto" />
-          </Link>
         </div>
+
+        <Link to="/" className="absolute left-1/2 -translate-x-1/2 flex items-center">
+          <img src={logo} alt="RealTalk" className="h-[40px] w-auto" />
+        </Link>
       </div>
     </header>
   );

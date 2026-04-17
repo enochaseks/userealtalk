@@ -1,14 +1,23 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 import { toast } from "sonner";
-import { Download } from "lucide-react";
+import { Check, Download, Pencil, X } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+
+const fileToDataUrl = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(new Error("Could not read selected image"));
+    reader.readAsDataURL(file);
+  });
+};
 
 export const Route = createFileRoute("/profile")({
   component: ProfilePage,
@@ -38,6 +47,12 @@ function ProfilePage() {
   const [insights, setInsights] = useState<Insight[]>([]);
   const [openPlan, setOpenPlan] = useState<Plan | null>(null);
   const [insightMonitoringEnabled, setInsightMonitoringEnabled] = useState(false);
+  const [displayName, setDisplayName] = useState("");
+  const [pendingName, setPendingName] = useState("");
+  const [avatarDataUrl, setAvatarDataUrl] = useState("");
+  const [editingName, setEditingName] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
   const [autoPdfEnabled, setAutoPdfEnabled] = useState(() => {
     if (typeof window !== "undefined") {
       return localStorage.getItem("autoPdfSave") !== "false";
@@ -51,6 +66,19 @@ function ProfilePage() {
 
   useEffect(() => {
     if (!user) return;
+    const initialName =
+      (user.user_metadata?.full_name as string | undefined) ||
+      (user.user_metadata?.name as string | undefined) ||
+      user.email?.split("@")[0] ||
+      "";
+    setDisplayName(initialName);
+    setPendingName(initialName);
+    setAvatarDataUrl(
+      (user.user_metadata?.avatar_url as string | undefined) ||
+      (user.user_metadata?.avatar_data_url as string | undefined) ||
+      "",
+    );
+
     supabase
       .from("plans")
       .select("*")
@@ -125,14 +153,121 @@ function ProfilePage() {
     toast.success(enabled ? "Weekly insights monitoring enabled" : "Weekly insights monitoring disabled");
   };
 
+  const saveProfileIdentity = async (nameInput = displayName, avatarInput = avatarDataUrl) => {
+    if (!user) return;
+    const cleanName = nameInput.trim();
+    if (!cleanName) {
+      toast.error("Please enter a name");
+      return;
+    }
+
+    setSavingProfile(true);
+    const { error } = await supabase.auth.updateUser({
+      data: {
+        ...user.user_metadata,
+        full_name: cleanName,
+        name: cleanName,
+        avatar_url: avatarInput || null,
+        avatar_data_url: avatarInput || null,
+      },
+    });
+    setSavingProfile(false);
+
+    if (error) {
+      toast.error(error.message || "Failed to update profile");
+      return;
+    }
+
+    setDisplayName(cleanName);
+    setPendingName(cleanName);
+    setAvatarDataUrl(avatarInput || "");
+    window.dispatchEvent(new Event("profileUpdated"));
+    toast.success("Profile updated");
+  };
+
+  const onAvatarSelected = async (file?: File | null) => {
+    if (!file) return;
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      setAvatarDataUrl(dataUrl);
+      await saveProfileIdentity(displayName, dataUrl);
+    } catch (e: any) {
+      toast.error(e?.message || "Could not use selected image");
+    }
+  };
+
+  const saveNameFromPencil = async () => {
+    await saveProfileIdentity(pendingName, avatarDataUrl);
+    setEditingName(false);
+  };
+
   return (
     <div className="flex-1 max-w-3xl w-full mx-auto px-5 py-10">
       <div className="flex items-end justify-between mb-8">
-        <div>
-          <h1 className="font-serif text-3xl tracking-tight">Your space</h1>
-          <p className="text-sm text-muted-foreground mt-1">{user.email}</p>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => avatarInputRef.current?.click()}
+            className="h-14 w-14 rounded-full bg-primary/20 overflow-hidden flex items-center justify-center text-primary text-sm font-semibold hover:bg-primary/30 transition-colors"
+            title="Change profile photo"
+          >
+            {avatarDataUrl ? (
+              <img src={avatarDataUrl} alt="Profile" className="h-full w-full object-cover" />
+            ) : (
+              (displayName || user.email || "U")
+                .split(" ")
+                .filter(Boolean)
+                .slice(0, 2)
+                .map((p) => p[0]?.toUpperCase())
+                .join("")
+            )}
+          </button>
+          <input
+            ref={avatarInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => void onAvatarSelected(e.target.files?.[0])}
+          />
+
+          <div>
+            <div className="flex items-center gap-2">
+              {editingName ? (
+                <input
+                  value={pendingName}
+                  onChange={(e) => setPendingName(e.target.value)}
+                  className="rounded-md border border-border bg-background/60 px-2 py-1 text-base outline-none focus:border-primary/60"
+                />
+              ) : (
+                <h1 className="font-serif text-3xl tracking-tight">{displayName || "Your space"}</h1>
+              )}
+
+              {editingName ? (
+                <>
+                  <button type="button" onClick={() => void saveNameFromPencil()} title="Save name">
+                    <Check className="h-4 w-4 text-primary" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPendingName(displayName);
+                      setEditingName(false);
+                    }}
+                    title="Cancel"
+                  >
+                    <X className="h-4 w-4 text-muted-foreground" />
+                  </button>
+                </>
+              ) : (
+                <button type="button" onClick={() => setEditingName(true)} title="Edit name">
+                  <Pencil className="h-4 w-4 text-muted-foreground" />
+                </button>
+              )}
+            </div>
+            <p className="text-sm text-muted-foreground mt-1">{user.email}</p>
+          </div>
         </div>
-        <Button variant="ghost" size="sm" onClick={signOut}>
+        <Button variant="ghost" size="sm" onClick={signOut} disabled={savingProfile}>
           Sign out
         </Button>
       </div>
