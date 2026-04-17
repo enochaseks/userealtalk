@@ -184,11 +184,15 @@ function TopNav() {
                 <Menu className="h-5 w-5" />
               </Button>
             </SheetTrigger>
-            <SheetContent side="left" className="w-64">
-              <div className="py-4 h-full flex flex-col">
+            <SheetContent side="left" className="w-64 pt-2">
+              <div className="pt-0 pb-3 h-full flex flex-col">
+                <div className="px-3 pb-2 mb-1 border-b border-border/60 flex items-center justify-center">
+                  <img src={logo} alt="RealTalk" className="h-[99px] w-auto" />
+                </div>
+
                 <button
                   onClick={startNewChat}
-                  className="mx-2 mb-3 flex items-center justify-between rounded-md border border-border bg-surface px-3 py-2 hover:bg-surface-elevated transition-colors"
+                  className="mx-2 mb-2 flex items-center justify-between rounded-md border border-border bg-surface px-3 py-2 hover:bg-surface-elevated transition-colors"
                 >
                   <div className="min-w-0 text-left">
                     <p className="text-xs text-muted-foreground">Chat</p>
@@ -244,10 +248,6 @@ function TopNav() {
             </SheetContent>
           </Sheet>
         </div>
-
-        <Link to="/" className="absolute left-1/2 -translate-x-1/2 flex items-center">
-          <img src={logo} alt="RealTalk" className="h-[40px] w-auto" />
-        </Link>
       </div>
     </header>
   );
