@@ -81,9 +81,11 @@ function RootComponent() {
 }
 
 function OfflineBanner() {
-  const [isOffline, setIsOffline] = useState(!navigator.onLine);
+  const [isOffline, setIsOffline] = useState(false);
 
   useEffect(() => {
+    // Set initial state safely on client only
+    setIsOffline(!navigator.onLine);
     const goOffline = () => setIsOffline(true);
     const goOnline = () => setIsOffline(false);
     window.addEventListener("offline", goOffline);
