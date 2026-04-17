@@ -520,28 +520,6 @@ export function Chat() {
         });
       }
 
-      // Fire-and-forget weekly insight refresh (respects user monitoring opt-in server-side)
-      void (async () => {
-        try {
-          const { data: sessionData } = await supabase.auth.getSession();
-          const accessToken = sessionData?.session?.access_token;
-
-          const insightsUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/insights`;
-          await fetch(insightsUrl, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${accessToken ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-            },
-            body: JSON.stringify({
-              userId: user.id,
-              conversationId: cid,
-            }),
-          });
-        } catch {
-          // Silent fail: chat experience should never be blocked by insight generation.
-        }
-      })();
     }
 
     window.dispatchEvent(new Event("conversationCreated"));

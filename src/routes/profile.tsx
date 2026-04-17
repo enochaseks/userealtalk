@@ -79,6 +79,15 @@ type Insight = {
 
 type EditablePlanDraft = { title: string; content: string };
 
+const getUtcWeekStart = (): string => {
+  const now = new Date();
+  const day = now.getUTCDay();
+  const diffToMonday = (day + 6) % 7;
+  now.setUTCDate(now.getUTCDate() - diffToMonday);
+  now.setUTCHours(0, 0, 0, 0);
+  return now.toISOString().slice(0, 10);
+};
+
 const planPreviewText = (content: string, maxChars = 140): string => {
   const cleaned = content
     .replace(/[#*_`>]/g, "")
@@ -207,6 +216,47 @@ function ProfilePage() {
       supabase.removeChannel(channel);
     };
   }, [user]);
+
+  useEffect(() => {
+    if (!user || !insightMonitoringEnabled || tab !== "insights") return;
+
+    const now = new Date();
+    const isFriday = now.getUTCDay() === 5;
+    if (!isFriday) return;
+
+    const weekStart = getUtcWeekStart();
+    const runKey = `insights_generated_${user.id}_${weekStart}`;
+    if (typeof window !== "undefined" && localStorage.getItem(runKey) === "1") return;
+
+    const run = async () => {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const accessToken = sessionData?.session?.access_token;
+        const insightsUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/insights`;
+
+        const resp = await fetch(insightsUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          },
+          body: JSON.stringify({ userId: user.id }),
+        });
+
+        if (!resp.ok) {
+          throw new Error("Failed to run weekly insights");
+        }
+
+        if (typeof window !== "undefined") {
+          localStorage.setItem(runKey, "1");
+        }
+      } catch {
+        // Silent fail: insights list still loads normally from stored rows.
+      }
+    };
+
+    void run();
+  }, [user, insightMonitoringEnabled, tab]);
 
   if (!user) return null;
 
@@ -521,10 +571,10 @@ function ProfilePage() {
       {tab === "insights" && (
         <div className="space-y-3">
           {!insightMonitoringEnabled && (
-            <EmptyState text="Turn on Insights Monitoring in Settings to start receiving weekly emotional and thinking-pattern insights." />
+            <EmptyState text="Turn on Insights Monitoring in Settings to receive weekly emotional and thinking-pattern insights every Friday." />
           )}
           {insightMonitoringEnabled && insights.length === 0 && (
-            <EmptyState text="No weekly insights yet. Keep chatting and check back this week." />
+            <EmptyState text="No weekly insights yet. Insights are generated every Friday based on this week’s chats." />
           )}
           {insightMonitoringEnabled &&
             insights.map((insight) => {
@@ -572,8 +622,8 @@ function ProfilePage() {
                   Weekly insights monitoring
                 </Label>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Allow RealTalk to analyze conversation patterns weekly and surface emotional trends,
-                  thought loops, and progress toward calmer thinking.
+                  Allow RealTalk to analyze this week’s conversations and surface emotional trends,
+                  thought loops, and calmer-thinking progress every Friday.
                 </p>
               </div>
               <Switch checked={insightMonitoringEnabled} onCheckedChange={toggleInsightMonitoring} />
