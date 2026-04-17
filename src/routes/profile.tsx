@@ -234,18 +234,43 @@ function ProfilePage() {
         const accessToken = sessionData?.session?.access_token;
         const insightsUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/insights`;
 
-        const resp = await fetch(insightsUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${accessToken ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-          },
-          body: JSON.stringify({ userId: user.id }),
-        });
+        const weekStart = getUtcWeekStart();
+        const start = `${weekStart}T00:00:00.000Z`;
+        const end = new Date();
+        end.setUTCHours(23, 59, 59, 999);
 
-        if (!resp.ok) {
-          throw new Error("Failed to run weekly insights");
+        const { data: weekMessages } = await supabase
+          .from("messages")
+          .select("conversation_id")
+          .eq("user_id", user.id)
+          .gte("created_at", start)
+          .lte("created_at", end.toISOString())
+          .order("created_at", { ascending: false })
+          .limit(500);
+
+        const conversationIds = Array.from(
+          new Set((weekMessages ?? []).map((m) => m.conversation_id).filter(Boolean)),
+        ).slice(0, 12);
+
+        if (conversationIds.length === 0) {
+          if (typeof window !== "undefined") {
+            localStorage.setItem(runKey, "1");
+          }
+          return;
         }
+
+        await Promise.all(
+          conversationIds.map((conversationId) =>
+            fetch(insightsUrl, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${accessToken ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+              },
+              body: JSON.stringify({ userId: user.id, conversationId }),
+            }),
+          ),
+        );
 
         if (typeof window !== "undefined") {
           localStorage.setItem(runKey, "1");
