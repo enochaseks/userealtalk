@@ -15,7 +15,7 @@ import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Menu, Trash2 } from "lucide-react";
+import { Menu, Plus, Trash2 } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
 export const Route = createRootRoute({
@@ -106,6 +106,17 @@ function TopNav() {
   const navigate = useNavigate();
   const [conversations, setConversations] = useState<Array<{ id: string; title: string }>>([]);
   const [open, setOpen] = useState(false);
+  const profileName =
+    (user?.user_metadata?.full_name as string | undefined) ||
+    (user?.user_metadata?.name as string | undefined) ||
+    user?.email ||
+    "Profile";
+  const initials = profileName
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase())
+    .join("") || "U";
 
   const loadConversations = useCallback(async () => {
     if (!user) return;
@@ -158,6 +169,11 @@ function TopNav() {
     navigate({ to: "/", search: { c: convId } as never });
   };
 
+  const startNewChat = () => {
+    setOpen(false);
+    navigate({ to: "/", search: {} as never, replace: true });
+  };
+
   return (
     <header className="border-b border-border/60 backdrop-blur supports-[backdrop-filter]:bg-background/70 sticky top-0 z-30">
       <div className="max-w-3xl mx-auto px-5 h-14 flex items-center justify-between">
@@ -169,9 +185,20 @@ function TopNav() {
               </Button>
             </SheetTrigger>
             <SheetContent side="left" className="w-64">
-              <div className="py-4">
+              <div className="py-4 h-full flex flex-col">
+                <button
+                  onClick={startNewChat}
+                  className="mx-2 mb-3 flex items-center justify-between rounded-md border border-border bg-surface px-3 py-2 hover:bg-surface-elevated transition-colors"
+                >
+                  <div className="min-w-0 text-left">
+                    <p className="text-xs text-muted-foreground">Chat</p>
+                    <p className="text-sm text-foreground">New chat</p>
+                  </div>
+                  <Plus className="h-4 w-4 text-primary" />
+                </button>
+
                 <h2 className="px-4 text-sm font-semibold text-foreground mb-4">
-                  Past Conversations
+                  Recent Chats
                 </h2>
                 {conversations.length === 0 ? (
                   <div className="px-4 text-sm text-muted-foreground">No conversations yet</div>
@@ -199,6 +226,20 @@ function TopNav() {
                     ))}
                   </nav>
                 )}
+
+                <Link
+                  to="/profile"
+                  onClick={() => setOpen(false)}
+                  className="mx-2 mt-auto pt-3 border-t border-border/70 flex items-center justify-between rounded-md px-3 py-2 hover:bg-surface-elevated transition-colors"
+                >
+                  <div className="min-w-0 text-left">
+                    <p className="text-xs text-muted-foreground">Profile</p>
+                    <p className="text-sm text-foreground truncate">{profileName}</p>
+                  </div>
+                  <div className="h-8 w-8 rounded-full bg-primary/20 text-primary text-xs font-semibold flex items-center justify-center">
+                    {initials}
+                  </div>
+                </Link>
               </div>
             </SheetContent>
           </Sheet>
@@ -206,25 +247,8 @@ function TopNav() {
             <img src={logo} alt="RealTalk" className="h-8 w-auto" />
           </Link>
         </div>
-        <nav className="flex items-center gap-1 text-sm">
-          <NavItem to="/">Chat</NavItem>
-          <NavItem to="/profile">Profile</NavItem>
-        </nav>
       </div>
     </header>
-  );
-}
-
-function NavItem({ to, children }: { to: string; children: React.ReactNode }) {
-  return (
-    <Link
-      to={to}
-      className="px-3 py-1.5 rounded-md text-muted-foreground hover:text-foreground transition-colors"
-      activeProps={{ className: "px-3 py-1.5 rounded-md text-foreground bg-surface" }}
-      activeOptions={{ exact: true }}
-    >
-      {children}
-    </Link>
   );
 }
 
