@@ -79,6 +79,16 @@ type Insight = {
 
 type EditablePlanDraft = { title: string; content: string };
 
+const planPreviewText = (content: string, maxChars = 140): string => {
+  const cleaned = content
+    .replace(/[#*_`>]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (cleaned.length <= maxChars) return cleaned;
+  return `${cleaned.slice(0, maxChars).trimEnd()}…`;
+};
+
 function ProfilePage() {
   const { user, loading, signOut } = useAuth();
   const navigate = useNavigate();
@@ -459,27 +469,32 @@ function ProfilePage() {
       </div>
 
       {tab === "plans" && (
-        <div className="space-y-3">
+        <div className="grid grid-cols-1 gap-3 content-start items-start">
           {plans.length === 0 && (
             <EmptyState text="No saved plans yet. After a meaningful answer in chat, tap “Save as Plan”." />
           )}
           {plans.map((p) => (
-            <button
+            <div
               key={p.id}
+              role="button"
+              tabIndex={0}
               onClick={() => openPlanModal(p)}
-              className="w-full text-left rounded-xl border border-border bg-surface/60 hover:bg-surface-elevated transition-colors p-5"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  openPlanModal(p);
+                }
+              }}
+              className="w-full text-left rounded-xl border border-border bg-surface/60 hover:bg-surface-elevated transition-colors p-5 cursor-pointer"
             >
-              <div className="font-serif text-lg">{p.title}</div>
+              <div className="m-0 font-serif text-lg leading-6">{p.title}</div>
               <div className="text-xs text-muted-foreground mt-1">
                 {new Date(p.created_at).toLocaleDateString()}
               </div>
-              <p className="m-0 text-sm leading-5 text-muted-foreground mt-2 line-clamp-2 break-words">
-                {p.content
-                  .replace(/[#*_`>]/g, "")
-                  .replace(/\s+/g, " ")
-                  .trim()}
+              <p className="m-0 text-sm leading-5 text-muted-foreground mt-2 break-words">
+                {planPreviewText(p.content)}
               </p>
-            </button>
+            </div>
           ))}
         </div>
       )}
