@@ -262,6 +262,7 @@ export function Chat() {
   if (!text || busy || !user) return;
 
     const thinkDeeply = forceThinking || shouldUseThinkingMode(text);
+      const planningRequested = forcePlan || userAskedForPlan(text);
     const activeVentAdviceMode = overrideVentAdviceMode ?? ventAdviceMode;
     const activeVent = forceVent || !!overrideVentAdviceMode;
     const shouldOfferVentChoice = activeVent && activeVentAdviceMode === "none";
@@ -322,6 +323,18 @@ export function Chat() {
 
     // ✅ FIX 2: rebuild messages safely (NO newMsgs bug)
     const currentMessages = [...messages, userMsg];
+    const planFirstInstruction =
+      "Plan mode is active. Return a starter plan immediately (3-7 steps + timeline). Do not ask clarifying questions first. Ask follow-up questions only after the plan.";
+    const outboundMessages = currentMessages.map((m, idx, arr) => {
+      const isLatestUser = idx === arr.length - 1 && m.role === "user";
+      if (!isLatestUser || !planningRequested) {
+        return { role: m.role, content: m.content };
+      }
+      return {
+        role: m.role,
+        content: `${planFirstInstruction}\n\nUser request: ${m.content}`,
+      };
+    });
 
     const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
     const resp = await fetch(url, {
@@ -331,13 +344,10 @@ export function Chat() {
         Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
       },
       body: JSON.stringify({
-        messages: currentMessages.map((m) => ({
-          role: m.role,
-          content: m.content,
-        })),
+        messages: outboundMessages,
         beReal,
         thinkDeeply: thinkDeeply && !shouldOfferVentChoice,
-        forcePlan,
+        forcePlan: planningRequested,
         forceVent: activeVent,
         ventAdviceMode: activeVentAdviceMode,
       }),
