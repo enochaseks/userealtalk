@@ -58,10 +58,30 @@ export const Route = createRootRoute({
 });
 
 function RootShell({ children }: { children: React.ReactNode }) {
+  const unregisterStaleServiceWorkers = `
+    (() => {
+      if (typeof window === "undefined") return;
+      if (!("serviceWorker" in navigator)) return;
+      navigator.serviceWorker.getRegistrations().then((registrations) => {
+        registrations.forEach((registration) => registration.unregister());
+      });
+      if ("caches" in window) {
+        caches.keys().then((keys) => {
+          keys.forEach((key) => {
+            if (key.includes("workbox") || key.includes("pwa") || key.includes("supabase-cache") || key.includes("images-cache")) {
+              caches.delete(key);
+            }
+          });
+        });
+      }
+    })();
+  `;
+
   return (
     <html lang="en" className="dark">
       <head>
         <HeadContent />
+        <script dangerouslySetInnerHTML={{ __html: unregisterStaleServiceWorkers }} />
       </head>
       <body>
         {children}
