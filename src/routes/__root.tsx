@@ -58,10 +58,43 @@ export const Route = createRootRoute({
 });
 
 function RootShell({ children }: { children: React.ReactNode }) {
+  const chunkRecoveryScript = `
+    (() => {
+      if (typeof window === "undefined") return;
+      const key = "realtalk_chunk_reloaded_once";
+      const reloadOnce = () => {
+        try {
+          if (sessionStorage.getItem(key)) return;
+          sessionStorage.setItem(key, "1");
+          const next = new URL(window.location.href);
+          next.searchParams.set("_cb", Date.now().toString());
+          window.location.replace(next.toString());
+        } catch {
+          window.location.reload();
+        }
+      };
+
+      const shouldRecover = (value) => {
+        const msg = String(value || "");
+        return msg.includes("dynamically imported module") || msg.includes("Loading chunk") || msg.includes("Importing a module script failed");
+      };
+
+      window.addEventListener("error", (event) => {
+        if (shouldRecover(event?.message)) reloadOnce();
+      });
+
+      window.addEventListener("unhandledrejection", (event) => {
+        const reason = event?.reason;
+        if (shouldRecover(reason?.message || reason)) reloadOnce();
+      });
+    })();
+  `;
+
   return (
     <html lang="en" className="dark">
       <head>
         <HeadContent />
+        <script dangerouslySetInnerHTML={{ __html: chunkRecoveryScript }} />
       </head>
       <body>
         {children}
