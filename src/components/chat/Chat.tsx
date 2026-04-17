@@ -293,6 +293,25 @@ export function Chat() {
     return ventSignals.some((signal) => lower.includes(signal));
   };
 
+  const isBusinessMarketingPrompt = (text: string): boolean => {
+    const lower = text.toLowerCase();
+    const keys = [
+      "start a business",
+      "starting a business",
+      "i want to start a business",
+      "business idea",
+      "what business",
+      "which business",
+      "market my business",
+      "how can i market",
+      "marketing strategy",
+      "go to market",
+      "go-to-market",
+      "customer acquisition",
+    ];
+    return keys.some((k) => lower.includes(k));
+  };
+
  const send = async (overrideText?: string, overrideVentAdviceMode?: VentAdviceMode) => {
   const text = (overrideText ?? input).trim();
   if (!text || busy || !user) return;
@@ -361,15 +380,19 @@ export function Chat() {
     // ✅ FIX 2: rebuild messages safely (NO newMsgs bug)
     const currentMessages = [...messages, userMsg];
     const planFirstInstruction =
-      "Plan mode is active. Return a starter plan immediately (3-7 steps + timeline). Do not ask clarifying questions first. Ask follow-up questions only after the plan.";
+      "Plan mode is active. Return a full first-version plan immediately (8-12 actionable steps with timeline, assumptions, trade-offs, and 2-4 options with pros/cons). Recommend one option and explain why. Do not lead with clarifying questions. Ask at most one follow-up question after presenting the plan. When research context is available, end with a short Sources section.";
+    const businessFirstInstruction =
+      "Business/Marketing mode is active. Do not start with clarifying questions. First provide at least 3 practical options with pros/cons, cost/effort, and who each option suits. Then recommend one option and provide a clear starter execution plan. Ask at most one optional follow-up question at the end. Include Sources when research context is available.";
     const outboundMessages = currentMessages.map((m, idx, arr) => {
       const isLatestUser = idx === arr.length - 1 && m.role === "user";
-      if (!isLatestUser || !planningRequested) {
+      if (!isLatestUser || (!planningRequested && !isBusinessMarketingPrompt(m.content))) {
         return { role: m.role, content: m.content };
       }
+
+      const injectedInstruction = planningRequested ? planFirstInstruction : businessFirstInstruction;
       return {
         role: m.role,
-        content: `${planFirstInstruction}\n\nUser request: ${m.content}`,
+        content: `${injectedInstruction}\n\nUser request: ${m.content}`,
       };
     });
 

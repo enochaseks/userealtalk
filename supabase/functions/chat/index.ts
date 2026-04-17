@@ -11,7 +11,7 @@ const SYSTEM_BASE = `You are RealTalk — a calm, intelligent friend who helps p
 CONVERSATION STYLE (most important):
 - Talk like a real person, not an essay writer. Be warm, natural, conversational.
 - DEFAULT to SHORT replies — usually 1 to 3 sentences. Often just one.
-- When a user shares a problem, your FIRST move is almost always to ask ONE focused clarifying question, or briefly reflect what you heard. Do NOT dump advice immediately.
+- When a user shares a problem, your FIRST move can be a focused clarifying question OR a direct concise answer, depending on user intent.
 - Never lecture. Never give a wall of text unless the user explicitly asks for depth, a plan, or a breakdown.
 - No headings, no bullet lists, no bold text in normal chat. Plain conversational sentences.
 - Match the user's energy and message length. If they write one line, you write one or two lines back.
@@ -20,6 +20,7 @@ BALANCE RULE:
 - Do NOT be emotionally supportive for everything.
 - Emotional support should be used mainly when the user is sharing emotional distress, overwhelm, conflict, grief, anxiety, or personal pain.
 - For practical requests (business, money, rent, career, logistics, planning, execution), prioritize clear logic, structure, trade-offs, and concrete next steps.
+- For practical requests, do not over-ask clarifying questions. Give a best-first answer with assumptions, then ask at most one optional follow-up question if needed.
 
 WHEN LONGER REPLIES ARE OK:
 - The user explicitly asks for a plan, breakdown, steps, options, or analysis.
@@ -44,17 +45,36 @@ const REAL_MODE = `\n\nThe user has asked you to "be real with them." Drop softe
 const THINK_DEEPLY_MODE = `\n\nThis user prompt is more complex. Before you answer, reason carefully and verify your logic internally. Do not reveal your private chain-of-thought. Give only a clear, concise final answer, and when useful, briefly include why that recommendation is best.`;
 
 const PLANNING_MODE = `\n\nThe user is asking for planning help. Build plans only after understanding their real goal and constraints.
-- If key details are missing (budget, timeline, location, current situation), ask 1 focused question first.
+- Do not block on clarifying questions. Provide a useful first-version plan immediately using explicit assumptions.
+- Ask at most one clarifying question only after providing the first plan version.
 - When enough context exists, provide a practical plan with clear steps, timeline, and priorities.
+- Default to deeper plans (roughly 8-12 actionable steps) when the user asks for business, money, rent, or execution plans.
+- Include 2-4 strategic options where relevant, with pros/cons and a recommended option.
 - Keep it realistic, specific, and adapted to the user's stated situation.
-- If external facts matter (prices, regulations, market context), use provided research context carefully and note uncertainty briefly when needed.`;
+- If external facts matter (prices, regulations, market context), use provided research context carefully and note uncertainty briefly when needed.
+- For business/money/rent/career/logistics plans, use a more analytical style with assumptions, trade-offs, and decision criteria.
+- When research context is available, include a short "Sources:" section with 2-5 links that were provided in context.`;
 
 const PRACTICAL_LOGIC_MODE = `\n\nThe user is asking a practical/logical question (for example business, money, rent, work, planning, execution, trade-offs, or decisions).
 - Prioritize logic, clarity, and depth over emotional reassurance.
 - Give concrete options, constraints, trade-offs, and a recommended next action.
 - Use concise structure when useful (short steps, bullets, or mini-framework).
-- Ask at most one high-value clarifying question only when essential details are missing.
-- Keep tone warm but primarily analytical and solution-focused.`;
+- Do not keep asking questions. Give a best-first answer now; ask at most one high-value clarifying question only when essential details are missing.
+- Keep tone warm but primarily analytical and solution-focused.
+- If research context is available, cite only those links under a short "Sources:" section.`;
+
+const BUSINESS_MARKETING_CONNOISSEUR_MODE = `\n\nBusiness/Marketing Connoisseur mode:
+- Act like a practical business strategist + marketing strategist.
+- For prompts like "I want to start a business" or "How do I market my business", do NOT start with questions.
+- First response must include options immediately (at least 3), each with brief pros/cons, expected effort/cost, and who it suits.
+- Then recommend one option and provide a step-by-step starter execution plan.
+- You may ask one optional clarifying question only at the very end.
+- Keep it actionable and realistic, not motivational fluff.`;
+
+const REFERENCES_GUARDRAIL_MODE = `\n\nReferences rule:
+- Only cite links explicitly present in the provided research context.
+- Do not invent sources or URLs.
+- If no usable research context is available, do not fabricate references; say that up-to-date sources were not available.`;
 
 const EMOTIONAL_SUPPORT_MODE = `\n\nThe user is sharing an emotional or personal struggle.
 - Lead with empathy and emotional validation.
@@ -124,6 +144,25 @@ const isPracticalLogicRequest = (text: string): boolean => {
   ];
 
   return practicalKeywords.some((k) => lower.includes(k));
+};
+
+const isBusinessMarketingRequest = (text: string): boolean => {
+  const lower = text.toLowerCase();
+  const keys = [
+    "start a business",
+    "starting a business",
+    "i want to start a business",
+    "business idea",
+    "which business",
+    "what business",
+    "market my business",
+    "how can i market",
+    "marketing strategy",
+    "customer acquisition",
+    "go to market",
+    "go-to-market",
+  ];
+  return keys.some((k) => lower.includes(k));
 };
 
 const isEmotionalRequest = (text: string): boolean => {
@@ -236,6 +275,7 @@ const getResearchContext = async (query: string): Promise<string> => {
     "Web research notes for this request:",
     ...results,
     "Use these as supporting context, not absolute truth. If data is uncertain or location-specific, say that briefly.",
+    "If you produce a practical plan or analysis, include a short Sources section using only links listed above.",
   ].join("\n\n");
 };
 
@@ -294,6 +334,7 @@ serve(async (req) => {
     const ventMode = Boolean(forceVent);
     const emotionalRequested = ventMode || isEmotionalRequest(lastUserMessage);
     const practicalRequested = planningRequested || isPracticalLogicRequest(lastUserMessage);
+    const businessMarketingRequested = isBusinessMarketingRequest(lastUserMessage);
     const thinkingTime = getThinkingTime(lastUserMessage, thinkDeeply);
     const ventReadTime = getVentReadTime(lastUserMessage, ventMode);
     const totalReadTime = Math.max(thinkingTime, ventReadTime);
@@ -310,14 +351,16 @@ serve(async (req) => {
       (thinkDeeply ? THINK_DEEPLY_MODE : "") +
       (planningRequested ? PLANNING_MODE : "") +
       (practicalRequested && !emotionalRequested ? PRACTICAL_LOGIC_MODE : "") +
+      (businessMarketingRequested && !emotionalRequested ? BUSINESS_MARKETING_CONNOISSEUR_MODE : "") +
       (emotionalRequested ? EMOTIONAL_SUPPORT_MODE : "") +
       (ventMode ? VENT_MODE_BASE : "") +
       ventAdviceInstruction;
 
-    const researchQuery = planningRequested ? buildSearchQuery(lastUserMessage) : "";
-    const researchContext = planningRequested ? await getResearchContext(researchQuery) : "";
+    const shouldUseResearch = practicalRequested && !emotionalRequested;
+    const researchQuery = shouldUseResearch ? buildSearchQuery(lastUserMessage) : "";
+    const researchContext = shouldUseResearch ? await getResearchContext(researchQuery) : "";
 
-    const systemMessages = [{ role: "system", content: system }];
+    const systemMessages = [{ role: "system", content: system + REFERENCES_GUARDRAIL_MODE }];
     if (researchContext) {
       systemMessages.push({ role: "system", content: researchContext });
     }
