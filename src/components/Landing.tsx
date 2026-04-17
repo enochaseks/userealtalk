@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
+import logo from "../assets/logo.png";
 
 export function Landing() {
   return (
@@ -11,6 +12,7 @@ export function Landing() {
         transition={{ duration: 0.7, ease: "easeOut" }}
         className="max-w-xl text-center"
       >
+        <img src={logo} alt="RealTalk" className="h-45 w-auto mx-auto mb-6" />
         <div className="font-serif text-5xl md:text-6xl tracking-tight leading-[1.05]">
           Think clearly.
           <br />

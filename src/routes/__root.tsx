@@ -1,7 +1,18 @@
-import { Outlet, createRootRoute, HeadContent, Scripts, Link, useRouterState } from "@tanstack/react-router";
+import { Outlet, createRootRoute, HeadContent, Scripts, Link, useRouterState, useNavigate } from "@tanstack/react-router";
 import appCss from "../styles.css?url";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { Toaster } from "@/components/ui/sonner";
+import logo from "../assets/logo.png";
+import { useEffect, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Menu, Trash2 } from "lucide-react";
+import {
+  Sheet,
+  SheetContent,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 
 export const Route = createRootRoute({
   head: () => ({
@@ -70,10 +81,90 @@ function AppFrame() {
 }
 
 function TopNav() {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const [conversations, setConversations] = useState<Array<{ id: string; title: string }>>([]);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    const loadConversations = async () => {
+      const { data } = await supabase
+        .from("conversations")
+        .select("id, title")
+        .eq("user_id", user.id)
+        .order("updated_at", { ascending: false })
+        .limit(10);
+      if (data) setConversations(data);
+    };
+    loadConversations();
+  }, [user]);
+
+  const deleteConversation = async (convId: string) => {
+    if (!user) return;
+    const { error } = await supabase
+      .from("conversations")
+      .delete()
+      .eq("id", convId)
+      .eq("user_id", user.id);
+    if (error) {
+      toast.error("Failed to delete conversation");
+    } else {
+      setConversations((prev) => prev.filter((c) => c.id !== convId));
+      toast.success("Conversation deleted");
+    }
+  };
+
+  const navigateToConversation = (convId: string) => {
+    setOpen(false);
+    navigate({ to: "/", search: { c: convId } as never });
+  };
+
   return (
     <header className="border-b border-border/60 backdrop-blur supports-[backdrop-filter]:bg-background/70 sticky top-0 z-30">
       <div className="max-w-3xl mx-auto px-5 h-14 flex items-center justify-between">
-        <Link to="/" className="font-serif text-xl tracking-tight">RealTalk</Link>
+        <div className="flex items-center gap-2">
+          <Sheet open={open} onOpenChange={setOpen}>
+            <SheetTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-9 w-9">
+                <Menu className="h-5 w-5" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="left" className="w-64">
+              <div className="py-4">
+                <h2 className="px-4 text-sm font-semibold text-foreground mb-4">Past Conversations</h2>
+                {conversations.length === 0 ? (
+                  <div className="px-4 text-sm text-muted-foreground">
+                    No conversations yet
+                  </div>
+                ) : (
+                  <nav className="flex flex-col gap-1">
+                    {conversations.map((conv) => (
+                      <div key={conv.id} className="group flex items-center gap-2 px-2 py-1 hover:bg-surface rounded-md transition-colors">
+                        <button
+                          onClick={() => navigateToConversation(conv.id)}
+                          className="flex-1 px-2 py-1 text-left text-sm text-muted-foreground hover:text-foreground truncate"
+                        >
+                          {conv.title}
+                        </button>
+                        <button
+                          onClick={() => deleteConversation(conv.id)}
+                          className="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-foreground transition-all"
+                          title="Delete conversation"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </nav>
+                )}
+              </div>
+            </SheetContent>
+          </Sheet>
+          <Link to="/" className="flex items-center">
+            <img src={logo} alt="RealTalk" className="h-8 w-auto" />
+          </Link>
+        </div>
         <nav className="flex items-center gap-1 text-sm">
           <NavItem to="/">Chat</NavItem>
           <NavItem to="/profile">Profile</NavItem>
@@ -102,7 +193,10 @@ function NotFound() {
       <div className="text-center">
         <h1 className="font-serif text-6xl">404</h1>
         <p className="mt-3 text-muted-foreground">This page drifted off.</p>
-        <Link to="/" className="inline-block mt-6 text-primary hover:underline">Back to RealTalk</Link>
+        <Link to="/" className="inline-block mt-6 text-primary hover:underline flex items-center gap-2">
+          <img src={logo} alt="RealTalk" className="h-5 w-auto" />
+          Back home
+        </Link>
       </div>
     </div>
   );

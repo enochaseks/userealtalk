@@ -6,6 +6,9 @@ import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 import { toast } from "sonner";
+import { Download } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 
 export const Route = createFileRoute("/profile")({
   component: ProfilePage,
@@ -18,10 +21,16 @@ type Conv = { id: string; title: string; updated_at: string };
 function ProfilePage() {
   const { user, loading, signOut } = useAuth();
   const navigate = useNavigate();
-  const [tab, setTab] = useState<"plans" | "chats" | "insights">("plans");
+  const [tab, setTab] = useState<"plans" | "chats" | "insights" | "settings">("plans");
   const [plans, setPlans] = useState<Plan[]>([]);
   const [convs, setConvs] = useState<Conv[]>([]);
   const [openPlan, setOpenPlan] = useState<Plan | null>(null);
+  const [autoPdfEnabled, setAutoPdfEnabled] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("autoPdfSave") !== "false";
+    }
+    return true;
+  });
 
   useEffect(() => {
     if (!loading && !user) navigate({ to: "/auth" });
@@ -42,6 +51,24 @@ function ProfilePage() {
     toast.success("Plan removed");
   };
 
+  const downloadPlanAsText = (plan: Plan) => {
+    const content = `${plan.title}\n\n${plan.content}`;
+    const element = document.createElement("a");
+    element.setAttribute("href", "data:text/plain;charset=utf-8," + encodeURIComponent(content));
+    element.setAttribute("download", `${plan.title}.txt`);
+    element.style.display = "none";
+    document.body.appendChild(element);
+    element.click();
+    document.body.removeChild(element);
+    toast.success("Plan downloaded as text");
+  };
+
+  const toggleAutoPdf = (enabled: boolean) => {
+    setAutoPdfEnabled(enabled);
+    localStorage.setItem("autoPdfSave", enabled ? "true" : "false");
+    toast.success(enabled ? "PDF auto-save enabled" : "PDF auto-save disabled");
+  };
+
   return (
     <div className="flex-1 max-w-3xl w-full mx-auto px-5 py-10">
       <div className="flex items-end justify-between mb-8">
@@ -53,7 +80,7 @@ function ProfilePage() {
       </div>
 
       <div className="flex gap-1 border-b border-border mb-6 -mx-1">
-        {(["plans", "chats", "insights"] as const).map((t) => (
+        {(["plans", "chats", "insights", "settings"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -109,6 +136,20 @@ function ProfilePage() {
         <EmptyState text="Insights coming soon — RealTalk will surface patterns it notices in how you think." />
       )}
 
+      {tab === "settings" && (
+        <div className="space-y-6 max-w-md">
+          <div className="rounded-xl border border-border bg-surface/60 p-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <Label className="text-sm font-semibold text-foreground cursor-pointer">Auto-save plans as PDF</Label>
+                <p className="text-xs text-muted-foreground mt-1">Automatically save plans as PDF files when you click "Save as Plan"</p>
+              </div>
+              <Switch checked={autoPdfEnabled} onCheckedChange={toggleAutoPdf} />
+            </div>
+          </div>
+        </div>
+      )}
+
       {openPlan && (
         <div
           className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4"
@@ -125,7 +166,13 @@ function ProfilePage() {
               <ReactMarkdown>{openPlan.content}</ReactMarkdown>
             </div>
             <div className="flex justify-between mt-6 pt-4 border-t border-border">
-              <Button variant="ghost" size="sm" onClick={() => deletePlan(openPlan.id)}>Delete</Button>
+              <div className="flex gap-2">
+                <Button variant="ghost" size="sm" onClick={() => deletePlan(openPlan.id)}>Delete</Button>
+                <Button variant="ghost" size="sm" onClick={() => downloadPlanAsText(openPlan)} className="gap-1.5">
+                  <Download className="h-3.5 w-3.5" />
+                  Download
+                </Button>
+              </div>
               <Button variant="secondary" size="sm" onClick={() => setOpenPlan(null)}>Close</Button>
             </div>
           </motion.div>
