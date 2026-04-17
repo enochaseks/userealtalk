@@ -16,6 +16,11 @@ CONVERSATION STYLE (most important):
 - No headings, no bullet lists, no bold text in normal chat. Plain conversational sentences.
 - Match the user's energy and message length. If they write one line, you write one or two lines back.
 
+BALANCE RULE:
+- Do NOT be emotionally supportive for everything.
+- Emotional support should be used mainly when the user is sharing emotional distress, overwhelm, conflict, grief, anxiety, or personal pain.
+- For practical requests (business, money, rent, career, logistics, planning, execution), prioritize clear logic, structure, trade-offs, and concrete next steps.
+
 WHEN LONGER REPLIES ARE OK:
 - The user explicitly asks for a plan, breakdown, steps, options, or analysis.
 - The conversation has built up enough context that a structured answer is genuinely useful.
@@ -43,6 +48,18 @@ const PLANNING_MODE = `\n\nThe user is asking for planning help. Build plans onl
 - When enough context exists, provide a practical plan with clear steps, timeline, and priorities.
 - Keep it realistic, specific, and adapted to the user's stated situation.
 - If external facts matter (prices, regulations, market context), use provided research context carefully and note uncertainty briefly when needed.`;
+
+const PRACTICAL_LOGIC_MODE = `\n\nThe user is asking a practical/logical question (for example business, money, rent, work, planning, execution, trade-offs, or decisions).
+- Prioritize logic, clarity, and depth over emotional reassurance.
+- Give concrete options, constraints, trade-offs, and a recommended next action.
+- Use concise structure when useful (short steps, bullets, or mini-framework).
+- Ask at most one high-value clarifying question only when essential details are missing.
+- Keep tone warm but primarily analytical and solution-focused.`;
+
+const EMOTIONAL_SUPPORT_MODE = `\n\nThe user is sharing an emotional or personal struggle.
+- Lead with empathy and emotional validation.
+- Keep advice grounded and gentle.
+- Avoid overly analytical or robotic tone unless the user asks for a strict logical breakdown.`;
 
 const VENT_MODE_BASE = `\n\nThe user is venting. Your first job is to understand and emotionally validate what they shared.
 - Do not minimize or judge.
@@ -72,6 +89,69 @@ const isPlanningRequest = (text: string): boolean => {
     "what should i do",
   ];
   return planningKeywords.some((k) => lower.includes(k));
+};
+
+const isPracticalLogicRequest = (text: string): boolean => {
+  const lower = text.toLowerCase();
+  const practicalKeywords = [
+    "business",
+    "startup",
+    "start a business",
+    "rent",
+    "landlord",
+    "budget",
+    "pricing",
+    "revenue",
+    "profit",
+    "cash flow",
+    "debt",
+    "invoice",
+    "operations",
+    "strategy",
+    "marketing",
+    "sales",
+    "job",
+    "career",
+    "interview",
+    "plan",
+    "roadmap",
+    "timeline",
+    "what should i do",
+    "best option",
+    "pros and cons",
+    "tradeoff",
+    "decision",
+  ];
+
+  return practicalKeywords.some((k) => lower.includes(k));
+};
+
+const isEmotionalRequest = (text: string): boolean => {
+  const lower = text.toLowerCase();
+  const emotionalKeywords = [
+    "i feel",
+    "i'm feeling",
+    "im feeling",
+    "anxious",
+    "overwhelmed",
+    "stressed",
+    "depressed",
+    "sad",
+    "lonely",
+    "hurt",
+    "heartbroken",
+    "panic",
+    "scared",
+    "afraid",
+    "angry",
+    "frustrated",
+    "vent",
+    "rant",
+    "i can't cope",
+    "i cant cope",
+  ];
+
+  return emotionalKeywords.some((k) => lower.includes(k));
 };
 
 const latestUserContent = (messages: Array<{ role: string; content: string }>): string => {
@@ -211,8 +291,10 @@ serve(async (req) => {
 
     const lastUserMessage = latestUserContent(messages ?? []);
     const planningRequested = forcePlan || isPlanningRequest(lastUserMessage);
-    const thinkingTime = getThinkingTime(lastUserMessage, thinkDeeply);
     const ventMode = Boolean(forceVent);
+    const emotionalRequested = ventMode || isEmotionalRequest(lastUserMessage);
+    const practicalRequested = planningRequested || isPracticalLogicRequest(lastUserMessage);
+    const thinkingTime = getThinkingTime(lastUserMessage, thinkDeeply);
     const ventReadTime = getVentReadTime(lastUserMessage, ventMode);
     const totalReadTime = Math.max(thinkingTime, ventReadTime);
     const ventAdviceInstruction = ventMode
@@ -227,6 +309,8 @@ serve(async (req) => {
       (beReal ? REAL_MODE : "") +
       (thinkDeeply ? THINK_DEEPLY_MODE : "") +
       (planningRequested ? PLANNING_MODE : "") +
+      (practicalRequested && !emotionalRequested ? PRACTICAL_LOGIC_MODE : "") +
+      (emotionalRequested ? EMOTIONAL_SUPPORT_MODE : "") +
       (ventMode ? VENT_MODE_BASE : "") +
       ventAdviceInstruction;
 
