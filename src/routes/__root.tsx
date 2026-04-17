@@ -36,6 +36,11 @@ export const Route = createRootRoute({
         content: "A calm AI companion for clarity and better decisions.",
       },
       { property: "og:type", content: "website" },
+      { name: "twitter:title", content: "RealTalk — Think clearly. Decide better." },
+      { name: "description", content: "RealTalk is an AI-powered web app that guides users to reduce overthinking and make better decisions." },
+      { property: "og:description", content: "RealTalk is an AI-powered web app that guides users to reduce overthinking and make better decisions." },
+      { name: "twitter:description", content: "RealTalk is an AI-powered web app that guides users to reduce overthinking and make better decisions." },
+      { name: "twitter:card", content: "summary" },
     ],
     links: [
       { rel: "stylesheet", href: appCss },
