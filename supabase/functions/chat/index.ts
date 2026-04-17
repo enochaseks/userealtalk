@@ -44,6 +44,18 @@ const REAL_MODE = `\n\nThe user has asked you to "be real with them." Drop softe
 
 const THINK_DEEPLY_MODE = `\n\nThis user prompt is more complex. Before you answer, reason carefully and verify your logic internally. Do not reveal your private chain-of-thought. Give only a clear, concise final answer, and when useful, briefly include why that recommendation is best.`;
 
+const DEEP_THINKING_DETAILED_MODE = `\n\nDeep thinking detailed mode activated:
+- Show your structured reasoning process.
+- Provide a thorough analysis with clear reasoning steps.
+- Include at least 2-3 perspectives or approaches to the issue.
+- Highlight key assumptions and limitations of each viewpoint.
+- When applicable, include pros/cons comparison or decision framework.
+- Conclude with a clear recommendation or insight backed by the reasoning.
+- If research context is available, end with "Key References:" linking supporting sources.
+- Make the response feel deeply considered and well-researched, not rushed.
+- Use short paragraphs or numbered points to organize thinking, but keep overall length reasonable (avoid essays).
+- Show intellectual depth and nuance, acknowledging complexity where it exists.`;
+
 const PLANNING_MODE = `\n\nThe user is asking for planning help. Build plans only after understanding their real goal and constraints.
 - Do not block on clarifying questions. Provide a useful first-version plan immediately using explicit assumptions.
 - Ask at most one clarifying question only after providing the first plan version.
@@ -370,7 +382,7 @@ serve(async (req) => {
       (ventMode ? VENT_MODE_BASE : "") +
       ventAdviceInstruction;
 
-    const shouldUseResearch = practicalRequested && !emotionalRequested;
+    const shouldUseResearch = (thinkDeeply || practicalRequested) && !emotionalRequested;
     const researchQuery = shouldUseResearch ? buildSearchQuery(lastUserMessage) : "";
     const researchContext = shouldUseResearch ? await getResearchContext(researchQuery) : "";
 
@@ -378,7 +390,7 @@ serve(async (req) => {
       {
         role: "system",
         content:
-          system + REFERENCES_GUARDRAIL_MODE + (planningRequested ? DETAILED_PLAN_OUTPUT_MODE : ""),
+          system + REFERENCES_GUARDRAIL_MODE + (planningRequested ? DETAILED_PLAN_OUTPUT_MODE : "") + (thinkDeeply ? DEEP_THINKING_DETAILED_MODE : ""),
       },
     ];
     if (researchContext) {

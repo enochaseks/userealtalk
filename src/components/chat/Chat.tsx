@@ -379,20 +379,30 @@ export function Chat() {
 
     // ✅ FIX 2: rebuild messages safely (NO newMsgs bug)
     const currentMessages = [...messages, userMsg];
+    const thinkingFirstInstruction =
+      "Deep thinking mode is active. Provide a thorough, well-reasoned response that shows your thinking process. Include: (1) multiple perspectives or approaches to the question, (2) key pros/cons or trade-offs, (3) underlying assumptions, (4) clear reasoning for your conclusion. Make it feel deeply considered and nuanced. When research context is available, end with 'Key References:' and list the supporting links/articles. Show intellectual depth.";
     const planFirstInstruction =
       "Plan mode is active. Return a highly detailed first-version plan immediately (10-16 actionable steps with timeline, assumptions, trade-offs, budget/effort ranges, risks, mitigations, and KPIs). Include 2-4 options with pros/cons and recommend one option with rationale. Do not lead with clarifying questions. Ask at most one follow-up question only after presenting the full plan. When research context is available, end with a Sources section containing supporting links/articles.";
     const businessFirstInstruction =
       "Business/Marketing mode is active. Do not start with clarifying questions. First provide at least 3 practical options with pros/cons, cost/effort, and who each option suits. Then recommend one option and provide a clear starter execution plan. Ask at most one optional follow-up question at the end. Include Sources when research context is available.";
     const outboundMessages = currentMessages.map((m, idx, arr) => {
       const isLatestUser = idx === arr.length - 1 && m.role === "user";
-      if (!isLatestUser || (!planningRequested && !isBusinessMarketingPrompt(m.content))) {
+      if (!isLatestUser || (!thinkingRequested && !planningRequested && !isBusinessMarketingPrompt(m.content))) {
         return { role: m.role, content: m.content };
       }
 
-      const injectedInstruction = planningRequested ? planFirstInstruction : businessFirstInstruction;
+      let injectedInstruction = "";
+      if (thinkingRequested) {
+        injectedInstruction = thinkingFirstInstruction;
+      } else if (planningRequested) {
+        injectedInstruction = planFirstInstruction;
+      } else if (isBusinessMarketingPrompt(m.content)) {
+        injectedInstruction = businessFirstInstruction;
+      }
+
       return {
         role: m.role,
-        content: `${injectedInstruction}\n\nUser request: ${m.content}`,
+        content: injectedInstruction ? `${injectedInstruction}\n\nUser request: ${m.content}` : m.content,
       };
     });
 
