@@ -1,38 +1,523 @@
+import { useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
+import { ArrowUp, ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import logo from "../assets/logo.png";
 
+type DemoMsg = { role: "user" | "assistant"; content: string };
+type PreviewFeature = "none" | "thinking" | "plan" | "vent";
+
+const MAX_GUEST_MESSAGES = 12;
+const FEATURE_LIMITS = {
+  thinking: 4,
+  plan: 4,
+  vent: 4,
+} as const;
+
+const HELP_TOPICS = [
+  "Dealing with Money Issues",
+  "Dealing with Stress",
+  "Difficult Landlords",
+  "Mental Health",
+  "A Place to Vent",
+] as const;
+
+const QUICK_STARTS = [
+  "Money stress",
+  "Landlord issue",
+  "Anxiety spiral",
+  "Need to vent",
+] as const;
+
+const createDemoReply = (text: string, feature: PreviewFeature) => {
+  const lower = text.toLowerCase();
+
+  if (feature === "vent") {
+    return "I hear you. Thanks for letting it out here. If you want, we can keep this as a safe vent space, or you can sign up for deeper support.";
+  }
+
+  if (feature === "plan") {
+    return "Quick plan preview: 1) Define the exact outcome you want this week, 2) Pick one action for today, 3) Review what worked tomorrow. Sign up to build full saved plans.";
+  }
+
+  if (feature === "thinking") {
+    return "Lite deep-thinking preview: the core issue seems to be pressure + uncertainty. What’s the one decision that would reduce the most stress today?";
+  }
+
+  if (lower.includes("overthink") || lower.includes("overthinking")) {
+    return "That loop is exhausting. What’s one thought you keep replaying most?";
+  }
+  if (lower.includes("money") || lower.includes("budget")) {
+    return "Money stress is heavy. Want to start by listing your top 3 monthly costs?";
+  }
+  if (lower.includes("anxious") || lower.includes("anxiety") || lower.includes("stress")) {
+    return "I hear you. Right now, what feels most out of control?";
+  }
+  return "Thanks for sharing that. If we focus on one part first, which part matters most?";
+};
+
 export function Landing() {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [feature, setFeature] = useState<PreviewFeature>("none");
+  const [featureUses, setFeatureUses] = useState({ thinking: 0, plan: 0, vent: 0 });
+  const [showFeatureMenu, setShowFeatureMenu] = useState(false);
+  const [helpIndex, setHelpIndex] = useState(0);
+  const [messages, setMessages] = useState<DemoMsg[]>([
+    {
+      role: "assistant",
+      content:
+        "Welcome to RealTalk preview. Share what’s on your mind and I’ll help you think through it.",
+    },
+  ]);
+
+  const guestMessageCount = messages.filter((m) => m.role === "user").length;
+  const guestLimitReached = guestMessageCount >= MAX_GUEST_MESSAGES;
+  const thinkingRemaining = FEATURE_LIMITS.thinking - featureUses.thinking;
+  const planRemaining = FEATURE_LIMITS.plan - featureUses.plan;
+  const ventRemaining = FEATURE_LIMITS.vent - featureUses.vent;
+  const currentHelpTopic = HELP_TOPICS[helpIndex];
+
+  const trackEvent = (event: string, props?: Record<string, string | number | boolean>) => {
+    const payload = { event, page: "landing", ...props };
+    try {
+      const w = globalThis as unknown as {
+        gtag?: (action: string, eventName: string, params?: Record<string, unknown>) => void;
+        plausible?: (eventName: string, options?: { props?: Record<string, unknown> }) => void;
+      };
+      w.gtag?.("event", event, payload);
+      w.plausible?.(event, { props: payload });
+      globalThis.dispatchEvent(new CustomEvent("realtalk:tracking", { detail: payload }));
+    } catch {
+      // no-op in environments without analytics hooks
+    }
+  };
+
+  const sendPreview = async () => {
+    const text = input.trim();
+    if (!text || busy || guestLimitReached) return;
+
+    if (feature === "thinking" && thinkingRemaining <= 0) return;
+    if (feature === "plan" && planRemaining <= 0) return;
+    if (feature === "vent" && ventRemaining <= 0) return;
+
+    setInput("");
+    setBusy(true);
+    setMessages((prev) => [...prev, { role: "user", content: text }]);
+
+    if (feature !== "none") {
+      setFeatureUses((prev) => ({ ...prev, [feature]: prev[feature] + 1 }));
+    }
+
+    const reply = createDemoReply(text, feature);
+    await new Promise((resolve) => setTimeout(resolve, feature === "thinking" ? 1200 : 700));
+
+    setMessages((prev) => [...prev, { role: "assistant", content: reply }]);
+    setBusy(false);
+    trackEvent("preview_message_sent", { feature: feature !== "none" ? feature : "default" });
+  };
+
+  const quickStart = (text: string) => {
+    setFeature("none");
+    setInput(text);
+    trackEvent("quick_start_selected", { text });
+    globalThis.scrollTo({ top: 0, behavior: "smooth" });
+    setTimeout(() => inputRef.current?.focus(), 250);
+  };
+
   return (
-    <div className="flex-1 realtalk-ambient flex items-center justify-center px-5 py-16">
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.7, ease: "easeOut" }}
-        className="max-w-xl text-center"
-      >
-        <img src={logo} alt="RealTalk" className="h-45 w-auto mx-auto mb-6" />
+    <div className="flex-1 realtalk-ambient">
+      <div className="fixed top-0 inset-x-0 z-40 border-b border-border/50 bg-background/80 backdrop-blur">
+        <div className="mx-auto max-w-2xl px-3 sm:px-4 py-2 flex items-center justify-between gap-2 sm:gap-3">
+          <img src={logo} alt="RealTalk" className="h-10 w-auto" />
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            <Link to="/auth">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="rounded-full px-3 sm:px-4"
+                onClick={() => trackEvent("cta_clicked", { cta: "header_log_in" })}
+              >
+                Log in
+              </Button>
+            </Link>
+            <Link to="/auth">
+              <Button
+                size="sm"
+                className="rounded-full px-3 sm:px-4"
+                onClick={() => trackEvent("signup_started", { source: "header_sign_up" })}
+              >
+                Sign Up
+              </Button>
+            </Link>
+          </div>
+        </div>
+      </div>
+
+      <section className="px-4 pt-16 pb-4 flex items-start justify-center">
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.7, ease: "easeOut" }}
+          className="max-w-2xl w-full text-center"
+        >
+        <div className="rounded-2xl border border-border bg-surface/70 backdrop-blur text-left overflow-hidden">
+          <div className="px-4 py-3 border-b border-border/60 text-xs text-muted-foreground flex items-center justify-between gap-3">
+            <span>Guest preview chat</span>
+            <span>Limited mode: no saved chats + capped feature previews</span>
+          </div>
+
+          <div className="px-4 py-4 space-y-3 max-h-72 overflow-y-auto">
+            {messages.map((m, i) => (
+              <div key={i} className={m.role === "user" ? "flex justify-end" : "flex justify-start"}>
+                <div
+                  className={
+                    m.role === "user"
+                      ? "bg-surface-elevated rounded-2xl rounded-tr-sm px-3 py-2 max-w-[85%] text-sm"
+                      : "text-sm text-foreground/95 max-w-[90%]"
+                  }
+                >
+                  {m.content}
+                </div>
+              </div>
+            ))}
+            {busy && <p className="text-xs text-muted-foreground">Thinking…</p>}
+          </div>
+
+          {feature !== "none" && (
+            <div className="px-4 pt-2">
+              <button
+                type="button"
+                onClick={() => setFeature("none")}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-primary/20 text-primary text-xs rounded-full hover:bg-primary/30 transition-colors"
+              >
+                {feature === "thinking" && "💭 Deep Thinking (lite)"}
+                {feature === "plan" && "📋 Plan"}
+                {feature === "vent" && "🫶 Vent"}
+                <span className="text-lg leading-none">×</span>
+              </button>
+            </div>
+          )}
+
+          <div className="px-3 py-3 border-t border-border/60 flex items-center gap-2">
+            <div className="relative">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                onClick={() => setShowFeatureMenu((v) => !v)}
+                aria-label="Open preview feature menu"
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </Button>
+
+              {showFeatureMenu && (
+                <div className="absolute bottom-full left-0 mb-2 bg-surface border border-border rounded-lg shadow-lg z-50 w-56 p-2">
+                  <button
+                    type="button"
+                    disabled={thinkingRemaining <= 0}
+                    onClick={() => {
+                      setFeature("thinking");
+                      setShowFeatureMenu(false);
+                      trackEvent("feature_selected", { feature: "thinking" });
+                    }}
+                    className={`w-full text-left px-3 py-2 text-sm rounded-md transition-colors ${
+                      feature === "thinking"
+                        ? "bg-primary/20 text-primary"
+                        : "text-muted-foreground hover:bg-surface-elevated hover:text-foreground"
+                    } ${thinkingRemaining <= 0 ? "opacity-40 cursor-not-allowed" : ""}`}
+                  >
+                    💭 Deep Thinking (lite) · {Math.max(0, thinkingRemaining)} left
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={planRemaining <= 0}
+                    onClick={() => {
+                      setFeature("plan");
+                      setShowFeatureMenu(false);
+                      trackEvent("feature_selected", { feature: "plan" });
+                    }}
+                    className={`w-full text-left px-3 py-2 text-sm rounded-md transition-colors ${
+                      feature === "plan"
+                        ? "bg-primary/20 text-primary"
+                        : "text-muted-foreground hover:bg-surface-elevated hover:text-foreground"
+                    } ${planRemaining <= 0 ? "opacity-40 cursor-not-allowed" : ""}`}
+                  >
+                    📋 Plan · {Math.max(0, planRemaining)} left
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={ventRemaining <= 0}
+                    onClick={() => {
+                      setFeature("vent");
+                      setShowFeatureMenu(false);
+                      trackEvent("feature_selected", { feature: "vent" });
+                    }}
+                    className={`w-full text-left px-3 py-2 text-sm rounded-md transition-colors ${
+                      feature === "vent"
+                        ? "bg-primary/20 text-primary"
+                        : "text-muted-foreground hover:bg-surface-elevated hover:text-foreground"
+                    } ${ventRemaining <= 0 ? "opacity-40 cursor-not-allowed" : ""}`}
+                  >
+                    🫶 Vent · {Math.max(0, ventRemaining)} left
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <input
+              ref={inputRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void sendPreview();
+                }
+              }}
+              disabled={busy || guestLimitReached}
+              placeholder={guestLimitReached ? "Preview limit reached — create account to continue" : "Try RealTalk…"}
+              className="flex-1 bg-transparent text-sm outline-none px-2 py-1.5 placeholder:text-muted-foreground/70 disabled:opacity-60"
+            />
+            <Button
+              type="button"
+              size="icon"
+              className="h-8 w-8 rounded-full"
+              onClick={() => void sendPreview()}
+              disabled={!input.trim() || busy || guestLimitReached}
+              aria-label="Send preview message"
+            >
+              <ArrowUp className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+
+          {guestLimitReached && (
+            <div className="px-4 pb-4">
+              <Link to="/auth">
+                <Button
+                  className="w-full"
+                  size="sm"
+                  onClick={() => trackEvent("signup_started", { source: "preview_limit_cta" })}
+                >
+                  Create free account to continue
+                </Button>
+              </Link>
+            </div>
+          )}
+        </div>
+
+      </motion.div>
+      </section>
+
+      <section className="px-4 pt-3 pb-7 flex items-start justify-center">
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, amount: 0.2 }}
+          transition={{ duration: 0.7, ease: "easeOut" }}
+          className="max-w-2xl w-full text-center"
+        >
         <div className="font-serif text-5xl md:text-6xl tracking-tight leading-[1.05]">
           Think clearly.
           <br />
           <span className="italic text-primary">Decide better.</span>
         </div>
-        <p className="mt-6 text-muted-foreground text-base md:text-lg leading-relaxed">
+        <p className="mt-4 text-muted-foreground text-base md:text-lg leading-relaxed">
           RealTalk is a calm AI companion that helps you cut through overthinking, find clarity, and
           turn what's on your mind into clear plans.
         </p>
-        <div className="mt-10 flex items-center justify-center gap-3">
+        <div className="mt-6 flex items-center justify-center gap-3">
           <Link to="/auth">
-            <Button size="lg" className="rounded-full px-7">
+            <Button
+              size="lg"
+              className="rounded-full px-7"
+              onClick={() => trackEvent("signup_started", { source: "hero_start_thinking" })}
+            >
               Start thinking
             </Button>
           </Link>
         </div>
-        <p className="mt-12 text-xs text-muted-foreground/70">
+
+        <p className="mt-7 text-xs text-muted-foreground/70">
           One quiet space. No noise. No notifications.
         </p>
+
+        <div className="mt-4 rounded-2xl border border-border/70 bg-surface/60 backdrop-blur px-4 py-4 text-left">
+          <h2 className="text-base md:text-lg font-semibold tracking-tight">About RealTalk</h2>
+          <p className="mt-2 text-sm text-muted-foreground leading-relaxed">
+            RealTalk is a calm AI companion for people who feel stuck, overwhelmed, or caught in overthinking.
+            It helps you turn messy thoughts into clear next steps through guided reflection, practical planning,
+            and supportive conversations.
+          </p>
+
+          <div className="mt-3 grid gap-2 text-sm text-foreground/90">
+            <p>• Think more clearly when your mind feels noisy.</p>
+            <p>• Build simple action plans you can actually follow.</p>
+            <p>• Use vent mode to release emotions in a safe, judgment-free space.</p>
+            <p>• Track patterns over time with optional weekly insights.</p>
+          </div>
+
+          <p className="mt-3 text-sm text-muted-foreground leading-relaxed">
+            The goal is simple: less mental clutter, better decisions, and steady progress in your day-to-day life.
+          </p>
+        </div>
+
+        <div className="mt-4 rounded-2xl border border-border/70 bg-surface/60 backdrop-blur px-4 py-4 text-left">
+          <h3 className="text-sm md:text-base font-semibold tracking-tight">What RealTalk can help with</h3>
+          <div className="mt-3 flex items-center justify-center gap-2 sm:gap-3">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 rounded-full border border-border"
+              onClick={() =>
+                setHelpIndex((prev) => (prev - 1 + HELP_TOPICS.length) % HELP_TOPICS.length)
+              }
+              aria-label="Previous help topic"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+
+            <motion.div
+              key={currentHelpTopic}
+              initial={{ opacity: 0, scale: 0.9, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              transition={{ duration: 0.28, ease: "easeOut" }}
+              className="h-40 w-40 sm:h-44 sm:w-44 md:h-56 md:w-56 rounded-full border border-primary/40 bg-gradient-to-br from-primary/25 to-primary/10 shadow-[0_0_45px_-20px_rgba(147,51,234,0.8)] flex items-center justify-center text-center p-4 sm:p-6"
+            >
+              <p className="text-base md:text-xl font-black tracking-tight leading-tight text-foreground">
+                {currentHelpTopic}
+              </p>
+            </motion.div>
+
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 rounded-full border border-border"
+              onClick={() => setHelpIndex((prev) => (prev + 1) % HELP_TOPICS.length)}
+              aria-label="Next help topic"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+
+          <div className="mt-3 flex items-center justify-center gap-1.5">
+            {HELP_TOPICS.map((topic, i) => (
+              <span
+                key={topic}
+                className={`h-1.5 rounded-full transition-all ${
+                  i === helpIndex ? "w-6 bg-primary" : "w-2 bg-muted"
+                }`}
+              />
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-2xl border border-border/70 bg-surface/60 backdrop-blur px-4 py-4 text-left">
+          <h3 className="text-sm md:text-base font-semibold tracking-tight">How it works</h3>
+          <div className="mt-3 grid gap-2 text-sm">
+            <p><span className="font-semibold">1) Share what’s heavy:</span> say what’s on your mind in plain words.</p>
+            <p><span className="font-semibold">2) Get clarity:</span> RealTalk helps break down noise and identify what matters most.</p>
+            <p><span className="font-semibold">3) Move forward:</span> turn insight into small practical actions you can follow today.</p>
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-2xl border border-border/70 bg-surface/60 backdrop-blur px-4 py-4 text-left">
+          <h3 className="text-sm md:text-base font-semibold tracking-tight">Quick starts</h3>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {QUICK_STARTS.map((topic) => (
+              <button
+                key={topic}
+                type="button"
+                onClick={() => quickStart(topic)}
+                className="px-3 py-1.5 rounded-full text-xs sm:text-sm border border-border bg-background/70 hover:bg-primary/10 hover:border-primary/40 transition-colors"
+              >
+                {topic}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-2xl border border-border/70 bg-surface/60 backdrop-blur px-4 py-4 text-left">
+          <h3 className="text-sm md:text-base font-semibold tracking-tight">Safety & trust</h3>
+          <div className="mt-2 grid gap-2 text-sm text-muted-foreground">
+            <p>• You control what you share and can choose whether monitoring/insights are enabled.</p>
+            <p>• RealTalk is designed for clarity and support, not judgment.</p>
+            <p>• In emergencies or crisis situations, contact local emergency or crisis services immediately.</p>
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-2xl border border-primary/25 bg-primary/10 px-4 py-5 text-center">
+          <p className="text-base md:text-lg font-semibold">Ready to turn overthinking into action?</p>
+          <p className="mt-1 text-sm text-muted-foreground">Start with one conversation and walk away with a clearer next step.</p>
+          <div className="mt-3 flex items-center justify-center">
+            <Link to="/auth">
+              <Button onClick={() => trackEvent("signup_started", { source: "mid_page_cta" })}>Create your free account</Button>
+            </Link>
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-2xl border border-border/70 bg-surface/60 backdrop-blur px-4 py-4 text-left">
+          <h3 className="text-sm md:text-base font-semibold tracking-tight">Frequently asked questions</h3>
+          <Accordion type="single" collapsible className="mt-2">
+            <AccordionItem value="q1">
+              <AccordionTrigger>Is RealTalk free?</AccordionTrigger>
+              <AccordionContent>
+                Yes, you can start with a free account and use core conversation features.
+              </AccordionContent>
+            </AccordionItem>
+            <AccordionItem value="q2">
+              <AccordionTrigger>Is my data private?</AccordionTrigger>
+              <AccordionContent>
+                Your conversations are tied to your account, and insight monitoring is optional and user-controlled.
+              </AccordionContent>
+            </AccordionItem>
+            <AccordionItem value="q3">
+              <AccordionTrigger>Can it replace therapy or emergency support?</AccordionTrigger>
+              <AccordionContent>
+                No. RealTalk is a support tool, not a replacement for licensed care or crisis response.
+              </AccordionContent>
+            </AccordionItem>
+            <AccordionItem value="q4">
+              <AccordionTrigger>Can I save chats and plans?</AccordionTrigger>
+              <AccordionContent>
+                Yes. Signed-in users can keep conversations and save plans for follow-through.
+              </AccordionContent>
+            </AccordionItem>
+            <AccordionItem value="q5">
+              <AccordionTrigger>What are weekly insights?</AccordionTrigger>
+              <AccordionContent>
+                Optional summaries that highlight emotional and overthinking patterns across your recent chats.
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
+        </div>
+
+        <div className="mt-4 pb-3 text-center">
+          <p className="text-sm text-muted-foreground">Less mental clutter. Better decisions. Consistent progress.</p>
+          <div className="mt-3 flex items-center justify-center gap-2">
+            <Link to="/auth">
+              <Button onClick={() => trackEvent("signup_started", { source: "final_cta_sign_up" })}>Sign up free</Button>
+            </Link>
+            <Link to="/auth">
+              <Button variant="ghost" onClick={() => trackEvent("cta_clicked", { cta: "final_cta_log_in" })}>
+                Log in
+              </Button>
+            </Link>
+          </div>
+          <p className="mt-4 text-xs text-muted-foreground/80">
+            © ™ 2026 RealTalk LTD. All Rights Reserved.
+          </p>
+        </div>
       </motion.div>
+      </section>
     </div>
   );
 }
