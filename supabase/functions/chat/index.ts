@@ -383,6 +383,85 @@ const isEmotionalRequest = (text: string): boolean => {
   return hasEmotionalKeyword || hasRelationalKeyword;
 };
 
+const isVentingRequest = (text: string): boolean => {
+  const lower = text.toLowerCase();
+
+  const explicitVentSignals = [
+    "i need to vent",
+    "need to vent",
+    "i want to vent",
+    "want to vent",
+    "let me vent",
+    "just listen",
+    "just hear me out",
+    "no advice",
+    "don't give advice",
+    "dont give advice",
+    "not looking for advice",
+    "i want to rant",
+    "rant",
+    "get this off my chest",
+    "off my chest",
+    "i need to let this out",
+    "let this out",
+  ];
+
+  if (explicitVentSignals.some((s) => lower.includes(s))) return true;
+
+  const ventIntentSignals = [
+    "i just need to talk",
+    "i just need someone to listen",
+    "can i talk",
+    "can i vent",
+    "i need to get this out",
+    "i need to talk about this",
+    "i'm spiraling",
+    "im spiraling",
+    "i'm losing it",
+    "im losing it",
+    "i can't do this anymore",
+    "i cant do this anymore",
+    "this is too much",
+  ];
+
+  const distressSignals = [
+    "overwhelmed",
+    "drained",
+    "exhausted",
+    "burnt out",
+    "burned out",
+    "stressed",
+    "hurt",
+    "angry",
+    "frustrated",
+    "upset",
+    "heartbroken",
+    "betrayed",
+    "anxious",
+    "panicking",
+    "can't cope",
+    "cant cope",
+  ];
+
+  const noSolutionSignals = [
+    "i don't know what to do",
+    "i dont know what to do",
+    "i can't even think",
+    "i cant even think",
+    "i don't need solutions",
+    "i dont need solutions",
+    "not asking for solutions",
+    "don't fix it",
+    "dont fix it",
+  ];
+
+  const intentHit = ventIntentSignals.some((s) => lower.includes(s));
+  const distressCount = distressSignals.reduce((acc, s) => acc + (lower.includes(s) ? 1 : 0), 0);
+  const noSolutionHit = noSolutionSignals.some((s) => lower.includes(s));
+
+  return intentHit || noSolutionHit || distressCount >= 2;
+};
+
 const latestUserContent = (messages: Array<{ role: string; content: string }>): string => {
   for (let i = messages.length - 1; i >= 0; i--) {
     if (messages[i]?.role === "user" && messages[i]?.content) return messages[i].content;
@@ -521,7 +600,7 @@ serve(async (req) => {
 
     const lastUserMessage = latestUserContent(messages ?? []);
     const planningRequested = forcePlan || isPlanningRequest(lastUserMessage);
-    const ventMode = Boolean(forceVent);
+    const ventMode = Boolean(forceVent) || isVentingRequest(lastUserMessage);
     const emotionalRequested = ventMode || isEmotionalRequest(lastUserMessage);
     const practicalRequested = planningRequested || isPracticalLogicRequest(lastUserMessage);
     const logicalExecutionRequested = isLogicalExecutionRequest(lastUserMessage);

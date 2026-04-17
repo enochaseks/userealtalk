@@ -277,12 +277,18 @@ export function Chat() {
 
   const shouldUseVentMode = (text: string): boolean => {
     const lower = text.toLowerCase();
-    const ventSignals = [
+    const explicitVentSignals = [
       "i need to vent",
       "need to vent",
+      "i want to vent",
+      "want to vent",
       "let me vent",
       "just listen",
+      "just hear me out",
       "no advice",
+      "don't give advice",
+      "dont give advice",
+      "not looking for advice",
       "i want to rant",
       "rant",
       "get this off my chest",
@@ -290,7 +296,66 @@ export function Chat() {
       "i need to let this out",
       "let this out",
     ];
-    return ventSignals.some((signal) => lower.includes(signal));
+
+    if (explicitVentSignals.some((signal) => lower.includes(signal))) return true;
+
+    const ventIntentSignals = [
+      "i just need to talk",
+      "i just need someone to listen",
+      "can i talk",
+      "can i vent",
+      "i need to get this out",
+      "i need to say this",
+      "i need to talk about this",
+      "i'm spiraling",
+      "im spiraling",
+      "i'm losing it",
+      "im losing it",
+      "i can't do this anymore",
+      "i cant do this anymore",
+      "i'm done",
+      "im done",
+      "this is too much",
+      "i feel like i'm breaking",
+      "i feel like im breaking",
+    ];
+
+    const distressSignals = [
+      "overwhelmed",
+      "drained",
+      "exhausted",
+      "burnt out",
+      "burned out",
+      "stressed",
+      "hurt",
+      "angry",
+      "frustrated",
+      "upset",
+      "heartbroken",
+      "betrayed",
+      "anxious",
+      "panicking",
+      "can't cope",
+      "cant cope",
+    ];
+
+    const noSolutionSignals = [
+      "i don't know what to do",
+      "i dont know what to do",
+      "i can't even think",
+      "i cant even think",
+      "i don't need solutions",
+      "i dont need solutions",
+      "not asking for solutions",
+      "don't fix it",
+      "dont fix it",
+    ];
+
+    const intentHit = ventIntentSignals.some((s) => lower.includes(s));
+    const distressCount = distressSignals.reduce((acc, s) => acc + (lower.includes(s) ? 1 : 0), 0);
+    const noSolutionHit = noSolutionSignals.some((s) => lower.includes(s));
+
+    return intentHit || noSolutionHit || distressCount >= 2;
   };
 
   const isBusinessMarketingPrompt = (text: string): boolean => {
