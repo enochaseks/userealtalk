@@ -42,35 +42,35 @@
   --radius: 0.875rem;
 
   --background: oklch(0.18 0.006 240);
-  --foreground: oklch(0.94 0.005 90);
+  --foreground: #dce9ff;
 
   --surface: oklch(0.215 0.006 240);
   --surface-elevated: oklch(0.245 0.007 240);
 
   --card: oklch(0.215 0.006 240);
-  --card-foreground: oklch(0.94 0.005 90);
+  --card-foreground: #dce9ff;
   --popover: oklch(0.22 0.006 240);
-  --popover-foreground: oklch(0.94 0.005 90);
+  --popover-foreground: #dce9ff;
 
-  /* sage / muted green accent */
-  --primary: oklch(0.78 0.06 155);
-  --primary-foreground: oklch(0.18 0.01 240);
+  /* Logo highlights: rgb(4,143,253) + rgb(194,143,253) */
+  --primary: #048ffd;
+  --primary-foreground: #001939;
 
   --secondary: oklch(0.27 0.007 240);
-  --secondary-foreground: oklch(0.94 0.005 90);
+  --secondary-foreground: #dce9ff;
 
   --muted: oklch(0.245 0.006 240);
-  --muted-foreground: oklch(0.66 0.01 240);
+  --muted-foreground: #b8c9e8;
 
-  --accent: oklch(0.78 0.06 155);
-  --accent-foreground: oklch(0.18 0.01 240);
+  --accent: #c28ffd;
+  --accent-foreground: #001939;
 
   --destructive: oklch(0.62 0.18 25);
   --destructive-foreground: oklch(0.98 0 0);
 
   --border: oklch(0.3 0.006 240);
   --input: oklch(0.27 0.006 240);
-  --ring: oklch(0.78 0.06 155);
+  --ring: #048ffd;
 }
 
 @layer base {
