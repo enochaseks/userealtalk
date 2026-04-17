@@ -17,6 +17,17 @@ export const Route = createFileRoute("/profile")({
 
 type Plan = { id: string; title: string; content: string; created_at: string };
 type Conv = { id: string; title: string; updated_at: string };
+type Insight = {
+  id: string;
+  conversation_id: string;
+  week_start: string;
+  emotion_trend: string;
+  thought_patterns: string;
+  calm_progress: string;
+  overthinking_reduction: string;
+  ai_help_summary: string;
+  updated_at: string;
+};
 
 function ProfilePage() {
   const { user, loading, signOut } = useAuth();
@@ -24,7 +35,9 @@ function ProfilePage() {
   const [tab, setTab] = useState<"plans" | "chats" | "insights" | "settings">("plans");
   const [plans, setPlans] = useState<Plan[]>([]);
   const [convs, setConvs] = useState<Conv[]>([]);
+  const [insights, setInsights] = useState<Insight[]>([]);
   const [openPlan, setOpenPlan] = useState<Plan | null>(null);
+  const [insightMonitoringEnabled, setInsightMonitoringEnabled] = useState(false);
   const [autoPdfEnabled, setAutoPdfEnabled] = useState(() => {
     if (typeof window !== "undefined") {
       return localStorage.getItem("autoPdfSave") !== "false";
@@ -38,8 +51,32 @@ function ProfilePage() {
 
   useEffect(() => {
     if (!user) return;
-    supabase.from("plans").select("*").order("created_at", { ascending: false }).then(({ data }) => setPlans(data ?? []));
-    supabase.from("conversations").select("id,title,updated_at").order("updated_at", { ascending: false }).then(({ data }) => setConvs(data ?? []));
+    supabase
+      .from("plans")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .then(({ data }) => setPlans(data ?? []));
+    supabase
+      .from("conversations")
+      .select("id,title,updated_at")
+      .order("updated_at", { ascending: false })
+      .then(({ data }) => setConvs(data ?? []));
+
+    supabase
+      .from("user_insight_settings")
+      .select("monitor_enabled")
+      .eq("user_id", user.id)
+      .maybeSingle()
+      .then(({ data }) => setInsightMonitoringEnabled(Boolean(data?.monitor_enabled)));
+
+    supabase
+      .from("conversation_weekly_insights")
+      .select(
+        "id,conversation_id,week_start,emotion_trend,thought_patterns,calm_progress,overthinking_reduction,ai_help_summary,updated_at",
+      )
+      .order("week_start", { ascending: false })
+      .order("updated_at", { ascending: false })
+      .then(({ data }) => setInsights(data ?? []));
   }, [user]);
 
   if (!user) return null;
@@ -69,6 +106,25 @@ function ProfilePage() {
     toast.success(enabled ? "PDF auto-save enabled" : "PDF auto-save disabled");
   };
 
+  const toggleInsightMonitoring = async (enabled: boolean) => {
+    if (!user) return;
+    setInsightMonitoringEnabled(enabled);
+
+    const { error } = await supabase.from("user_insight_settings").upsert({
+      user_id: user.id,
+      monitor_enabled: enabled,
+      updated_at: new Date().toISOString(),
+    });
+
+    if (error) {
+      setInsightMonitoringEnabled(!enabled);
+      toast.error("Failed to update insight monitoring setting");
+      return;
+    }
+
+    toast.success(enabled ? "Weekly insights monitoring enabled" : "Weekly insights monitoring disabled");
+  };
+
   return (
     <div className="flex-1 max-w-3xl w-full mx-auto px-5 py-10">
       <div className="flex items-end justify-between mb-8">
@@ -76,7 +132,9 @@ function ProfilePage() {
           <h1 className="font-serif text-3xl tracking-tight">Your space</h1>
           <p className="text-sm text-muted-foreground mt-1">{user.email}</p>
         </div>
-        <Button variant="ghost" size="sm" onClick={signOut}>Sign out</Button>
+        <Button variant="ghost" size="sm" onClick={signOut}>
+          Sign out
+        </Button>
       </div>
 
       <div className="flex gap-1 border-b border-border mb-6 -mx-1">
@@ -89,7 +147,12 @@ function ProfilePage() {
             }`}
           >
             {t}
-            {tab === t && <motion.div layoutId="tab-underline" className="absolute left-0 right-0 -bottom-px h-px bg-primary" />}
+            {tab === t && (
+              <motion.div
+                layoutId="tab-underline"
+                className="absolute left-0 right-0 -bottom-px h-px bg-primary"
+              />
+            )}
           </button>
         ))}
       </div>
@@ -106,7 +169,9 @@ function ProfilePage() {
               className="w-full text-left rounded-xl border border-border bg-surface/60 hover:bg-surface-elevated transition-colors p-5"
             >
               <div className="font-serif text-lg">{p.title}</div>
-              <div className="text-xs text-muted-foreground mt-1">{new Date(p.created_at).toLocaleDateString()}</div>
+              <div className="text-xs text-muted-foreground mt-1">
+                {new Date(p.created_at).toLocaleDateString()}
+              </div>
               <p className="text-sm text-muted-foreground mt-2 line-clamp-2 whitespace-pre-line">
                 {p.content.replace(/[#*_`>]/g, "").trim()}
               </p>
@@ -126,14 +191,57 @@ function ProfilePage() {
               className="block rounded-xl border border-border bg-surface/60 hover:bg-surface-elevated transition-colors p-4"
             >
               <div className="text-sm">{c.title}</div>
-              <div className="text-xs text-muted-foreground mt-1">{new Date(c.updated_at).toLocaleString()}</div>
+              <div className="text-xs text-muted-foreground mt-1">
+                {new Date(c.updated_at).toLocaleString()}
+              </div>
             </Link>
           ))}
         </div>
       )}
 
       {tab === "insights" && (
-        <EmptyState text="Insights coming soon — RealTalk will surface patterns it notices in how you think." />
+        <div className="space-y-3">
+          {!insightMonitoringEnabled && (
+            <EmptyState text="Turn on Insights Monitoring in Settings to start receiving weekly emotional and thinking-pattern insights." />
+          )}
+          {insightMonitoringEnabled && insights.length === 0 && (
+            <EmptyState text="No weekly insights yet. Keep chatting and check back this week." />
+          )}
+          {insightMonitoringEnabled &&
+            insights.map((insight) => {
+              const conv = convs.find((c) => c.id === insight.conversation_id);
+              return (
+                <div key={insight.id} className="rounded-xl border border-border bg-surface/60 p-5">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold">Week of {new Date(insight.week_start).toLocaleDateString()}</div>
+                      <div className="text-xs text-muted-foreground mt-0.5">
+                        {conv?.title ?? "Conversation"}
+                      </div>
+                    </div>
+                    <Link
+                      to="/"
+                      search={{ c: insight.conversation_id } as never}
+                      className="text-xs text-primary hover:underline"
+                    >
+                      Open chat
+                    </Link>
+                  </div>
+
+                  <div className="mt-4 space-y-3 text-sm">
+                    <InsightRow title="Emotion trend" value={insight.emotion_trend} />
+                    <InsightRow title="Thought patterns" value={insight.thought_patterns} />
+                    <InsightRow title="Calm progress" value={insight.calm_progress} />
+                    <InsightRow
+                      title="Overthinking reduction"
+                      value={insight.overthinking_reduction}
+                    />
+                    <InsightRow title="How RealTalk helped" value={insight.ai_help_summary} />
+                  </div>
+                </div>
+              );
+            })}
+        </div>
       )}
 
       {tab === "settings" && (
@@ -141,8 +249,27 @@ function ProfilePage() {
           <div className="rounded-xl border border-border bg-surface/60 p-5">
             <div className="flex items-center justify-between">
               <div>
-                <Label className="text-sm font-semibold text-foreground cursor-pointer">Auto-save plans as PDF</Label>
-                <p className="text-xs text-muted-foreground mt-1">Automatically save plans as PDF files when you click "Save as Plan"</p>
+                <Label className="text-sm font-semibold text-foreground cursor-pointer">
+                  Weekly insights monitoring
+                </Label>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Allow RealTalk to analyze conversation patterns weekly and surface emotional trends,
+                  thought loops, and progress toward calmer thinking.
+                </p>
+              </div>
+              <Switch checked={insightMonitoringEnabled} onCheckedChange={toggleInsightMonitoring} />
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-border bg-surface/60 p-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <Label className="text-sm font-semibold text-foreground cursor-pointer">
+                  Auto-save plans as PDF
+                </Label>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Automatically save plans as PDF files when you click "Save as Plan"
+                </p>
               </div>
               <Switch checked={autoPdfEnabled} onCheckedChange={toggleAutoPdf} />
             </div>
@@ -167,13 +294,22 @@ function ProfilePage() {
             </div>
             <div className="flex justify-between mt-6 pt-4 border-t border-border">
               <div className="flex gap-2">
-                <Button variant="ghost" size="sm" onClick={() => deletePlan(openPlan.id)}>Delete</Button>
-                <Button variant="ghost" size="sm" onClick={() => downloadPlanAsText(openPlan)} className="gap-1.5">
+                <Button variant="ghost" size="sm" onClick={() => deletePlan(openPlan.id)}>
+                  Delete
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => downloadPlanAsText(openPlan)}
+                  className="gap-1.5"
+                >
                   <Download className="h-3.5 w-3.5" />
                   Download
                 </Button>
               </div>
-              <Button variant="secondary" size="sm" onClick={() => setOpenPlan(null)}>Close</Button>
+              <Button variant="secondary" size="sm" onClick={() => setOpenPlan(null)}>
+                Close
+              </Button>
             </div>
           </motion.div>
         </div>
@@ -186,6 +322,15 @@ function EmptyState({ text }: { text: string }) {
   return (
     <div className="rounded-xl border border-dashed border-border p-10 text-center text-sm text-muted-foreground">
       {text}
+    </div>
+  );
+}
+
+function InsightRow({ title, value }: { title: string; value: string }) {
+  return (
+    <div>
+      <div className="text-xs uppercase tracking-wide text-muted-foreground">{title}</div>
+      <p className="mt-1 text-foreground/90">{value}</p>
     </div>
   );
 }

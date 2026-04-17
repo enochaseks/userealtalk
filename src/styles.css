@@ -74,21 +74,30 @@
 }
 
 @layer base {
-  * { border-color: var(--color-border); }
-  html, body {
+  * {
+    border-color: var(--color-border);
+  }
+  html,
+  body {
     background-color: var(--color-background);
     color: var(--color-foreground);
     font-family: var(--font-sans);
     font-feature-settings: "ss01", "cv11";
     -webkit-font-smoothing: antialiased;
   }
-  ::selection { background: color-mix(in oklab, var(--primary) 35%, transparent); }
+  ::selection {
+    background: color-mix(in oklab, var(--primary) 35%, transparent);
+  }
 }
 
 /* Subtle ambient glow used on landing/auth */
 .realtalk-ambient {
   background:
-    radial-gradient(60% 50% at 50% 0%, color-mix(in oklab, var(--primary) 10%, transparent), transparent 70%),
+    radial-gradient(
+      60% 50% at 50% 0%,
+      color-mix(in oklab, var(--primary) 10%, transparent),
+      transparent 70%
+    ),
     var(--background);
 }
 
@@ -98,25 +107,45 @@
   line-height: 1.7;
   font-size: 0.97rem;
 }
-.prose-realtalk p { margin: 0 0 0.85rem; }
-.prose-realtalk strong { color: var(--color-foreground); font-weight: 600; }
-.prose-realtalk ul, .prose-realtalk ol { margin: 0.4rem 0 0.85rem; padding-left: 1.25rem; }
-.prose-realtalk li { margin: 0.25rem 0; }
-.prose-realtalk h1, .prose-realtalk h2, .prose-realtalk h3 {
+.prose-realtalk p {
+  margin: 0 0 0.85rem;
+}
+.prose-realtalk strong {
+  color: var(--color-foreground);
+  font-weight: 600;
+}
+.prose-realtalk ul,
+.prose-realtalk ol {
+  margin: 0.4rem 0 0.85rem;
+  padding-left: 1.25rem;
+}
+.prose-realtalk li {
+  margin: 0.25rem 0;
+}
+.prose-realtalk h1,
+.prose-realtalk h2,
+.prose-realtalk h3 {
   font-family: var(--font-serif);
   font-weight: 400;
   letter-spacing: -0.01em;
   margin: 1rem 0 0.5rem;
 }
-.prose-realtalk h2 { font-size: 1.25rem; }
-.prose-realtalk h3 { font-size: 1.1rem; }
+.prose-realtalk h2 {
+  font-size: 1.25rem;
+}
+.prose-realtalk h3 {
+  font-size: 1.1rem;
+}
 .prose-realtalk code {
   background: var(--color-muted);
   padding: 0.1rem 0.35rem;
   border-radius: 0.3rem;
   font-size: 0.85em;
 }
-.prose-realtalk hr { border-color: var(--color-border); margin: 1rem 0; }
+.prose-realtalk hr {
+  border-color: var(--color-border);
+  margin: 1rem 0;
+}
 
 /* Caret blink for streaming */
 .caret::after {
@@ -125,4 +154,8 @@
   opacity: 0.6;
   animation: rt-blink 1s steps(1) infinite;
 }
-@keyframes rt-blink { 50% { opacity: 0; } }
+@keyframes rt-blink {
+  50% {
+    opacity: 0;
+  }
+}

@@ -1,18 +1,22 @@
-import { Outlet, createRootRoute, HeadContent, Scripts, Link, useRouterState, useNavigate } from "@tanstack/react-router";
+import {
+  Outlet,
+  createRootRoute,
+  HeadContent,
+  Scripts,
+  Link,
+  useRouterState,
+  useNavigate,
+} from "@tanstack/react-router";
 import appCss from "../styles.css?url";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { Toaster } from "@/components/ui/sonner";
 import logo from "../assets/logo.png";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Menu, Trash2 } from "lucide-react";
-import {
-  Sheet,
-  SheetContent,
-  SheetTrigger,
-} from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
 export const Route = createRootRoute({
   head: () => ({
@@ -20,17 +24,27 @@ export const Route = createRootRoute({
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "RealTalk — Think clearly. Decide better." },
-      { name: "description", content: "RealTalk is a calm AI companion that helps you reduce overthinking, find clarity, and turn your thoughts into clear plans." },
+      {
+        name: "description",
+        content:
+          "RealTalk is a calm AI companion that helps you reduce overthinking, find clarity, and turn your thoughts into clear plans.",
+      },
       { name: "author", content: "RealTalk" },
       { property: "og:title", content: "RealTalk — Think clearly. Decide better." },
-      { property: "og:description", content: "A calm AI companion for clarity and better decisions." },
+      {
+        property: "og:description",
+        content: "A calm AI companion for clarity and better decisions.",
+      },
       { property: "og:type", content: "website" },
     ],
     links: [
       { rel: "stylesheet", href: appCss },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "" },
-      { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" },
+      {
+        rel: "stylesheet",
+        href: "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap",
+      },
     ],
   }),
   shellComponent: RootShell,
@@ -41,7 +55,9 @@ export const Route = createRootRoute({
 function RootShell({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className="dark">
-      <head><HeadContent /></head>
+      <head>
+        <HeadContent />
+      </head>
       <body>
         {children}
         <Scripts />
@@ -86,19 +102,36 @@ function TopNav() {
   const [conversations, setConversations] = useState<Array<{ id: string; title: string }>>([]);
   const [open, setOpen] = useState(false);
 
+  const loadConversations = useCallback(async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from("conversations")
+      .select("id, title")
+      .eq("user_id", user.id)
+      .order("updated_at", { ascending: false })
+      .limit(10);
+    if (data) setConversations(data);
+  }, [user]);
+
   useEffect(() => {
     if (!user) return;
-    const loadConversations = async () => {
-      const { data } = await supabase
-        .from("conversations")
-        .select("id, title")
-        .eq("user_id", user.id)
-        .order("updated_at", { ascending: false })
-        .limit(10);
-      if (data) setConversations(data);
-    };
+
     loadConversations();
-  }, [user]);
+
+    const refreshConversations = () => {
+      loadConversations();
+    };
+
+    window.addEventListener("conversationCreated", refreshConversations);
+    window.addEventListener("conversationDeleted", refreshConversations);
+    window.addEventListener("conversationUpdated", refreshConversations);
+
+    return () => {
+      window.removeEventListener("conversationCreated", refreshConversations);
+      window.removeEventListener("conversationDeleted", refreshConversations);
+      window.removeEventListener("conversationUpdated", refreshConversations);
+    };
+  }, [user, loadConversations]);
 
   const deleteConversation = async (convId: string) => {
     if (!user) return;
@@ -132,15 +165,18 @@ function TopNav() {
             </SheetTrigger>
             <SheetContent side="left" className="w-64">
               <div className="py-4">
-                <h2 className="px-4 text-sm font-semibold text-foreground mb-4">Past Conversations</h2>
+                <h2 className="px-4 text-sm font-semibold text-foreground mb-4">
+                  Past Conversations
+                </h2>
                 {conversations.length === 0 ? (
-                  <div className="px-4 text-sm text-muted-foreground">
-                    No conversations yet
-                  </div>
+                  <div className="px-4 text-sm text-muted-foreground">No conversations yet</div>
                 ) : (
                   <nav className="flex flex-col gap-1">
                     {conversations.map((conv) => (
-                      <div key={conv.id} className="group flex items-center gap-2 px-2 py-1 hover:bg-surface rounded-md transition-colors">
+                      <div
+                        key={conv.id}
+                        className="group flex items-center gap-2 px-2 py-1 hover:bg-surface rounded-md transition-colors"
+                      >
                         <button
                           onClick={() => navigateToConversation(conv.id)}
                           className="flex-1 px-2 py-1 text-left text-sm text-muted-foreground hover:text-foreground truncate"
@@ -193,7 +229,10 @@ function NotFound() {
       <div className="text-center">
         <h1 className="font-serif text-6xl">404</h1>
         <p className="mt-3 text-muted-foreground">This page drifted off.</p>
-        <Link to="/" className="inline-block mt-6 text-primary hover:underline flex items-center gap-2">
+        <Link
+          to="/"
+          className="inline-block mt-6 text-primary hover:underline flex items-center gap-2"
+        >
           <img src={logo} alt="RealTalk" className="h-5 w-auto" />
           Back home
         </Link>

@@ -19,12 +19,14 @@ export function Landing() {
           <span className="italic text-primary">Decide better.</span>
         </div>
         <p className="mt-6 text-muted-foreground text-base md:text-lg leading-relaxed">
-          RealTalk is a calm AI companion that helps you cut through overthinking,
-          find clarity, and turn what's on your mind into clear plans.
+          RealTalk is a calm AI companion that helps you cut through overthinking, find clarity, and
+          turn what's on your mind into clear plans.
         </p>
         <div className="mt-10 flex items-center justify-center gap-3">
           <Link to="/auth">
-            <Button size="lg" className="rounded-full px-7">Start thinking</Button>
+            <Button size="lg" className="rounded-full px-7">
+              Start thinking
+            </Button>
           </Link>
         </div>
         <p className="mt-12 text-xs text-muted-foreground/70">

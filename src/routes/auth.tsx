@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
+import logo from "../assets/logo.png";
 
 export const Route = createFileRoute("/auth")({
   component: AuthPage,
@@ -28,7 +29,8 @@ function AuthPage() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
-    const { error } = mode === "signin" ? await signIn(email, password) : await signUp(email, password);
+    const { error } =
+      mode === "signin" ? await signIn(email, password) : await signUp(email, password);
     setBusy(false);
     if (error) {
       toast.error(error);
@@ -47,7 +49,7 @@ function AuthPage() {
         className="w-full max-w-sm"
       >
         <Link to="/" className="block text-center mb-10">
-          <span className="font-serif text-3xl tracking-tight">RealTalk</span>
+          <img src={logo} alt="RealTalk" className="h-40 w-auto mx-auto" />
         </Link>
 
         <div className="rounded-2xl border border-border bg-surface/60 backdrop-blur p-6">
@@ -55,17 +57,32 @@ function AuthPage() {
             {mode === "signin" ? "Welcome back." : "Create your space."}
           </h1>
           <p className="text-sm text-muted-foreground mb-6">
-            {mode === "signin" ? "A quiet place to think out loud." : "Start thinking clearly in seconds."}
+            {mode === "signin"
+              ? "A quiet place to think out loud."
+              : "Start thinking clearly in seconds."}
           </p>
 
           <form onSubmit={submit} className="space-y-4">
             <div className="space-y-1.5">
               <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+              <Input
+                id="email"
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="password">Password</Label>
-              <Input id="password" type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} />
+              <Input
+                id="password"
+                type="password"
+                required
+                minLength={6}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
             </div>
             <Button type="submit" disabled={busy} className="w-full">
               {busy ? "…" : mode === "signin" ? "Sign in" : "Create account"}

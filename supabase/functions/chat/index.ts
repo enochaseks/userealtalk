@@ -36,52 +36,276 @@ Never mention these modes or call yourself an AI. You are RealTalk — a thinkin
 
 const REAL_MODE = `\n\nThe user has asked you to "be real with them." Drop softening language. Be direct, honest, and unflinching while still respectful. Stay concise — bluntness works best in short, sharp sentences, not long lectures.`;
 
+const THINK_DEEPLY_MODE = `\n\nThis user prompt is more complex. Before you answer, reason carefully and verify your logic internally. Do not reveal your private chain-of-thought. Give only a clear, concise final answer, and when useful, briefly include why that recommendation is best.`;
+
+const PLANNING_MODE = `\n\nThe user is asking for planning help. Build plans only after understanding their real goal and constraints.
+- If key details are missing (budget, timeline, location, current situation), ask 1 focused question first.
+- When enough context exists, provide a practical plan with clear steps, timeline, and priorities.
+- Keep it realistic, specific, and adapted to the user's stated situation.
+- If external facts matter (prices, regulations, market context), use provided research context carefully and note uncertainty briefly when needed.`;
+
+const VENT_MODE_BASE = `\n\nThe user is venting. Your first job is to understand and emotionally validate what they shared.
+- Do not minimize or judge.
+- Reflect key feelings and what seems to be hurting them most.
+- Keep tone calm, human, and grounded.
+- Keep responses concise unless asked for depth.`;
+
+const VENT_NO_ADVICE = `\n\nThe user asked for NO advice. Only listen, validate, and reflect back what you heard. End with a gentle check-in question.`;
+const VENT_REFLECT = `\n\nThe user wants reflection, not direct advice. Summarize core issues and patterns clearly. You may ask one clarifying question.`;
+const VENT_ADVICE = `\n\nThe user is open to advice. After validating feelings, give practical and realistic advice with 2-4 clear next steps.`;
+
+const isPlanningRequest = (text: string): boolean => {
+  const lower = text.toLowerCase();
+  const planningKeywords = [
+    "plan",
+    "roadmap",
+    "strategy",
+    "steps",
+    "timeline",
+    "budget",
+    "launch",
+    "start my",
+    "grow my",
+    "marketing plan",
+    "action plan",
+    "next steps",
+    "what should i do",
+  ];
+  return planningKeywords.some((k) => lower.includes(k));
+};
+
+const latestUserContent = (messages: Array<{ role: string; content: string }>): string => {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]?.role === "user" && messages[i]?.content) return messages[i].content;
+  }
+  return "";
+};
+
+const buildSearchQuery = (text: string): string => {
+  return text
+    .replace(/\s+/g, " ")
+    .replace(/[\n\r\t]/g, " ")
+    .trim()
+    .slice(0, 180);
+};
+
+const fetchGoogleCseResults = async (query: string): Promise<string[]> => {
+  const GOOGLE_API_KEY = Deno.env.get("GOOGLE_API_KEY");
+  const GOOGLE_CSE_ID = Deno.env.get("GOOGLE_CSE_ID");
+  if (!GOOGLE_API_KEY || !GOOGLE_CSE_ID) return [];
+
+  const url = `https://www.googleapis.com/customsearch/v1?key=${encodeURIComponent(GOOGLE_API_KEY)}&cx=${encodeURIComponent(GOOGLE_CSE_ID)}&q=${encodeURIComponent(query)}&num=5`;
+  const resp = await fetch(url);
+  if (!resp.ok) return [];
+
+  const data = await resp.json();
+  const items = Array.isArray(data?.items) ? data.items : [];
+
+  return items
+    .slice(0, 5)
+    .map((item: any, idx: number) => {
+      const title = item?.title ?? "Untitled";
+      const snippet = item?.snippet ?? "";
+      const link = item?.link ?? "";
+      return `${idx + 1}. ${title}\n${snippet}\n${link}`.trim();
+    })
+    .filter(Boolean);
+};
+
+const fetchDuckDuckGoResults = async (query: string): Promise<string[]> => {
+  const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
+  const resp = await fetch(url);
+  if (!resp.ok) return [];
+
+  const data = await resp.json();
+  const out: string[] = [];
+
+  if (data?.AbstractText) {
+    out.push(`1. ${data.Heading || "Overview"}\n${data.AbstractText}\n${data.AbstractURL || ""}`.trim());
+  }
+
+  const related = Array.isArray(data?.RelatedTopics) ? data.RelatedTopics : [];
+  let i = out.length + 1;
+  for (const topic of related) {
+    if (i > 5) break;
+    if (topic?.Text) {
+      out.push(`${i}. ${topic.Text}\n${topic.FirstURL || ""}`.trim());
+      i++;
+    } else if (Array.isArray(topic?.Topics)) {
+      for (const nested of topic.Topics) {
+        if (i > 5) break;
+        if (nested?.Text) {
+          out.push(`${i}. ${nested.Text}\n${nested.FirstURL || ""}`.trim());
+          i++;
+        }
+      }
+    }
+  }
+
+  return out;
+};
+
+const getResearchContext = async (query: string): Promise<string> => {
+  if (!query) return "";
+
+  const googleResults = await fetchGoogleCseResults(query);
+  const results = googleResults.length > 0 ? googleResults : await fetchDuckDuckGoResults(query);
+  if (results.length === 0) return "";
+
+  return [
+    "Web research notes for this request:",
+    ...results,
+    "Use these as supporting context, not absolute truth. If data is uncertain or location-specific, say that briefly.",
+  ].join("\n\n");
+};
+
+const getThinkingTime = (text: string, thinkDeeply: boolean): number => {
+  if (!thinkDeeply) return 0;
+  
+  const lower = text.toLowerCase();
+  const complexitySignals = [
+    "compare",
+    "tradeoff",
+    "strategy",
+    "analyze",
+    "evaluation",
+    "decision",
+    "complex",
+    "deeply",
+    "pros and cons",
+  ];
+  
+  const signalCount = complexitySignals.reduce(
+    (count, signal) => count + (lower.includes(signal) ? 1 : 0),
+    0,
+  );
+  
+  const length = text.length;
+  const questionCount = (text.match(/\?/g) || []).length;
+  
+  // Base 1.5-2 seconds, up to 5 seconds for very complex questions
+  let time = 1500;
+  time += signalCount * 800; // +0.8s per complexity signal
+  time += length > 300 ? 1000 : 0; // +1s if very long
+  time += questionCount > 2 ? 1500 : 0; // +1.5s if multiple questions
+  
+  return Math.min(time, 5000); // Cap at 5 seconds
+};
+
+const getVentReadTime = (text: string, ventMode: boolean): number => {
+  if (!ventMode) return 0;
+
+  const len = text.trim().length;
+  // 2.2s to 7s range based on length
+  const computed = 2200 + Math.min(4800, Math.floor(len * 10));
+  return Math.min(computed, 7000);
+};
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { messages, beReal } = await req.json();
+    const { messages, beReal, thinkDeeply, forcePlan, forceVent, ventAdviceMode } = await req.json();
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY missing");
 
-    const system = SYSTEM_BASE + (beReal ? REAL_MODE : "");
+    const lastUserMessage = latestUserContent(messages ?? []);
+    const planningRequested = forcePlan || isPlanningRequest(lastUserMessage);
+    const thinkingTime = getThinkingTime(lastUserMessage, thinkDeeply);
+    const ventMode = Boolean(forceVent);
+    const ventReadTime = getVentReadTime(lastUserMessage, ventMode);
+    const totalReadTime = Math.max(thinkingTime, ventReadTime);
+    const ventAdviceInstruction = ventMode
+      ? ventAdviceMode === "advice"
+        ? VENT_ADVICE
+        : ventAdviceMode === "reflect"
+          ? VENT_REFLECT
+          : VENT_NO_ADVICE
+      : "";
+    const system =
+      SYSTEM_BASE +
+      (beReal ? REAL_MODE : "") +
+      (thinkDeeply ? THINK_DEEPLY_MODE : "") +
+      (planningRequested ? PLANNING_MODE : "") +
+      (ventMode ? VENT_MODE_BASE : "") +
+      ventAdviceInstruction;
 
-    const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
-        messages: [{ role: "system", content: system }, ...messages],
-        stream: true,
-      }),
-    });
+    const researchQuery = planningRequested ? buildSearchQuery(lastUserMessage) : "";
+    const researchContext = planningRequested ? await getResearchContext(researchQuery) : "";
 
-    if (!resp.ok) {
-      if (resp.status === 429)
-        return new Response(JSON.stringify({ error: "Rate limit reached. Take a breath and try again in a moment." }), {
-          status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      if (resp.status === 402)
-        return new Response(JSON.stringify({ error: "AI credits exhausted. Add credits in Settings → Workspace → Usage." }), {
-          status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      const t = await resp.text();
-      console.error("AI error", resp.status, t);
-      return new Response(JSON.stringify({ error: "AI gateway error" }), {
-        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    const systemMessages = [{ role: "system", content: system }];
+    if (researchContext) {
+      systemMessages.push({ role: "system", content: researchContext });
     }
 
-    return new Response(resp.body, {
+    // Create a writable stream encoder for custom event streaming
+    const encoder = new TextEncoder();
+    
+    const customStream = new ReadableStream({
+      async start(controller) {
+        // Stream reading/thinking phase if enabled
+        if (totalReadTime > 0) {
+          const startEvent = {
+            event: "thinking_start",
+            label: ventMode ? "Reading carefully..." : "🤔 Thinking...",
+          };
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(startEvent)}\n\n`));
+          
+          await new Promise((resolve) => setTimeout(resolve, totalReadTime));
+          
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ event: "thinking_end" })}\n\n`));
+        }
+        
+        // Now fetch and stream the actual response
+        try {
+          const aiResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${LOVABLE_API_KEY}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "google/gemini-3-flash-preview",
+              messages: [...systemMessages, ...messages],
+              stream: true,
+            }),
+          });
+          
+          if (!aiResp.ok || !aiResp.body) {
+            const errJson = await aiResp.json().catch(() => ({}));
+            const errMsg = errJson.error || "AI gateway error";
+            controller.enqueue(encoder.encode(`data: {"error":"${errMsg}"}\n\n`));
+            controller.close();
+            return;
+          }
+          
+          const reader = aiResp.body.getReader();
+          const decoder = new TextDecoder();
+          
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            controller.enqueue(value);
+          }
+          
+          controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : "Unknown error";
+          controller.enqueue(encoder.encode(`data: {"error":"${msg}"}\n\n`));
+        } finally {
+          controller.close();
+        }
+      },
+    });
+
+    return new Response(customStream, {
       headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
     });
   } catch (e) {
     console.error(e);
     return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown" }), {
-      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });
