@@ -181,6 +181,104 @@ const isPracticalLogicRequest = (text: string): boolean => {
   return practicalKeywords.some((k) => lower.includes(k));
 };
 
+const isLogicalExecutionRequest = (text: string): boolean => {
+  const lower = text.toLowerCase();
+  
+  // Action verbs that signal "I want to start/build/execute something"
+  const executionVerbs = [
+    "start ",
+    "starting ",
+    "launch ",
+    "launching ",
+    "begin ",
+    "beginning ",
+    "open ",
+    "opening ",
+    "create ",
+    "creating ",
+    "build ",
+    "building ",
+    "make ",
+    "making ",
+    "switch ",
+    "switching ",
+    "transition ",
+    "transitioning ",
+    "move ",
+    "moving ",
+    "go to ",
+    "relocate ",
+    "change ",
+    "changing ",
+  ];
+  
+  // Nouns/domains that pair with execution (if user says "I want to start X", that needs logic)
+  const executionDomains = [
+    "business",
+    "daycare",
+    "nonprofit",
+    "store",
+    "shop",
+    "company",
+    "freelance",
+    "side hustle",
+    "podcast",
+    "blog",
+    "service",
+    "venture",
+    "project",
+    "career",
+    "job",
+    "field",
+    "industry",
+    "country",
+    "city",
+    "school",
+    "course",
+    "program",
+    "freelancing",
+    "consulting",
+    "agency",
+    "startup",
+    "brand",
+    "product",
+    "community",
+  ];
+  
+  // Check if any execution verb is present
+  const hasExecutionVerb = executionVerbs.some(verb => lower.includes(verb));
+  
+  // If execution verb found, check for any execution domain OR "i want to", "how do i", "should i"
+  if (hasExecutionVerb) {
+    const hasDomain = executionDomains.some(domain => lower.includes(domain));
+    const hasIntent = lower.includes("i want to") || lower.includes("how do i") || lower.includes("how can i") || lower.includes("should i") || lower.includes("what's the best");
+    return hasDomain || hasIntent;
+  }
+  
+  // Also catch direct "I want to [action] [something]" patterns without explicit verb markers
+  const directPatterns = [
+    "i want to start",
+    "i want to launch",
+    "i want to open",
+    "i want to build",
+    "i want to create",
+    "i want to switch",
+    "i want to move",
+    "how do i start",
+    "how do i launch",
+    "how do i open",
+    "how do i build",
+    "how do i switch",
+    "how do i move",
+    "should i start",
+    "should i switch",
+    "should i move",
+    "should i change",
+  ];
+  
+  return directPatterns.some(pattern => lower.includes(pattern));
+};
+
 const isBusinessMarketingRequest = (text: string): boolean => {
   const lower = text.toLowerCase();
   const keys = [
@@ -369,6 +467,7 @@ serve(async (req) => {
     const ventMode = Boolean(forceVent);
     const emotionalRequested = ventMode || isEmotionalRequest(lastUserMessage);
     const practicalRequested = planningRequested || isPracticalLogicRequest(lastUserMessage);
+    const logicalExecutionRequested = isLogicalExecutionRequest(lastUserMessage);
     const businessMarketingRequested = isBusinessMarketingRequest(lastUserMessage);
     const thinkingTime = getThinkingTime(lastUserMessage, thinkDeeply);
     const ventReadTime = getVentReadTime(lastUserMessage, ventMode);
@@ -385,13 +484,14 @@ serve(async (req) => {
       (beReal ? REAL_MODE : "") +
       (thinkDeeply ? THINK_DEEPLY_MODE : "") +
       (planningRequested ? PLANNING_MODE : "") +
-      (practicalRequested && !emotionalRequested ? PRACTICAL_LOGIC_MODE : "") +
+      ((practicalRequested || logicalExecutionRequested) && !emotionalRequested ? PRACTICAL_LOGIC_MODE : "") +
       (businessMarketingRequested && !emotionalRequested ? BUSINESS_MARKETING_CONNOISSEUR_MODE : "") +
+      (logicalExecutionRequested && !emotionalRequested ? `\n\nExecution-focused response: Options first, no questions. Provide 2-4 actionable options with pros/cons immediately. Then recommend one and give a clear starter plan. Ask at most one optional follow-up question. Include sources when available.` : "") +
       (emotionalRequested && !beReal ? EMOTIONAL_SUPPORT_MODE : "") +
       (ventMode && !beReal ? VENT_MODE_BASE : "") +
       (beReal && ventMode ? `\n\nVent mode + Be Real: Listen and validate briefly, but prioritize honest feedback over endless sympathy. Be empathetic but not coddling.` : ventAdviceInstruction);
 
-    const shouldUseResearch = (thinkDeeply || practicalRequested) && !emotionalRequested;
+    const shouldUseResearch = (thinkDeeply || practicalRequested || logicalExecutionRequested) && !emotionalRequested;
     const researchQuery = shouldUseResearch ? buildSearchQuery(lastUserMessage) : "";
     const researchContext = shouldUseResearch ? await getResearchContext(researchQuery) : "";
 

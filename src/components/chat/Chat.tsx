@@ -312,6 +312,98 @@ export function Chat() {
     return keys.some((k) => lower.includes(k));
   };
 
+  const isLogicalExecutionPrompt = (text: string): boolean => {
+    const lower = text.toLowerCase();
+    
+    // Action verbs that signal execution intent
+    const executionVerbs = [
+      "start ",
+      "starting ",
+      "launch ",
+      "launching ",
+      "begin ",
+      "beginning ",
+      "open ",
+      "opening ",
+      "create ",
+      "creating ",
+      "build ",
+      "building ",
+      "make ",
+      "making ",
+      "switch ",
+      "switching ",
+      "transition ",
+      "transitioning ",
+      "move ",
+      "moving ",
+      "relocate ",
+      "change ",
+      "changing ",
+    ];
+    
+    // Domains that typically need structured logic
+    const executionDomains = [
+      "business",
+      "daycare",
+      "nonprofit",
+      "store",
+      "shop",
+      "company",
+      "freelance",
+      "side hustle",
+      "podcast",
+      "blog",
+      "service",
+      "venture",
+      "project",
+      "career",
+      "job",
+      "field",
+      "industry",
+      "country",
+      "city",
+      "school",
+      "course",
+      "program",
+      "consulting",
+      "agency",
+      "startup",
+      "brand",
+      "product",
+      "community",
+    ];
+    
+    // Check if any execution verb is present
+    const hasExecutionVerb = executionVerbs.some(verb => lower.includes(verb));
+    
+    // If execution verb found, check for any domain OR "i want to", "how do i"
+    if (hasExecutionVerb) {
+      const hasDomain = executionDomains.some(domain => lower.includes(domain));
+      const hasIntent = lower.includes("i want to") || lower.includes("how do i") || lower.includes("how can i") || lower.includes("should i");
+      return hasDomain || hasIntent;
+    }
+    
+    // Direct patterns
+    const directPatterns = [
+      "i want to start",
+      "i want to launch",
+      "i want to open",
+      "i want to build",
+      "i want to create",
+      "how do i start",
+      "how do i launch",
+      "how do i open",
+      "how do i build",
+      "should i start",
+      "should i switch",
+      "should i move",
+      "should i change",
+    ];
+    
+    return directPatterns.some(pattern => lower.includes(pattern));
+  };
+
  const send = async (overrideText?: string, overrideVentAdviceMode?: VentAdviceMode) => {
   const text = (overrideText ?? input).trim();
   if (!text || busy || !user) return;
@@ -385,9 +477,12 @@ export function Chat() {
       "Plan mode is active. Return a highly detailed first-version plan immediately (10-16 actionable steps with timeline, assumptions, trade-offs, budget/effort ranges, risks, mitigations, and KPIs). Include 2-4 options with pros/cons and recommend one option with rationale. Do not lead with clarifying questions. Ask at most one follow-up question only after presenting the full plan. When research context is available, end with a Sources section containing supporting links/articles.";
     const businessFirstInstruction =
       "Business/Marketing mode is active. Do not start with clarifying questions. First provide at least 3 practical options with pros/cons, cost/effort, and who each option suits. Then recommend one option and provide a clear starter execution plan. Ask at most one optional follow-up question at the end. Include Sources when research context is available.";
+    const logicalExecutionInstruction =
+      "Execution/startup mode: The user is asking how to start, launch, build, or execute something. Options first—no clarifying questions. Immediately provide 2-4 practical options with pros/cons, effort/cost, and who each suits. Then recommend one and provide a clear starter plan. Ask at most one optional follow-up. Include Sources when available.";
     const outboundMessages = currentMessages.map((m, idx, arr) => {
       const isLatestUser = idx === arr.length - 1 && m.role === "user";
-      if (!isLatestUser || (!thinkingRequested && !planningRequested && !isBusinessMarketingPrompt(m.content))) {
+      const isLogicalExecution = isLogicalExecutionPrompt(m.content);
+      if (!isLatestUser || (!thinkingRequested && !planningRequested && !isBusinessMarketingPrompt(m.content) && !isLogicalExecution)) {
         return { role: m.role, content: m.content };
       }
 
@@ -398,6 +493,8 @@ export function Chat() {
         injectedInstruction = planFirstInstruction;
       } else if (isBusinessMarketingPrompt(m.content)) {
         injectedInstruction = businessFirstInstruction;
+      } else if (isLogicalExecution) {
+        injectedInstruction = logicalExecutionInstruction;
       }
 
       return {
