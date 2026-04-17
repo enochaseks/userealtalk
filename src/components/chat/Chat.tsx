@@ -639,6 +639,19 @@ export function Chat() {
                 <p className="text-4xl font-semibold tracking-tight">Hello, {userName}</p>
               </div>
               <p className="mt-3 text-xl text-muted-foreground">What's on your mind?</p>
+
+              <div className="mt-4 flex flex-wrap justify-center gap-2 max-w-xl">
+                {suggestions.map((suggestion) => (
+                  <button
+                    key={`hero-${suggestion}`}
+                    type="button"
+                    onClick={() => applySuggestion(suggestion)}
+                    className="rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground hover:border-primary hover:text-foreground transition"
+                  >
+                    {suggestion}
+                  </button>
+                ))}
+              </div>
             </motion.div>
           ) : (
             <div className="space-y-4 pb-3">
@@ -784,27 +797,6 @@ export function Chat() {
           </div>
 
           <div className="rounded-2xl border border-border bg-surface focus-within:border-primary/60 transition-colors">
-            <motion.div
-              key={`suggestions-${chatSceneKey}`}
-              initial={{ opacity: 0, y: 4 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.25, ease: "easeOut" }}
-              className="px-3 pt-2 pb-1 border-b border-border/50"
-            >
-              <div className="flex gap-2 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                {suggestions.map((suggestion) => (
-                  <button
-                    key={`composer-${suggestion}`}
-                    type="button"
-                    onClick={() => applySuggestion(suggestion)}
-                    className="shrink-0 rounded-full border border-border px-3 py-1 text-xs text-muted-foreground hover:border-primary hover:text-foreground transition"
-                  >
-                    {suggestion}
-                  </button>
-                ))}
-              </div>
-            </motion.div>
-
             {(forceThinking || forcePlan || forceVent) && (
               <div className="px-4 pt-2 flex flex-wrap gap-2">
                 {forceThinking && (
