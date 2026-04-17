@@ -473,8 +473,11 @@ function ProfilePage() {
               <div className="text-xs text-muted-foreground mt-1">
                 {new Date(p.created_at).toLocaleDateString()}
               </div>
-              <p className="text-sm text-muted-foreground mt-2 line-clamp-2 whitespace-pre-line">
-                {p.content.replace(/[#*_`>]/g, "").trim()}
+              <p className="m-0 text-sm leading-5 text-muted-foreground mt-2 line-clamp-2 break-words">
+                {p.content
+                  .replace(/[#*_`>]/g, "")
+                  .replace(/\s+/g, " ")
+                  .trim()}
               </p>
             </button>
           ))}
