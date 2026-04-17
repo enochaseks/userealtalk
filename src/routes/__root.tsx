@@ -187,7 +187,14 @@ function TopNav() {
             <SheetContent side="left" className="w-64 pt-2">
               <div className="pt-0 pb-3 h-full flex flex-col">
                 <div className="px-3 pb-2 mb-1 border-b border-border/60 flex items-center justify-center">
-                  <img src={logo} alt="RealTalk" className="h-[99px] w-auto" />
+                  <Link
+                    to="/"
+                    search={{} as never}
+                    onClick={() => setOpen(false)}
+                    className="inline-flex items-center"
+                  >
+                    <img src={logo} alt="RealTalk" className="h-[99px] w-auto" />
+                  </Link>
                 </div>
 
                 <button

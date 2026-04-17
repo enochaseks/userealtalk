@@ -611,6 +611,7 @@ export function Chat() {
   };
 
   const isEmpty = messages.length === 0;
+  const chatSceneKey = convId ?? "new-chat";
   const userName =
     (user?.user_metadata?.full_name as string | undefined) ||
     (user?.user_metadata?.name as string | undefined) ||
@@ -619,32 +620,28 @@ export function Chat() {
   return (
     <div className="flex-1 flex flex-col relative">
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
-        <div className="max-w-2xl mx-auto px-5 py-8">
+        <motion.div
+          key={chatSceneKey}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.35, ease: "easeOut" }}
+          className="max-w-2xl mx-auto px-5 py-5"
+        >
           {isEmpty ? (
             <motion.div
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5 }}
-              className="text-center pt-16 pb-10"
+              className="min-h-[72vh] flex flex-col items-center justify-center text-center"
             >
-              <img src={logo} alt="RealTalk" className="h-35 w-auto mx-auto" />
-              <p className="mt-3 text-xl font-semibold">Hello, {userName}</p>
-              <p className="mt-1 text-muted-foreground">What's on your mind?</p>
-              <div className="mt-6 flex flex-wrap justify-center gap-2">
-                {suggestions.map((suggestion) => (
-                  <button
-                    key={suggestion}
-                    type="button"
-                    onClick={() => applySuggestion(suggestion)}
-                    className="rounded-full border border-border px-4 py-2 text-sm text-muted-foreground hover:border-primary hover:text-foreground transition"
-                  >
-                    {suggestion}
-                  </button>
-                ))}
+              <div className="inline-flex items-center justify-center gap-4">
+                <img src={logo} alt="RealTalk" className="h-[64px] w-auto opacity-95" />
+                <p className="text-4xl font-semibold tracking-tight">Hello, {userName}</p>
               </div>
+              <p className="mt-3 text-xl text-muted-foreground">What's on your mind?</p>
             </motion.div>
           ) : (
-            <div className="space-y-6 pb-4">
+            <div className="space-y-4 pb-3">
               <AnimatePresence initial={false}>
                 {messages.map((m, i) => (
                   <motion.div
@@ -742,7 +739,7 @@ export function Chat() {
               </AnimatePresence>
             </div>
           )}
-        </div>
+        </motion.div>
       </div>
 
       {/* Scroll to bottom button */}
@@ -758,8 +755,8 @@ export function Chat() {
 
       {/* Composer */}
       <div className="border-t border-border/60 bg-background/90 backdrop-blur">
-        <div className="max-w-2xl mx-auto px-5 py-4">
-          <div className="flex items-center justify-between mb-2.5">
+        <div className="max-w-2xl mx-auto px-5 py-3">
+          <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <Switch id="real" checked={beReal} onCheckedChange={setBeReal} />
               <Label htmlFor="real" className="text-xs text-muted-foreground cursor-pointer">
@@ -787,6 +784,27 @@ export function Chat() {
           </div>
 
           <div className="rounded-2xl border border-border bg-surface focus-within:border-primary/60 transition-colors">
+            <motion.div
+              key={`suggestions-${chatSceneKey}`}
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.25, ease: "easeOut" }}
+              className="px-3 pt-2 pb-1 border-b border-border/50"
+            >
+              <div className="flex gap-2 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                {suggestions.map((suggestion) => (
+                  <button
+                    key={`composer-${suggestion}`}
+                    type="button"
+                    onClick={() => applySuggestion(suggestion)}
+                    className="shrink-0 rounded-full border border-border px-3 py-1 text-xs text-muted-foreground hover:border-primary hover:text-foreground transition"
+                  >
+                    {suggestion}
+                  </button>
+                ))}
+              </div>
+            </motion.div>
+
             {(forceThinking || forcePlan || forceVent) && (
               <div className="px-4 pt-2 flex flex-wrap gap-2">
                 {forceThinking && (
@@ -833,7 +851,7 @@ export function Chat() {
               }}
               rows={1}
               placeholder="Type what's on your mind…"
-              className="w-full resize-none bg-transparent px-4 pt-3.5 pb-2 text-[0.97rem] outline-none placeholder:text-muted-foreground/70 max-h-[180px]"
+              className="w-full resize-none bg-transparent px-4 pt-3 pb-2 text-[0.97rem] outline-none placeholder:text-muted-foreground/70 max-h-[180px]"
             />
             <div className="flex items-center justify-between px-2 pb-2">
               <div className="flex items-center gap-1">
