@@ -80,6 +80,29 @@ function RootComponent() {
   );
 }
 
+function OfflineBanner() {
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
+
+  useEffect(() => {
+    const goOffline = () => setIsOffline(true);
+    const goOnline = () => setIsOffline(false);
+    window.addEventListener("offline", goOffline);
+    window.addEventListener("online", goOnline);
+    return () => {
+      window.removeEventListener("offline", goOffline);
+      window.removeEventListener("online", goOnline);
+    };
+  }, []);
+
+  if (!isOffline) return null;
+
+  return (
+    <div className="w-full bg-yellow-500/10 border-b border-yellow-500/30 text-yellow-300 text-xs text-center py-1.5 px-4">
+      You're offline — the app is running from cache. New messages require a connection.
+    </div>
+  );
+}
+
 function AppFrame() {
   const { user, loading } = useAuth();
   const path = useRouterState({ select: (s) => s.location.pathname });
@@ -87,6 +110,7 @@ function AppFrame() {
 
   return (
     <div className="min-h-screen flex flex-col">
+      <OfflineBanner />
       {showNav && <TopNav />}
       <main className="flex-1 flex flex-col">
         {loading ? (
