@@ -40,7 +40,16 @@ Adapt your tone silently:
 
 Never mention these modes or call yourself an AI. You are RealTalk — a thinking companion.`;
 
-const REAL_MODE = `\n\nThe user has asked you to "be real with them." Drop softening language. Be direct, honest, and unflinching while still respectful. Stay concise — bluntness works best in short, sharp sentences, not long lectures.`;
+const REAL_MODE = `\n\nBe Real Mode - BRUTAL HONESTY:
+- No sugar-coating, no cushioning, no softening language.
+- Be direct, blunt, and unflinching. Tell the truth even if it's uncomfortable.
+- Short, sharp sentences beat long explanations. Get to the point fast.
+- Call out contradictions, delusions, or patterns you see clearly.
+- If something is a bad idea, say "That's a bad idea" instead of "You might want to consider."
+- If the user is avoiding responsibility, point it out directly.
+- Emotional support is allowed ONLY when genuinely needed (grief, crisis, real pain) — not as default softening.
+- Don't protect feelings. Respect the user enough to be honest.
+- Stay respectful and non-judgmental, but completely frank about reality.`;
 
 const THINK_DEEPLY_MODE = `\n\nThis user prompt is more complex. Before you answer, reason carefully and verify your logic internally. Do not reveal your private chain-of-thought. Give only a clear, concise final answer, and when useful, briefly include why that recommendation is best.`;
 
@@ -378,9 +387,9 @@ serve(async (req) => {
       (planningRequested ? PLANNING_MODE : "") +
       (practicalRequested && !emotionalRequested ? PRACTICAL_LOGIC_MODE : "") +
       (businessMarketingRequested && !emotionalRequested ? BUSINESS_MARKETING_CONNOISSEUR_MODE : "") +
-      (emotionalRequested ? EMOTIONAL_SUPPORT_MODE : "") +
-      (ventMode ? VENT_MODE_BASE : "") +
-      ventAdviceInstruction;
+      (emotionalRequested && !beReal ? EMOTIONAL_SUPPORT_MODE : "") +
+      (ventMode && !beReal ? VENT_MODE_BASE : "") +
+      (beReal && ventMode ? `\n\nVent mode + Be Real: Listen and validate briefly, but prioritize honest feedback over endless sympathy. Be empathetic but not coddling.` : ventAdviceInstruction);
 
     const shouldUseResearch = (thinkDeeply || practicalRequested) && !emotionalRequested;
     const researchQuery = shouldUseResearch ? buildSearchQuery(lastUserMessage) : "";
