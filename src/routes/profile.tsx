@@ -10,10 +10,29 @@ import { Check, Download, Pencil, X } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 
-const fileToDataUrl = (file: File): Promise<string> => {
+const fileToDataUrl = (file: File, maxSize = 256): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
+        const width = Math.max(1, Math.round(img.width * scale));
+        const height = Math.max(1, Math.round(img.height * scale));
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          reject(new Error("Could not process selected image"));
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", 0.82));
+      };
+      img.onerror = () => reject(new Error("Invalid image file"));
+      img.src = String(reader.result ?? "");
+    };
     reader.onerror = () => reject(new Error("Could not read selected image"));
     reader.readAsDataURL(file);
   });
@@ -38,6 +57,8 @@ type Insight = {
   updated_at: string;
 };
 
+type EditablePlanDraft = { title: string; content: string };
+
 function ProfilePage() {
   const { user, loading, signOut } = useAuth();
   const navigate = useNavigate();
@@ -46,6 +67,9 @@ function ProfilePage() {
   const [convs, setConvs] = useState<Conv[]>([]);
   const [insights, setInsights] = useState<Insight[]>([]);
   const [openPlan, setOpenPlan] = useState<Plan | null>(null);
+  const [planDraft, setPlanDraft] = useState<EditablePlanDraft | null>(null);
+  const [isEditingPlan, setIsEditingPlan] = useState(false);
+  const [isSavingPlanEdit, setIsSavingPlanEdit] = useState(false);
   const [insightMonitoringEnabled, setInsightMonitoringEnabled] = useState(false);
   const [displayName, setDisplayName] = useState("");
   const [pendingName, setPendingName] = useState("");
@@ -116,6 +140,18 @@ function ProfilePage() {
     toast.success("Plan removed");
   };
 
+  const openPlanModal = (plan: Plan) => {
+    setOpenPlan(plan);
+    setPlanDraft({ title: plan.title, content: plan.content });
+    setIsEditingPlan(false);
+  };
+
+  const closePlanModal = () => {
+    setOpenPlan(null);
+    setPlanDraft(null);
+    setIsEditingPlan(false);
+  };
+
   const downloadPlanAsText = (plan: Plan) => {
     const content = `${plan.title}\n\n${plan.content}`;
     const element = document.createElement("a");
@@ -126,6 +162,36 @@ function ProfilePage() {
     element.click();
     document.body.removeChild(element);
     toast.success("Plan downloaded as text");
+  };
+
+  const savePlanEdits = async () => {
+    if (!openPlan || !planDraft) return;
+
+    const nextTitle = planDraft.title.trim() || "Untitled plan";
+    const nextContent = planDraft.content.trim();
+    if (!nextContent) {
+      toast.error("Plan content cannot be empty");
+      return;
+    }
+
+    setIsSavingPlanEdit(true);
+    const { error } = await supabase
+      .from("plans")
+      .update({ title: nextTitle, content: nextContent })
+      .eq("id", openPlan.id)
+      .eq("user_id", user.id);
+    setIsSavingPlanEdit(false);
+
+    if (error) {
+      toast.error("Failed to save plan changes");
+      return;
+    }
+
+    setPlans((prev) => prev.map((plan) => (plan.id === openPlan.id ? { ...plan, title: nextTitle, content: nextContent } : plan)));
+    setOpenPlan((prev) => (prev ? { ...prev, title: nextTitle, content: nextContent } : prev));
+    setPlanDraft({ title: nextTitle, content: nextContent });
+    setIsEditingPlan(false);
+    toast.success("Plan updated");
   };
 
   const toggleAutoPdf = (enabled: boolean) => {
@@ -181,7 +247,9 @@ function ProfilePage() {
     setDisplayName(cleanName);
     setPendingName(cleanName);
     setAvatarDataUrl(avatarInput || "");
-    window.dispatchEvent(new Event("profileUpdated"));
+    window.dispatchEvent(new CustomEvent("profileUpdated", {
+      detail: { name: cleanName, avatarUrl: avatarInput || "" },
+    }));
     toast.success("Profile updated");
   };
 
@@ -300,7 +368,7 @@ function ProfilePage() {
           {plans.map((p) => (
             <button
               key={p.id}
-              onClick={() => setOpenPlan(p)}
+              onClick={() => openPlanModal(p)}
               className="w-full text-left rounded-xl border border-border bg-surface/60 hover:bg-surface-elevated transition-colors p-5"
             >
               <div className="font-serif text-lg">{p.title}</div>
@@ -415,7 +483,7 @@ function ProfilePage() {
       {openPlan && (
         <div
           className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4"
-          onClick={() => setOpenPlan(null)}
+          onClick={closePlanModal}
         >
           <motion.div
             initial={{ opacity: 0, scale: 0.98 }}
@@ -423,26 +491,72 @@ function ProfilePage() {
             onClick={(e) => e.stopPropagation()}
             className="bg-surface border border-border rounded-2xl max-w-xl w-full max-h-[80vh] overflow-y-auto p-7"
           >
-            <h2 className="font-serif text-2xl mb-4">{openPlan.title}</h2>
-            <div className="prose-realtalk">
-              <ReactMarkdown>{openPlan.content}</ReactMarkdown>
-            </div>
+            {isEditingPlan && planDraft ? (
+              <>
+                <input
+                  value={planDraft.title}
+                  onChange={(e) => setPlanDraft({ ...planDraft, title: e.target.value })}
+                  className="w-full bg-transparent font-serif text-2xl mb-4 outline-none border-b border-border/70 pb-2"
+                />
+                <textarea
+                  value={planDraft.content}
+                  onChange={(e) => setPlanDraft({ ...planDraft, content: e.target.value })}
+                  className="w-full min-h-[320px] resize-y rounded-xl border border-border bg-background/40 p-4 text-sm outline-none focus:border-primary/60"
+                />
+              </>
+            ) : (
+              <>
+                <h2 className="font-serif text-2xl mb-4">{openPlan.title}</h2>
+                <div className="prose-realtalk">
+                  <ReactMarkdown>{openPlan.content}</ReactMarkdown>
+                </div>
+              </>
+            )}
             <div className="flex justify-between mt-6 pt-4 border-t border-border">
               <div className="flex gap-2">
                 <Button variant="ghost" size="sm" onClick={() => deletePlan(openPlan.id)}>
                   Delete
                 </Button>
+                {isEditingPlan ? (
+                  <>
+                    <Button variant="ghost" size="sm" onClick={savePlanEdits} disabled={isSavingPlanEdit}>
+                      {isSavingPlanEdit ? "Saving..." : "Save changes"}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setPlanDraft({ title: openPlan.title, content: openPlan.content });
+                        setIsEditingPlan(false);
+                      }}
+                      disabled={isSavingPlanEdit}
+                    >
+                      Cancel edit
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setPlanDraft({ title: openPlan.title, content: openPlan.content });
+                      setIsEditingPlan(true);
+                    }}
+                  >
+                    Edit
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => downloadPlanAsText(openPlan)}
+                  onClick={() => downloadPlanAsText(isEditingPlan && planDraft ? { ...openPlan, ...planDraft } : openPlan)}
                   className="gap-1.5"
                 >
                   <Download className="h-3.5 w-3.5" />
                   Download
                 </Button>
               </div>
-              <Button variant="secondary" size="sm" onClick={() => setOpenPlan(null)}>
+              <Button variant="secondary" size="sm" onClick={closePlanModal}>
                 Close
               </Button>
             </div>

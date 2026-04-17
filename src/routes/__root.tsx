@@ -106,11 +106,34 @@ function TopNav() {
   const navigate = useNavigate();
   const [conversations, setConversations] = useState<Array<{ id: string; title: string }>>([]);
   const [open, setOpen] = useState(false);
-  const profileName =
-    (user?.user_metadata?.full_name as string | undefined) ||
-    (user?.user_metadata?.name as string | undefined) ||
-    user?.email ||
-    "Profile";
+  const [profileName, setProfileName] = useState("Profile");
+  const [avatarUrl, setAvatarUrl] = useState("");
+
+  useEffect(() => {
+    const syncProfile = (detail?: { name?: string; avatarUrl?: string }) => {
+      const nextName =
+        detail?.name ||
+        (user?.user_metadata?.full_name as string | undefined) ||
+        (user?.user_metadata?.name as string | undefined) ||
+        user?.email ||
+        "Profile";
+      const nextAvatar =
+        detail?.avatarUrl ||
+        (user?.user_metadata?.avatar_url as string | undefined) ||
+        (user?.user_metadata?.avatar_data_url as string | undefined) ||
+        "";
+      setProfileName(nextName);
+      setAvatarUrl(nextAvatar);
+    };
+
+    syncProfile();
+    const onProfileUpdated = (event: Event) => {
+      syncProfile((event as CustomEvent<{ name?: string; avatarUrl?: string }>).detail);
+    };
+    window.addEventListener("profileUpdated", onProfileUpdated);
+    return () => window.removeEventListener("profileUpdated", onProfileUpdated);
+  }, [user]);
+
   const initials = profileName
     .split(" ")
     .filter(Boolean)
@@ -247,8 +270,12 @@ function TopNav() {
                     <p className="text-xs text-muted-foreground">Profile</p>
                     <p className="text-sm text-foreground truncate">{profileName}</p>
                   </div>
-                  <div className="h-8 w-8 rounded-full bg-primary/20 text-primary text-xs font-semibold flex items-center justify-center">
-                    {initials}
+                  <div className="h-8 w-8 rounded-full bg-primary/20 text-primary text-xs font-semibold flex items-center justify-center overflow-hidden">
+                    {avatarUrl ? (
+                      <img src={avatarUrl} alt="Profile avatar" className="h-full w-full object-cover" />
+                    ) : (
+                      initials
+                    )}
                   </div>
                 </Link>
               </div>
