@@ -97,11 +97,8 @@ function ProfilePage() {
       "";
     setDisplayName(initialName);
     setPendingName(initialName);
-    setAvatarDataUrl(
-      (user.user_metadata?.avatar_url as string | undefined) ||
-      (user.user_metadata?.avatar_data_url as string | undefined) ||
-      "",
-    );
+    const rawAvatar = (user.user_metadata?.avatar_url as string | undefined) || "";
+    setAvatarDataUrl(rawAvatar.startsWith("data:") ? "" : rawAvatar);
 
     supabase
       .from("plans")
@@ -227,14 +224,16 @@ function ProfilePage() {
       return;
     }
 
+    const sanitizedAvatar = avatarInput.startsWith("data:") ? "" : avatarInput;
+
     setSavingProfile(true);
     const { error } = await supabase.auth.updateUser({
       data: {
         ...user.user_metadata,
         full_name: cleanName,
         name: cleanName,
-        avatar_url: avatarInput || null,
-        avatar_data_url: avatarInput || null,
+        avatar_url: sanitizedAvatar || null,
+        avatar_data_url: null,
       },
     });
     setSavingProfile(false);
@@ -246,9 +245,9 @@ function ProfilePage() {
 
     setDisplayName(cleanName);
     setPendingName(cleanName);
-    setAvatarDataUrl(avatarInput || "");
+    setAvatarDataUrl(sanitizedAvatar || "");
     window.dispatchEvent(new CustomEvent("profileUpdated", {
-      detail: { name: cleanName, avatarUrl: avatarInput || "" },
+      detail: { name: cleanName, avatarUrl: sanitizedAvatar || "" },
     }));
     toast.success("Profile updated");
   };
@@ -258,7 +257,8 @@ function ProfilePage() {
     try {
       const dataUrl = await fileToDataUrl(file);
       setAvatarDataUrl(dataUrl);
-      await saveProfileIdentity(displayName, dataUrl);
+      await saveProfileIdentity(displayName, "");
+      toast.error("Avatar upload is temporarily disabled while we stabilize Safari. Name changes still save.");
     } catch (e: any) {
       toast.error(e?.message || "Could not use selected image");
     }

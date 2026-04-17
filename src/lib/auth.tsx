@@ -49,6 +49,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  useEffect(() => {
+    if (!session?.user) return;
+
+    const avatarUrl = session.user.user_metadata?.avatar_url as string | undefined;
+    const avatarDataUrl = session.user.user_metadata?.avatar_data_url as string | undefined;
+    const hasOversizedAvatarPayload =
+      Boolean(avatarDataUrl) || (typeof avatarUrl === "string" && avatarUrl.startsWith("data:"));
+
+    if (!hasOversizedAvatarPayload) return;
+
+    const run = async () => {
+      try {
+        await supabase.auth.updateUser({
+          data: {
+            ...session.user.user_metadata,
+            avatar_url: null,
+            avatar_data_url: null,
+          },
+        });
+        await supabase.auth.refreshSession();
+      } catch {
+        // Best effort only.
+      }
+    };
+
+    void run();
+  }, [session]);
+
   const value: AuthCtx = {
     user: session?.user ?? null,
     session,

@@ -179,7 +179,6 @@ function TopNav() {
       const nextAvatar =
         detail?.avatarUrl ||
         (user?.user_metadata?.avatar_url as string | undefined) ||
-        (user?.user_metadata?.avatar_data_url as string | undefined) ||
         "";
       setProfileName(nextName);
       setAvatarUrl(nextAvatar);
