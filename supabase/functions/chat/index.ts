@@ -53,7 +53,15 @@ const PLANNING_MODE = `\n\nThe user is asking for planning help. Build plans onl
 - Keep it realistic, specific, and adapted to the user's stated situation.
 - If external facts matter (prices, regulations, market context), use provided research context carefully and note uncertainty briefly when needed.
 - For business/money/rent/career/logistics plans, use a more analytical style with assumptions, trade-offs, and decision criteria.
-- When research context is available, include a short "Sources:" section with 2-5 links that were provided in context.`;
+- When research context is available, include a strong "Sources:" section with 4-8 links that were provided in context.
+- For plan requests, prefer a detailed structure:
+  1) Goal + assumptions
+  2) Option set (2-4 options, pros/cons)
+  3) Recommended path + why
+  4) Execution roadmap (phased timeline)
+  5) Risks + mitigations
+  6) KPIs/checkpoints
+  7) Sources`;
 
 const PRACTICAL_LOGIC_MODE = `\n\nThe user is asking a practical/logical question (for example business, money, rent, work, planning, execution, trade-offs, or decisions).
 - Prioritize logic, clarity, and depth over emotional reassurance.
@@ -75,6 +83,12 @@ const REFERENCES_GUARDRAIL_MODE = `\n\nReferences rule:
 - Only cite links explicitly present in the provided research context.
 - Do not invent sources or URLs.
 - If no usable research context is available, do not fabricate references; say that up-to-date sources were not available.`;
+
+const DETAILED_PLAN_OUTPUT_MODE = `\n\nDetailed output rule for plan requests:
+- Make the plan thorough and practical, not vague.
+- Include concrete numbers/ranges where possible (budget ranges, timelines, expected effort), and label assumptions.
+- Prefer depth over brevity for plan mode.
+- End with "Sources:" and list the supporting links when available.`;
 
 const EMOTIONAL_SUPPORT_MODE = `\n\nThe user is sharing an emotional or personal struggle.
 - Lead with empathy and emotional validation.
@@ -213,7 +227,7 @@ const fetchGoogleCseResults = async (query: string): Promise<string[]> => {
   const GOOGLE_CSE_ID = Deno.env.get("GOOGLE_CSE_ID");
   if (!GOOGLE_API_KEY || !GOOGLE_CSE_ID) return [];
 
-  const url = `https://www.googleapis.com/customsearch/v1?key=${encodeURIComponent(GOOGLE_API_KEY)}&cx=${encodeURIComponent(GOOGLE_CSE_ID)}&q=${encodeURIComponent(query)}&num=5`;
+  const url = `https://www.googleapis.com/customsearch/v1?key=${encodeURIComponent(GOOGLE_API_KEY)}&cx=${encodeURIComponent(GOOGLE_CSE_ID)}&q=${encodeURIComponent(query)}&num=8`;
   const resp = await fetch(url);
   if (!resp.ok) return [];
 
@@ -221,7 +235,7 @@ const fetchGoogleCseResults = async (query: string): Promise<string[]> => {
   const items = Array.isArray(data?.items) ? data.items : [];
 
   return items
-    .slice(0, 5)
+    .slice(0, 8)
     .map((item: any, idx: number) => {
       const title = item?.title ?? "Untitled";
       const snippet = item?.snippet ?? "";
@@ -246,13 +260,13 @@ const fetchDuckDuckGoResults = async (query: string): Promise<string[]> => {
   const related = Array.isArray(data?.RelatedTopics) ? data.RelatedTopics : [];
   let i = out.length + 1;
   for (const topic of related) {
-    if (i > 5) break;
+    if (i > 8) break;
     if (topic?.Text) {
       out.push(`${i}. ${topic.Text}\n${topic.FirstURL || ""}`.trim());
       i++;
     } else if (Array.isArray(topic?.Topics)) {
       for (const nested of topic.Topics) {
-        if (i > 5) break;
+        if (i > 8) break;
         if (nested?.Text) {
           out.push(`${i}. ${nested.Text}\n${nested.FirstURL || ""}`.trim());
           i++;
@@ -360,7 +374,13 @@ serve(async (req) => {
     const researchQuery = shouldUseResearch ? buildSearchQuery(lastUserMessage) : "";
     const researchContext = shouldUseResearch ? await getResearchContext(researchQuery) : "";
 
-    const systemMessages = [{ role: "system", content: system + REFERENCES_GUARDRAIL_MODE }];
+    const systemMessages = [
+      {
+        role: "system",
+        content:
+          system + REFERENCES_GUARDRAIL_MODE + (planningRequested ? DETAILED_PLAN_OUTPUT_MODE : ""),
+      },
+    ];
     if (researchContext) {
       systemMessages.push({ role: "system", content: researchContext });
     }

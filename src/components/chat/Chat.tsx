@@ -380,7 +380,7 @@ export function Chat() {
     // ✅ FIX 2: rebuild messages safely (NO newMsgs bug)
     const currentMessages = [...messages, userMsg];
     const planFirstInstruction =
-      "Plan mode is active. Return a full first-version plan immediately (8-12 actionable steps with timeline, assumptions, trade-offs, and 2-4 options with pros/cons). Recommend one option and explain why. Do not lead with clarifying questions. Ask at most one follow-up question after presenting the plan. When research context is available, end with a short Sources section.";
+      "Plan mode is active. Return a highly detailed first-version plan immediately (10-16 actionable steps with timeline, assumptions, trade-offs, budget/effort ranges, risks, mitigations, and KPIs). Include 2-4 options with pros/cons and recommend one option with rationale. Do not lead with clarifying questions. Ask at most one follow-up question only after presenting the full plan. When research context is available, end with a Sources section containing supporting links/articles.";
     const businessFirstInstruction =
       "Business/Marketing mode is active. Do not start with clarifying questions. First provide at least 3 practical options with pros/cons, cost/effort, and who each option suits. Then recommend one option and provide a clear starter execution plan. Ask at most one optional follow-up question at the end. Include Sources when research context is available.";
     const outboundMessages = currentMessages.map((m, idx, arr) => {
