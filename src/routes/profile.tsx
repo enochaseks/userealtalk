@@ -67,13 +67,13 @@ type Plan = { id: string; title: string; content: string; created_at: string };
 type Conv = { id: string; title: string; updated_at: string };
 type Insight = {
   id: string;
-  conversation_id: string;
   week_start: string;
   emotion_trend: string;
   thought_patterns: string;
   calm_progress: string;
   overthinking_reduction: string;
   ai_help_summary: string;
+  source_message_count: number;
   updated_at: string;
 };
 
@@ -169,9 +169,9 @@ function ProfilePage() {
 
     const loadInsights = async () => {
       const { data } = await supabase
-        .from("conversation_weekly_insights")
+        .from("user_weekly_insights")
         .select(
-          "id,conversation_id,week_start,emotion_trend,thought_patterns,calm_progress,overthinking_reduction,ai_help_summary,updated_at",
+          "id,week_start,emotion_trend,thought_patterns,calm_progress,overthinking_reduction,ai_help_summary,source_message_count,updated_at",
         )
         .order("week_start", { ascending: false })
         .order("updated_at", { ascending: false });
@@ -205,7 +205,7 @@ function ProfilePage() {
         {
           event: "*",
           schema: "public",
-          table: "conversation_weekly_insights",
+          table: "user_weekly_insights",
           filter: `user_id=eq.${user.id}`,
         },
         () => void loadInsights(),
@@ -234,43 +234,16 @@ function ProfilePage() {
         const accessToken = sessionData?.session?.access_token;
         const insightsUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/insights`;
 
-        const weekStart = getUtcWeekStart();
-        const start = `${weekStart}T00:00:00.000Z`;
-        const end = new Date();
-        end.setUTCHours(23, 59, 59, 999);
+        const resp = await fetch(insightsUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          },
+          body: JSON.stringify({ userId: user.id }),
+        });
 
-        const { data: weekMessages } = await supabase
-          .from("messages")
-          .select("conversation_id")
-          .eq("user_id", user.id)
-          .gte("created_at", start)
-          .lte("created_at", end.toISOString())
-          .order("created_at", { ascending: false })
-          .limit(500);
-
-        const conversationIds = Array.from(
-          new Set((weekMessages ?? []).map((m) => m.conversation_id).filter(Boolean)),
-        ).slice(0, 12);
-
-        if (conversationIds.length === 0) {
-          if (typeof window !== "undefined") {
-            localStorage.setItem(runKey, "1");
-          }
-          return;
-        }
-
-        await Promise.all(
-          conversationIds.map((conversationId) =>
-            fetch(insightsUrl, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${accessToken ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-              },
-              body: JSON.stringify({ userId: user.id, conversationId }),
-            }),
-          ),
-        );
+        if (!resp.ok) throw new Error("Failed to generate Friday insight");
 
         if (typeof window !== "undefined") {
           localStorage.setItem(runKey, "1");
@@ -603,23 +576,16 @@ function ProfilePage() {
           )}
           {insightMonitoringEnabled &&
             insights.map((insight) => {
-              const conv = convs.find((c) => c.id === insight.conversation_id);
               return (
                 <div key={insight.id} className="rounded-xl border border-border bg-surface/60 p-5">
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <div className="text-sm font-semibold">Week of {new Date(insight.week_start).toLocaleDateString()}</div>
                       <div className="text-xs text-muted-foreground mt-0.5">
-                        {conv?.title ?? "Conversation"}
+                        Full weekly analysis • {insight.source_message_count} messages reviewed
                       </div>
                     </div>
-                    <Link
-                      to="/"
-                      search={{ c: insight.conversation_id } as never}
-                      className="text-xs text-primary hover:underline"
-                    >
-                      Open chat
-                    </Link>
+                    <div className="text-[11px] text-muted-foreground">Every Friday</div>
                   </div>
 
                   <div className="mt-4 space-y-3 text-sm">
