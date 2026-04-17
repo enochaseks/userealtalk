@@ -112,12 +112,78 @@ export function Landing() {
       setFeatureUses((prev) => ({ ...prev, [feature]: prev[feature] + 1 }));
     }
 
-    const reply = createDemoReply(text, feature);
-    await new Promise((resolve) => setTimeout(resolve, feature === "thinking" ? 1200 : 700));
+    try {
+      const currentMessages = [...messages, { role: "user" as const, content: text }];
+      const outboundMessages = currentMessages
+        .slice(-10)
+        .map((m) => ({ role: m.role, content: m.content }));
 
-    setMessages((prev) => [...prev, { role: "assistant", content: reply }]);
-    setBusy(false);
-    trackEvent("preview_message_sent", { feature: feature !== "none" ? feature : "default" });
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
+      const resp = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({
+          messages: outboundMessages,
+          beReal: false,
+          thinkDeeply: feature === "thinking",
+          forcePlan: feature === "plan",
+          forceVent: feature === "vent",
+          ventAdviceMode: "advice",
+        }),
+      });
+
+      if (!resp.ok || !resp.body) throw new Error("Preview backend unavailable");
+
+      let assistant = "";
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      let done = false;
+
+      while (!done) {
+        const { done: streamDone, value } = await reader.read();
+        if (streamDone) break;
+
+        buf += decoder.decode(value, { stream: true });
+
+        let nl: number;
+        while ((nl = buf.indexOf("\n")) !== -1) {
+          let line = buf.slice(0, nl);
+          buf = buf.slice(nl + 1);
+
+          if (line.endsWith("\r")) line = line.slice(0, -1);
+          if (!line.startsWith("data: ")) continue;
+
+          const json = line.slice(6).trim();
+          if (json === "[DONE]") {
+            done = true;
+            break;
+          }
+
+          try {
+            const parsed = JSON.parse(json);
+            const delta = parsed?.choices?.[0]?.delta?.content;
+            if (typeof delta === "string" && delta.length > 0) {
+              assistant += delta;
+            }
+          } catch {
+            // Ignore partial frames and continue reading.
+          }
+        }
+      }
+
+      const finalReply = assistant.trim() || createDemoReply(text, feature);
+      setMessages((prev) => [...prev, { role: "assistant", content: finalReply }]);
+    } catch {
+      const fallbackReply = createDemoReply(text, feature);
+      setMessages((prev) => [...prev, { role: "assistant", content: fallbackReply }]);
+    } finally {
+      setBusy(false);
+      trackEvent("preview_message_sent", { feature: feature !== "none" ? feature : "default" });
+    }
   };
 
   const quickStart = (text: string) => {
