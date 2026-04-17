@@ -49,6 +49,15 @@ const fileToOptimizedBlob = (file: File, maxSize = 512): Promise<Blob> => {
   });
 };
 
+const blobToDataUrl = (blob: Blob): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(new Error("Could not process selected image"));
+    reader.readAsDataURL(blob);
+  });
+};
+
 export const Route = createFileRoute("/profile")({
   component: ProfilePage,
   head: () => ({ meta: [{ title: "Your space — RealTalk" }] }),
@@ -108,8 +117,11 @@ function ProfilePage() {
       "";
     setDisplayName(initialName);
     setPendingName(initialName);
+    const localAvatar =
+      typeof window !== "undefined" ? localStorage.getItem(`avatar_local_${user.id}`) || "" : "";
     const rawAvatar = (user.user_metadata?.avatar_url as string | undefined) || "";
-    setAvatarDataUrl(rawAvatar.startsWith("data:") ? "" : rawAvatar);
+    const remoteAvatar = rawAvatar.startsWith("data:") ? "" : rawAvatar;
+    setAvatarDataUrl(localAvatar || remoteAvatar);
 
     supabase
       .from("plans")
@@ -257,6 +269,9 @@ function ProfilePage() {
     setDisplayName(cleanName);
     setPendingName(cleanName);
     setAvatarDataUrl(sanitizedAvatar || "");
+    if (sanitizedAvatar && typeof window !== "undefined" && user?.id) {
+      localStorage.removeItem(`avatar_local_${user.id}`);
+    }
     window.dispatchEvent(new CustomEvent("profileUpdated", {
       detail: { name: cleanName, avatarUrl: sanitizedAvatar || "" },
     }));
@@ -283,10 +298,18 @@ function ProfilePage() {
       setAvatarDataUrl(nextAvatarUrl);
       await saveProfileIdentity(displayName, nextAvatarUrl);
     } catch (e: any) {
-      const message = String(e?.message || "");
-      if (message.toLowerCase().includes("bucket") || message.toLowerCase().includes("policy")) {
-        toast.error("Avatar storage is still provisioning. Please try again in a minute.");
-      } else {
+      try {
+        const avatarBlob = await fileToOptimizedBlob(file);
+        const localDataUrl = await blobToDataUrl(avatarBlob);
+        localStorage.setItem(`avatar_local_${user.id}`, localDataUrl);
+        setAvatarDataUrl(localDataUrl);
+        window.dispatchEvent(
+          new CustomEvent("profileUpdated", {
+            detail: { name: pendingName || displayName || "Profile", avatarUrl: localDataUrl },
+          }),
+        );
+        toast.success("Profile photo saved on this device.");
+      } catch {
         toast.error(e?.message || "Could not upload selected image");
       }
     }

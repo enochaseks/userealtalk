@@ -170,6 +170,10 @@ function TopNav() {
 
   useEffect(() => {
     const syncProfile = (detail?: { name?: string; avatarUrl?: string }) => {
+      const localAvatar =
+        typeof window !== "undefined" && user?.id
+          ? localStorage.getItem(`avatar_local_${user.id}`) || ""
+          : "";
       const nextName =
         detail?.name ||
         (user?.user_metadata?.full_name as string | undefined) ||
@@ -178,6 +182,7 @@ function TopNav() {
         "Profile";
       const nextAvatar =
         detail?.avatarUrl ||
+        localAvatar ||
         (user?.user_metadata?.avatar_url as string | undefined) ||
         "";
       setProfileName(nextName);
