@@ -4,7 +4,7 @@ import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { Mic, ArrowUp, Bookmark, Trash2, ChevronDown, Plus } from "lucide-react";
+import { Mic, ArrowUp, Bookmark, Trash2, ChevronDown, Plus, Pencil } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
@@ -37,6 +37,9 @@ export function Chat() {
   const [forceVent, setForceVent] = useState(false);
   const [ventAdviceMode, setVentAdviceMode] = useState<VentAdviceMode>("none");
   const [showFeatureMenu, setShowFeatureMenu] = useState(false);
+  const [editingPlanIndex, setEditingPlanIndex] = useState<number | null>(null);
+  const [editedPlanText, setEditedPlanText] = useState("");
+  const [isRegeneratingPlan, setIsRegeneratingPlan] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -257,19 +260,38 @@ export function Chat() {
     return signalCount >= 2 || (signalCount >= 1 && (isLongPrompt || hasMultipleQuestions)) || (isLongPrompt && hasMultipleQuestions);
   };
 
+  const shouldUseVentMode = (text: string): boolean => {
+    const lower = text.toLowerCase();
+    const ventSignals = [
+      "i need to vent",
+      "need to vent",
+      "let me vent",
+      "just listen",
+      "no advice",
+      "i want to rant",
+      "rant",
+      "get this off my chest",
+      "off my chest",
+      "i need to let this out",
+      "let this out",
+    ];
+    return ventSignals.some((signal) => lower.includes(signal));
+  };
+
  const send = async (overrideText?: string, overrideVentAdviceMode?: VentAdviceMode) => {
   const text = (overrideText ?? input).trim();
   if (!text || busy || !user) return;
 
-    const thinkDeeply = forceThinking || shouldUseThinkingMode(text);
-      const planningRequested = forcePlan || userAskedForPlan(text);
+    const thinkingRequested = forceThinking || shouldUseThinkingMode(text);
+    const planningRequested = forcePlan || userAskedForPlan(text);
+    const ventRequested = forceVent || shouldUseVentMode(text) || !!overrideVentAdviceMode;
     const activeVentAdviceMode = overrideVentAdviceMode ?? ventAdviceMode;
-    const activeVent = forceVent || !!overrideVentAdviceMode;
+    const activeVent = ventRequested;
     const shouldOfferVentChoice = activeVent && activeVentAdviceMode === "none";
 
     const activeFeatures: string[] = [
-      forceThinking ? "Deep Thinking" : "",
-      forcePlan ? "Plan Mode" : "",
+      thinkingRequested ? "Deep Thinking" : "",
+      planningRequested ? "Plan Mode" : "",
       activeVent ? "Vent" : "",
     ].filter(Boolean);
 
@@ -293,7 +315,7 @@ export function Chat() {
     {
       role: "assistant",
       content: "",
-      thinking: thinkDeeply && !shouldOfferVentChoice ? "🤔 Thinking..." : undefined,
+      thinking: thinkingRequested && !shouldOfferVentChoice ? "🤔 Thinking..." : undefined,
       ventChoicePending: shouldOfferVentChoice,
     },
   ]);
@@ -346,7 +368,7 @@ export function Chat() {
       body: JSON.stringify({
         messages: outboundMessages,
         beReal,
-        thinkDeeply: thinkDeeply && !shouldOfferVentChoice,
+        thinkDeeply: thinkingRequested && !shouldOfferVentChoice,
         forcePlan: planningRequested,
         forceVent: activeVent,
         ventAdviceMode: activeVentAdviceMode,
@@ -359,7 +381,7 @@ export function Chat() {
     }
 
     let assistant = "";
-    let isThinking = thinkDeeply;
+    let isThinking = thinkingRequested;
 
     const reader = resp.body.getReader();
     const decoder = new TextDecoder();
@@ -564,6 +586,154 @@ export function Chat() {
     }
   };
 
+  const openPlanEditor = (index: number) => {
+    const target = messages[index];
+    if (!target || target.role !== "assistant") return;
+    setEditingPlanIndex(index);
+    setEditedPlanText(target.content);
+  };
+
+  const regenerateEditedPlan = async () => {
+    if (editingPlanIndex === null || !user || isRegeneratingPlan) return;
+    const edited = editedPlanText.trim();
+    if (!edited) {
+      toast.error("Please add your edits before regenerating");
+      return;
+    }
+
+    setIsRegeneratingPlan(true);
+    try {
+      const cid = await ensureConversation("Regenerate edited plan");
+      const targetMessage = messages[editingPlanIndex];
+      const context = messages
+        .slice(0, editingPlanIndex + 1)
+        .map((m) => ({ role: m.role, content: m.content }));
+
+      const planEditPrompt = [
+        "Regenerate this plan using my edited version below.",
+        "Keep it practical, clear, and improved.",
+        "Return only the final plan.",
+        "",
+        "Edited plan:",
+        edited,
+      ].join("\n");
+
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
+      const resp = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({
+          messages: [...context, { role: "user", content: planEditPrompt }],
+          beReal,
+          thinkDeeply: false,
+          forcePlan: true,
+          forceVent: false,
+          ventAdviceMode: "none",
+        }),
+      });
+
+      if (!resp.ok || !resp.body) {
+        const errJson = await resp.json().catch(() => ({}));
+        throw new Error(errJson.error || "Failed to regenerate plan");
+      }
+
+      let regenerated = "";
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      let done = false;
+
+      while (!done) {
+        const { done: d, value } = await reader.read();
+        if (d) break;
+
+        buf += decoder.decode(value, { stream: true });
+
+        let nl: number;
+        while ((nl = buf.indexOf("\n")) !== -1) {
+          let line = buf.slice(0, nl);
+          buf = buf.slice(nl + 1);
+
+          if (line.endsWith("\r")) line = line.slice(0, -1);
+          if (!line.startsWith("data: ")) continue;
+
+          const json = line.slice(6).trim();
+          if (json === "[DONE]") {
+            done = true;
+            break;
+          }
+
+          try {
+            const parsed = JSON.parse(json);
+            const delta = parsed.choices?.[0]?.delta?.content;
+            if (delta) regenerated += delta;
+          } catch {
+            // ignore malformed chunk
+          }
+        }
+      }
+
+      if (!regenerated.trim()) {
+        throw new Error("No regenerated plan returned");
+      }
+
+      let sourceMessageId = targetMessage?.id ?? null;
+
+      if (sourceMessageId) {
+        await supabase
+          .from("messages")
+          .update({ content: regenerated })
+          .eq("id", sourceMessageId)
+          .eq("user_id", user.id);
+      } else {
+        const { data: saved } = await supabase
+          .from("messages")
+          .insert({
+            conversation_id: cid,
+            user_id: user.id,
+            role: "assistant",
+            content: regenerated,
+          })
+          .select("id")
+          .single();
+        sourceMessageId = saved?.id ?? null;
+      }
+
+      setMessages((prev) => {
+        const copy = [...prev];
+        if (copy[editingPlanIndex]) {
+          copy[editingPlanIndex] = {
+            ...copy[editingPlanIndex],
+            id: sourceMessageId ?? copy[editingPlanIndex].id,
+            content: regenerated,
+          };
+        }
+        return copy;
+      });
+
+      const firstLine = regenerated.split("\n").find((l) => l.trim()) || "Untitled plan";
+      const title = firstLine.replace(/^#+\s*/, "").replace(/[*_`]/g, "").slice(0, 80).trim();
+      await supabase.from("plans").insert({
+        user_id: user.id,
+        title,
+        content: regenerated,
+        source_message_id: sourceMessageId,
+      });
+
+      window.dispatchEvent(new Event("conversationUpdated"));
+      toast.success("Plan regenerated and saved");
+      setEditingPlanIndex(null);
+      setEditedPlanText("");
+    } catch (e: any) {
+      toast.error(e.message || "Failed to regenerate plan");
+    } finally {
+      setIsRegeneratingPlan(false);
+    }
+  };
+
   const downloadPlanAsPdf = (title: string, content: string) => {
     try {
       // Create a simple text-based PDF by creating a blob
@@ -709,6 +879,15 @@ export function Chat() {
                             >
                               <Bookmark className="h-3.5 w-3.5" />
                               Save as Plan
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => openPlanEditor(i)}
+                              className="text-xs text-muted-foreground hover:text-foreground h-8 px-2.5 gap-1.5"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                              Edit Plan
                             </Button>
                           </div>
                         )}
@@ -927,6 +1106,35 @@ export function Chat() {
           </div>
         </div>
       </div>
+
+      {editingPlanIndex !== null && (
+        <div className="fixed inset-0 z-50 bg-background/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-2xl rounded-2xl border border-border bg-surface p-4">
+            <h3 className="text-sm font-semibold mb-2">Edit plan</h3>
+            <textarea
+              value={editedPlanText}
+              onChange={(e) => setEditedPlanText(e.target.value)}
+              className="w-full min-h-[260px] max-h-[60vh] resize-y rounded-lg border border-border bg-background/60 p-3 text-sm outline-none focus:border-primary/60"
+            />
+            <div className="mt-3 flex items-center justify-end gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setEditingPlanIndex(null);
+                  setEditedPlanText("");
+                }}
+                disabled={isRegeneratingPlan}
+              >
+                Cancel
+              </Button>
+              <Button size="sm" onClick={() => void regenerateEditedPlan()} disabled={isRegeneratingPlan}>
+                {isRegeneratingPlan ? "Regenerating..." : "Save & Regenerate"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
