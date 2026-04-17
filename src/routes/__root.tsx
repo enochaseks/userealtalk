@@ -18,6 +18,11 @@ import { Button } from "@/components/ui/button";
 import { Menu, Plus, Trash2 } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
+const ASSET_VERSION = appCss;
+const APP_CSS_HREF = appCss.includes("?")
+  ? `${appCss}&v=${encodeURIComponent(ASSET_VERSION)}`
+  : `${appCss}?v=${encodeURIComponent(ASSET_VERSION)}`;
+
 export const Route = createRootRoute({
   head: () => ({
     meta: [
@@ -43,7 +48,7 @@ export const Route = createRootRoute({
       { name: "twitter:card", content: "summary" },
     ],
     links: [
-      { rel: "stylesheet", href: appCss },
+      { rel: "stylesheet", href: APP_CSS_HREF },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "" },
       {
@@ -58,6 +63,48 @@ export const Route = createRootRoute({
 });
 
 function RootShell({ children }: { children: React.ReactNode }) {
+  const forceUpdateScript = `
+    (() => {
+      if (typeof window === "undefined") return;
+      const version = ${JSON.stringify(ASSET_VERSION)};
+      const versionKey = "realtalk_asset_version";
+      const reloadKey = "realtalk_asset_reloaded_once";
+
+      const previous = localStorage.getItem(versionKey);
+      const changed = previous && previous !== version;
+
+      localStorage.setItem(versionKey, version);
+
+      if (!changed) {
+        sessionStorage.removeItem(reloadKey);
+        return;
+      }
+
+      if (sessionStorage.getItem(reloadKey)) return;
+      sessionStorage.setItem(reloadKey, "1");
+
+      try {
+        if ("serviceWorker" in navigator) {
+          navigator.serviceWorker.getRegistrations().then((regs) => {
+            regs.forEach((reg) => reg.unregister());
+          });
+        }
+      } catch {}
+
+      try {
+        if ("caches" in window) {
+          caches.keys().then((keys) => {
+            keys.forEach((key) => caches.delete(key));
+          });
+        }
+      } catch {}
+
+      const next = new URL(window.location.href);
+      next.searchParams.set("_v", Date.now().toString());
+      window.location.replace(next.toString());
+    })();
+  `;
+
   const chunkRecoveryScript = `
     (() => {
       if (typeof window === "undefined") return;
@@ -94,6 +141,7 @@ function RootShell({ children }: { children: React.ReactNode }) {
     <html lang="en" className="dark">
       <head>
         <HeadContent />
+        <script dangerouslySetInnerHTML={{ __html: forceUpdateScript }} />
         <script dangerouslySetInnerHTML={{ __html: chunkRecoveryScript }} />
       </head>
       <body>
