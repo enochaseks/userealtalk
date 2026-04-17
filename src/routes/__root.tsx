@@ -58,30 +58,10 @@ export const Route = createRootRoute({
 });
 
 function RootShell({ children }: { children: React.ReactNode }) {
-  const unregisterStaleServiceWorkers = `
-    (() => {
-      if (typeof window === "undefined") return;
-      if (!("serviceWorker" in navigator)) return;
-      navigator.serviceWorker.getRegistrations().then((registrations) => {
-        registrations.forEach((registration) => registration.unregister());
-      });
-      if ("caches" in window) {
-        caches.keys().then((keys) => {
-          keys.forEach((key) => {
-            if (key.includes("workbox") || key.includes("pwa") || key.includes("supabase-cache") || key.includes("images-cache")) {
-              caches.delete(key);
-            }
-          });
-        });
-      }
-    })();
-  `;
-
   return (
     <html lang="en" className="dark">
       <head>
         <HeadContent />
-        <script dangerouslySetInnerHTML={{ __html: unregisterStaleServiceWorkers }} />
       </head>
       <body>
         {children}
@@ -120,7 +100,7 @@ function OfflineBanner() {
 
   return (
     <div className="w-full bg-yellow-500/10 border-b border-yellow-500/30 text-yellow-300 text-xs text-center py-1.5 px-4">
-      You're offline — the app is running from cache. New messages require a connection.
+      You're offline. Some actions may not work until your connection is back.
     </div>
   );
 }
