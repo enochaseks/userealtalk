@@ -46,7 +46,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { error: error?.message };
     },
     signOut: async () => {
-      await supabase.auth.signOut();
+      try {
+        await Promise.race([
+          supabase.auth.signOut({ scope: "global" }),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("Global sign out timeout")), 6000),
+          ),
+        ]);
+      } catch {
+        // Safari/network-safe fallback: always clear local session state.
+        await supabase.auth.signOut({ scope: "local" });
+      }
     },
   };
 

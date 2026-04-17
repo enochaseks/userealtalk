@@ -58,66 +58,10 @@ export const Route = createRootRoute({
 });
 
 function RootShell({ children }: { children: React.ReactNode }) {
-  const clientRecoveryScript = `
-    (() => {
-      if (typeof window === "undefined") return;
-
-      const cleanupKey = "realtalk_cleanup_once_v2";
-      const reloadOnceKey = "realtalk_chunk_reload_once";
-
-      const hardReloadOnce = () => {
-        if (sessionStorage.getItem(reloadOnceKey)) return;
-        sessionStorage.setItem(reloadOnceKey, "1");
-        const url = new URL(window.location.href);
-        url.searchParams.set("_r", Date.now().toString());
-        window.location.replace(url.toString());
-      };
-
-      if (!sessionStorage.getItem(cleanupKey)) {
-        sessionStorage.setItem(cleanupKey, "1");
-        Promise.resolve().then(async () => {
-          try {
-            if ("serviceWorker" in navigator) {
-              const regs = await navigator.serviceWorker.getRegistrations();
-              await Promise.all(regs.map((r) => r.unregister()));
-            }
-          } catch {}
-
-          try {
-            if ("caches" in window) {
-              const keys = await caches.keys();
-              await Promise.all(keys.map((k) => caches.delete(k)));
-            }
-          } catch {}
-        });
-      }
-
-      window.addEventListener("error", (event) => {
-        const msg = String(event?.message || "");
-        if (msg.includes("dynamically imported module") || msg.includes("Loading chunk")) {
-          hardReloadOnce();
-        }
-      });
-
-      window.addEventListener("unhandledrejection", (event) => {
-        const reason = event?.reason;
-        const msg = String(reason?.message || reason || "");
-        if (msg.includes("dynamically imported module") || msg.includes("Loading chunk")) {
-          hardReloadOnce();
-        }
-      });
-
-      setTimeout(() => {
-        sessionStorage.removeItem(reloadOnceKey);
-      }, 10000);
-    })();
-  `;
-
   return (
     <html lang="en" className="dark">
       <head>
         <HeadContent />
-        <script dangerouslySetInnerHTML={{ __html: clientRecoveryScript }} />
       </head>
       <body>
         {children}
