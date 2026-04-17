@@ -300,6 +300,8 @@ const isBusinessMarketingRequest = (text: string): boolean => {
 
 const isEmotionalRequest = (text: string): boolean => {
   const lower = text.toLowerCase();
+  
+  // Direct emotional/mental health indicators
   const emotionalKeywords = [
     "i feel",
     "i'm feeling",
@@ -323,7 +325,62 @@ const isEmotionalRequest = (text: string): boolean => {
     "i cant cope",
   ];
 
-  return emotionalKeywords.some((k) => lower.includes(k));
+  // Relational/personal struggle indicators (breakups, conflict, betrayal, family issues, grief)
+  const relationalKeywords = [
+    "breakup",
+    "broke up",
+    "broke up with",
+    "left me",
+    "breaking up",
+    "relationship ended",
+    "partner left",
+    "my ex",
+    "betrayed",
+    "betrayal",
+    "friend betrayed",
+    "family drama",
+    "family conflict",
+    "toxic",
+    "manipulative",
+    "abusive",
+    "my boss",
+    "boss treating",
+    "coworker",
+    "conflict with",
+    "having a hard time",
+    "struggling with",
+    "dealing with",
+    "grief",
+    "grieving",
+    "lost someone",
+    "death of",
+    "someone died",
+    "passing of",
+    "miss them",
+    "i'm alone",
+    "im alone",
+    "rejection",
+    "rejected",
+    "never enough",
+    "not good enough",
+    "self doubt",
+    "self-doubt",
+    "insecure",
+    "jealous",
+    "envious",
+    "worthless",
+    "hopeless",
+    "trapped",
+    "stuck in",
+    "can't get over",
+    "cant get over",
+  ];
+
+  // Check both categories
+  const hasEmotionalKeyword = emotionalKeywords.some((k) => lower.includes(k));
+  const hasRelationalKeyword = relationalKeywords.some((k) => lower.includes(k));
+
+  return hasEmotionalKeyword || hasRelationalKeyword;
 };
 
 const latestUserContent = (messages: Array<{ role: string; content: string }>): string => {
