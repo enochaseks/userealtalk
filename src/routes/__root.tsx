@@ -195,7 +195,7 @@ function AppFrame() {
   const showNav = user && path !== "/auth";
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen min-h-[100dvh] flex flex-col">
       <OfflineBanner />
       {showNav && <TopNav />}
       <main className="flex-1 flex flex-col">
