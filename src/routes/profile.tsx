@@ -10,7 +10,7 @@ import { Check, Download, Pencil, X } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 
-const fileToDataUrl = (file: File, maxSize = 256): Promise<string> => {
+const fileToOptimizedBlob = (file: File, maxSize = 512): Promise<Blob> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
@@ -28,7 +28,18 @@ const fileToDataUrl = (file: File, maxSize = 256): Promise<string> => {
           return;
         }
         ctx.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL("image/jpeg", 0.82));
+
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              reject(new Error("Could not process selected image"));
+              return;
+            }
+            resolve(blob);
+          },
+          "image/jpeg",
+          0.86,
+        );
       };
       img.onerror = () => reject(new Error("Invalid image file"));
       img.src = String(reader.result ?? "");
@@ -253,14 +264,31 @@ function ProfilePage() {
   };
 
   const onAvatarSelected = async (file?: File | null) => {
-    if (!file) return;
+    if (!file || !user) return;
     try {
-      const dataUrl = await fileToDataUrl(file);
-      setAvatarDataUrl(dataUrl);
-      await saveProfileIdentity(displayName, "");
-      toast.error("Avatar upload is temporarily disabled while we stabilize Safari. Name changes still save.");
+      const avatarBlob = await fileToOptimizedBlob(file);
+      const avatarPath = `${user.id}/avatar.jpg`;
+      const { error: uploadError } = await supabase.storage
+        .from("avatars")
+        .upload(avatarPath, avatarBlob, {
+          contentType: "image/jpeg",
+          cacheControl: "3600",
+          upsert: true,
+        });
+
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage.from("avatars").getPublicUrl(avatarPath);
+      const nextAvatarUrl = `${data.publicUrl}?v=${Date.now()}`;
+      setAvatarDataUrl(nextAvatarUrl);
+      await saveProfileIdentity(displayName, nextAvatarUrl);
     } catch (e: any) {
-      toast.error(e?.message || "Could not use selected image");
+      const message = String(e?.message || "");
+      if (message.toLowerCase().includes("bucket") || message.toLowerCase().includes("policy")) {
+        toast.error("Avatar storage is still provisioning. Please try again in a minute.");
+      } else {
+        toast.error(e?.message || "Could not upload selected image");
+      }
     }
   };
 
