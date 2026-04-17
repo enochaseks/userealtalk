@@ -14,6 +14,48 @@ export type Database = {
   }
   public: {
     Tables: {
+      conversation_weekly_insights: {
+        Row: {
+          ai_help_summary: string
+          calm_progress: string
+          conversation_id: string
+          created_at: string
+          emotion_trend: string
+          id: string
+          overthinking_reduction: string
+          thought_patterns: string
+          updated_at: string
+          user_id: string
+          week_start: string
+        }
+        Insert: {
+          ai_help_summary?: string
+          calm_progress?: string
+          conversation_id: string
+          created_at?: string
+          emotion_trend?: string
+          id?: string
+          overthinking_reduction?: string
+          thought_patterns?: string
+          updated_at?: string
+          user_id: string
+          week_start: string
+        }
+        Update: {
+          ai_help_summary?: string
+          calm_progress?: string
+          conversation_id?: string
+          created_at?: string
+          emotion_trend?: string
+          id?: string
+          overthinking_reduction?: string
+          thought_patterns?: string
+          updated_at?: string
+          user_id?: string
+          week_start?: string
+        }
+        Relationships: []
+      }
       conversations: {
         Row: {
           created_at: string
@@ -107,6 +149,24 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      user_insight_settings: {
+        Row: {
+          monitor_enabled: boolean
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          monitor_enabled?: boolean
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          monitor_enabled?: boolean
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
     }
     Views: {
