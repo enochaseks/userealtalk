@@ -475,10 +475,13 @@ export function Chat() {
 
     const thinkingRequested = forceThinking || shouldUseThinkingMode(text);
     const planningRequested = forcePlan || userAskedForPlan(text);
-    const ventRequested = forceVent || shouldUseVentMode(text) || !!overrideVentAdviceMode;
+    const ventDetectedFromText = shouldUseVentMode(text);
+    const ventRequested = forceVent || ventDetectedFromText || !!overrideVentAdviceMode;
     const activeVentAdviceMode = overrideVentAdviceMode ?? ventAdviceMode;
     const activeVent = ventRequested;
-    const shouldOfferVentChoice = activeVent && activeVentAdviceMode === "none";
+    // Show manual vent choice only when vent was explicitly forced by toggle.
+    // If vent is auto-detected from text, respond immediately in vent mode.
+    const shouldOfferVentChoice = forceVent && !overrideVentAdviceMode && activeVentAdviceMode === "none";
 
     const activeFeatures: string[] = [
       thinkingRequested ? "Deep Thinking" : "",
