@@ -515,6 +515,7 @@ export function Landing() {
           <h3 className="text-sm md:text-base font-semibold tracking-tight">Safety & trust</h3>
           <div className="mt-2 grid gap-2 text-sm text-muted-foreground">
             <p>• You control what you share and can choose whether monitoring/insights are enabled.</p>
+            <p>• Gmail send access is optional and only used when you choose to send email from RealTalk.</p>
             <p>• RealTalk is designed for clarity and support, not judgment.</p>
             <p>• In emergencies or crisis situations, contact local emergency or crisis services immediately.</p>
           </div>
@@ -577,6 +578,11 @@ export function Landing() {
                 Log in
               </Button>
             </Link>
+          </div>
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+            <Link to="/privacy" className="hover:text-foreground transition-colors">Privacy Policy</Link>
+            <Link to="/terms" className="hover:text-foreground transition-colors">Terms</Link>
+            <Link to="/account-data" className="hover:text-foreground transition-colors">Account & data export</Link>
           </div>
           <p className="mt-4 text-xs text-muted-foreground/80">
             © ™ 2026 RealTalk LTD. All Rights Reserved.

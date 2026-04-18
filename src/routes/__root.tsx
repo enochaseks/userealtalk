@@ -31,6 +31,12 @@ export const Route = createRootRoute({
       { httpEquiv: "Cache-Control", content: "no-cache, no-store, must-revalidate" },
       { httpEquiv: "Pragma", content: "no-cache" },
       { httpEquiv: "Expires", content: "0" },
+      {
+        httpEquiv: "Content-Security-Policy",
+        content:
+          "default-src 'self'; connect-src 'self' https://*.supabase.co https://api.mistral.ai https://fonts.googleapis.com; img-src 'self' data: https: blob:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+      },
+      { name: "referrer", content: "strict-origin-when-cross-origin" },
       { title: "RealTalk — Think clearly. Decide better." },
       {
         name: "description",
@@ -387,6 +393,7 @@ function TopNav() {
 
                 <Link
                   to="/profile"
+                  search={{ tab: undefined }}
                   onClick={() => setOpen(false)}
                   className="mx-2 mt-auto pt-3 border-t border-border/70 flex items-center justify-between rounded-md px-3 py-2 hover:bg-surface-elevated transition-colors"
                 >

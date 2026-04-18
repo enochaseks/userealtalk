@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, Link, useSearch } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
@@ -9,6 +9,17 @@ import { toast } from "sonner";
 import { Check, Download, Pencil, X } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 const fileToOptimizedBlob = (file: File, maxSize = 512): Promise<Blob> => {
   return new Promise((resolve, reject) => {
@@ -58,13 +69,20 @@ const blobToDataUrl = (blob: Blob): Promise<string> => {
   });
 };
 
+type ProfileTab = "plans" | "insights" | "settings";
+
 export const Route = createFileRoute("/profile")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    tab:
+      typeof search.tab === "string" && ["plans", "insights", "settings"].includes(search.tab)
+        ? (search.tab as ProfileTab)
+        : undefined,
+  }),
   component: ProfilePage,
   head: () => ({ meta: [{ title: "Your space — RealTalk" }] }),
 });
 
 type Plan = { id: string; title: string; content: string; created_at: string };
-type Conv = { id: string; title: string; updated_at: string };
 type Insight = {
   id: string;
   week_start: string;
@@ -100,9 +118,9 @@ const planPreviewText = (content: string, maxChars = 140): string => {
 function ProfilePage() {
   const { user, loading, signOut } = useAuth();
   const navigate = useNavigate();
-  const [tab, setTab] = useState<"plans" | "chats" | "insights" | "settings">("plans");
+  const search = useSearch({ strict: false }) as { tab?: ProfileTab };
+  const [tab, setTab] = useState<ProfileTab>(search?.tab ?? "plans");
   const [plans, setPlans] = useState<Plan[]>([]);
-  const [convs, setConvs] = useState<Conv[]>([]);
   const [insights, setInsights] = useState<Insight[]>([]);
   const [openPlan, setOpenPlan] = useState<Plan | null>(null);
   const [planDraft, setPlanDraft] = useState<EditablePlanDraft | null>(null);
@@ -114,6 +132,9 @@ function ProfilePage() {
   const [avatarDataUrl, setAvatarDataUrl] = useState("");
   const [editingName, setEditingName] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const [autoPdfEnabled, setAutoPdfEnabled] = useState(() => {
     if (typeof window !== "undefined") {
@@ -125,6 +146,12 @@ function ProfilePage() {
   useEffect(() => {
     if (!loading && !user) navigate({ to: "/auth" });
   }, [user, loading, navigate]);
+
+  useEffect(() => {
+    if (search?.tab && search.tab !== tab) {
+      setTab(search.tab);
+    }
+  }, [search?.tab, tab]);
 
   useEffect(() => {
     if (!user) return;
@@ -149,14 +176,6 @@ function ProfilePage() {
       setPlans(data ?? []);
     };
 
-    const loadConversations = async () => {
-      const { data } = await supabase
-        .from("conversations")
-        .select("id,title,updated_at")
-        .order("updated_at", { ascending: false });
-      setConvs(data ?? []);
-    };
-
     const loadInsightSettings = async () => {
       const { data } = await supabase
         .from("user_insight_settings")
@@ -178,7 +197,6 @@ function ProfilePage() {
     };
 
     void loadPlans();
-    void loadConversations();
     void loadInsightSettings();
     void loadInsights();
 
@@ -188,11 +206,6 @@ function ProfilePage() {
         "postgres_changes",
         { event: "*", schema: "public", table: "plans", filter: `user_id=eq.${user.id}` },
         () => void loadPlans(),
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "conversations", filter: `user_id=eq.${user.id}` },
-        () => void loadConversations(),
       )
       .on(
         "postgres_changes",
@@ -424,6 +437,48 @@ function ProfilePage() {
     setEditingName(false);
   };
 
+  const deleteAccount = async () => {
+    if (!user) return;
+    if (deleteConfirmText.trim().toUpperCase() !== "DELETE") {
+      toast.error('Type DELETE to confirm account removal');
+      return;
+    }
+
+    setDeletingAccount(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+
+      if (!accessToken) {
+        throw new Error("You must be signed in to delete your account");
+      }
+
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/delete-account`;
+      const resp = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+
+      const json = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        throw new Error(json.error || "Failed to delete account");
+      }
+
+      await signOut();
+      setDeleteDialogOpen(false);
+      setDeleteConfirmText("");
+      toast.success("Account deleted");
+      navigate({ to: "/" });
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to delete account");
+    } finally {
+      setDeletingAccount(false);
+    }
+  };
+
   return (
     <div className="flex-1 max-w-3xl w-full mx-auto px-5 py-10">
       <div className="flex items-end justify-between mb-8">
@@ -496,10 +551,17 @@ function ProfilePage() {
       </div>
 
       <div className="flex gap-1 border-b border-border mb-6 -mx-1">
-        {(["plans", "chats", "insights", "settings"] as const).map((t) => (
+          {(["plans", "insights", "settings"] as const).map((t) => (
           <button
             key={t}
-            onClick={() => setTab(t)}
+            onClick={() => {
+              setTab(t);
+              navigate({
+                to: "/profile",
+                search: { tab: t === "plans" ? undefined : t },
+                replace: true,
+              });
+            }}
             className={`px-4 py-2.5 text-sm capitalize transition-colors relative ${
               tab === t ? "text-foreground" : "text-muted-foreground hover:text-foreground"
             }`}
@@ -546,24 +608,6 @@ function ProfilePage() {
         </div>
       )}
 
-      {tab === "chats" && (
-        <div className="space-y-2">
-          {convs.length === 0 && <EmptyState text="No conversations yet. Head to chat to begin." />}
-          {convs.map((c) => (
-            <Link
-              key={c.id}
-              to="/"
-              search={{ c: c.id } as never}
-              className="block rounded-xl border border-border bg-surface/60 hover:bg-surface-elevated transition-colors p-4"
-            >
-              <div className="text-sm">{c.title}</div>
-              <div className="text-xs text-muted-foreground mt-1">
-                {new Date(c.updated_at).toLocaleString()}
-              </div>
-            </Link>
-          ))}
-        </div>
-      )}
 
       {tab === "insights" && (
         <div className="space-y-3">
@@ -632,6 +676,58 @@ function ProfilePage() {
               </div>
               <Switch checked={autoPdfEnabled} onCheckedChange={toggleAutoPdf} />
             </div>
+          </div>
+
+          <div className="rounded-xl border border-border bg-surface/60 p-5 space-y-2">
+            <Label className="text-sm font-semibold text-foreground cursor-pointer">
+              Privacy & account data
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              Review policy details, export your data, or request account deletion.
+            </p>
+            <div className="flex flex-wrap gap-3 text-sm">
+              <Link to="/privacy" className="text-primary hover:underline">Privacy Policy</Link>
+              <Link to="/terms" className="text-primary hover:underline">Terms</Link>
+              <Link to="/account-data" className="text-primary hover:underline">Account & data export</Link>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-5 space-y-3">
+            <div>
+              <Label className="text-sm font-semibold text-foreground cursor-pointer">
+                Delete account
+              </Label>
+              <p className="text-xs text-muted-foreground mt-1">
+                Permanently delete your account, chats, plans, insights, and related data. This cannot be undone.
+              </p>
+            </div>
+
+            <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+              <AlertDialogTrigger asChild>
+                <Button variant="destructive" size="sm">Delete account</Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete your account?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This permanently removes your account and associated data. Type DELETE to confirm.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+
+                <Input
+                  value={deleteConfirmText}
+                  onChange={(e) => setDeleteConfirmText(e.target.value)}
+                  placeholder="Type DELETE"
+                />
+
+                <AlertDialogFooter>
+                  <AlertDialogCancel disabled={deletingAccount}>Cancel</AlertDialogCancel>
+                  <Button variant="destructive" onClick={() => void deleteAccount()} disabled={deletingAccount}>
+                    {deletingAccount ? "Deleting..." : "Permanently delete"}
+                  </Button>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
         </div>
       )}
