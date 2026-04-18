@@ -401,6 +401,32 @@ export function Chat() {
     return keys.some((k) => lower.includes(k));
   };
 
+  const isEmailIntent = (text: string): boolean => {
+    const lower = text.toLowerCase();
+    const patterns = [
+      "send an email",
+      "send email",
+      "write an email",
+      "write email",
+      "draft an email",
+      "draft email",
+      "compose an email",
+      "compose email",
+      "email someone",
+      "email my",
+      "i want to email",
+      "i need to email",
+      "i need to send",
+      "can you help me email",
+      "help me write an email",
+      "help me draft",
+      "open gmail",
+      "send via gmail",
+      "gmail",
+    ];
+    return patterns.some((p) => lower.includes(p));
+  };
+
   const isLogicalExecutionPrompt = (text: string): boolean => {
     const lower = text.toLowerCase();
     
@@ -496,6 +522,15 @@ export function Chat() {
  const send = async (overrideText?: string, overrideVentAdviceMode?: VentAdviceMode) => {
   const text = (overrideText ?? input).trim();
   if (!text || busy || !user) return;
+
+  // If the user expresses email intent, open the Gmail panel instead of chatting
+  if (!overrideText && isEmailIntent(text)) {
+    setInput("");
+    setShowEmailPanel(true);
+    // Pre-fill the prompt field with whatever the user typed so the AI can use it
+    setEmailPrompt(text);
+    return;
+  }
 
     const thinkingRequested = forceThinking || shouldUseThinkingMode(text);
     const planningRequested = forcePlan || userAskedForPlan(text);
@@ -1241,10 +1276,11 @@ export function Chat() {
     user?.identities?.some((identity) => identity.provider?.toLowerCase() === "google"),
   );
   const hasGmailAccess = Boolean(session?.provider_token);
-  const userName =
+  const userFullName =
     (user?.user_metadata?.full_name as string | undefined) ||
     (user?.user_metadata?.name as string | undefined) ||
     (user?.email?.split("@")[0] ?? "there");
+  const userName = userFullName.split(/\s+/)[0] || "there";
 
   return (
     <div className="flex-1 flex flex-col relative">

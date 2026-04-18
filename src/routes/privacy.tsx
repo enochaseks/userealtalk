@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/privacy")({
   component: PrivacyPage,
@@ -6,8 +6,16 @@ export const Route = createFileRoute("/privacy")({
 });
 
 function PrivacyPage() {
+  const navigate = useNavigate();
   return (
     <div className="flex-1 max-w-3xl w-full mx-auto px-5 py-10">
+      <button
+        onClick={() => navigate({ to: "/profile", search: { tab: undefined } })}
+        className="mb-6 flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
+        Back
+      </button>
       <h1 className="font-serif text-3xl tracking-tight">Privacy Policy</h1>
       <p className="mt-3 text-sm text-muted-foreground">
         Last updated: April 18, 2026
