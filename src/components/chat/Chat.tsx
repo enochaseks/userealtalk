@@ -4,7 +4,7 @@ import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { Mic, ArrowUp, Bookmark, Trash2, ChevronDown, Plus, Pencil, Mail } from "lucide-react";
+import { Mic, ArrowUp, Bookmark, Trash2, ChevronDown, Plus, Pencil, Mail, RotateCcw } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
@@ -18,6 +18,8 @@ type Msg = {
   thinking?: string;
   ventChoicePending?: boolean;
   features?: string[];
+  retryable?: boolean;
+  retryText?: string;
 };
 type VentAdviceMode = "none" | "advice";
 type EmailTone = "professional" | "formal" | "casual" | "fun";
@@ -629,21 +631,33 @@ export function Chat() {
     });
 
     const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
-    const resp = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-      },
-      body: JSON.stringify({
-        messages: outboundMessages,
-        beReal,
-        thinkDeeply: thinkingRequested && !shouldOfferVentChoice,
-        forcePlan: planningRequested,
-        forceVent: activeVent,
-        ventAdviceMode: activeVentAdviceMode,
-      }),
-    });
+    const chatAbort = new AbortController();
+    const chatTimeout = setTimeout(() => chatAbort.abort(), 30000);
+    let resp: Response;
+    try {
+      resp = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({
+          messages: outboundMessages,
+          beReal,
+          thinkDeeply: thinkingRequested && !shouldOfferVentChoice,
+          forcePlan: planningRequested,
+          forceVent: activeVent,
+          ventAdviceMode: activeVentAdviceMode,
+          userId: user.id,
+        }),
+        signal: chatAbort.signal,
+      });
+    } catch (e: any) {
+      clearTimeout(chatTimeout);
+      if (e?.name === "AbortError") throw new Error("RealTalk took too long to respond. Try again.");
+      throw e;
+    }
+    clearTimeout(chatTimeout);
 
     if (!resp.ok || !resp.body) {
       const errJson = await resp.json().catch(() => ({}));
@@ -775,6 +789,21 @@ export function Chat() {
         });
       }
 
+      // Fire-and-forget: learn user preferences from conversation (does not block UI)
+      void (async () => {
+        try {
+          const recentMessages = [...messages, userMsg, { role: "assistant", content: assistant }]
+            .slice(-8)
+            .map((m) => ({ role: m.role, content: m.content }));
+          await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/profile-learn`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ userId: user.id, recentMessages }),
+          });
+        } catch {
+          // Silent — never block the chat experience
+        }
+      })();
     }
 
     window.dispatchEvent(new Event("conversationCreated"));
@@ -782,10 +811,32 @@ export function Chat() {
   } catch (e: any) {
     toast.error(e.message || "Something went wrong");
 
-    // ✅ FIX 5: only remove empty assistant, not real messages
-    setMessages((prev) =>
-      prev.filter((m) => !(m.role === "assistant" && m.content === ""))
-    );
+    // Keep the assistant bubble and offer an inline retry action
+    setMessages((prev) => {
+      const copy = [...prev];
+      for (let i = copy.length - 1; i >= 0; i--) {
+        if (copy[i].role === "assistant") {
+          copy[i] = {
+            ...copy[i],
+            content: "I couldn't respond just now.",
+            thinking: undefined,
+            ventChoicePending: false,
+            retryable: true,
+            retryText: text,
+          };
+          return copy;
+        }
+      }
+      return [
+        ...copy,
+        {
+          role: "assistant",
+          content: "I couldn't respond just now.",
+          retryable: true,
+          retryText: text,
+        },
+      ];
+    });
   } finally {
     isSendingRef.current = false;
     setBusy(false);
@@ -880,6 +931,7 @@ export function Chat() {
           forcePlan: true,
           forceVent: false,
           ventAdviceMode: "none",
+          userId: user.id,
         }),
       });
 
@@ -1043,6 +1095,7 @@ export function Chat() {
         forcePlan: false,
         forceVent: false,
         ventAdviceMode: "none",
+        userId: user?.id,
       }),
     });
 
@@ -1435,6 +1488,20 @@ export function Chat() {
                               Just listen
                             </Button>
                             </div>
+                          </div>
+                        )}
+                        {m.retryable && m.retryText && (
+                          <div className="mt-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => void send(m.retryText)}
+                              disabled={busy}
+                              className="text-xs text-muted-foreground hover:text-foreground h-8 px-2.5 gap-1.5"
+                            >
+                              <RotateCcw className="h-3.5 w-3.5" />
+                              Try again
+                            </Button>
                           </div>
                         )}
                       </div>

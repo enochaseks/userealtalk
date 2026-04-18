@@ -155,16 +155,97 @@ export type Database = {
           monitor_enabled: boolean
           updated_at: string
           user_id: string
+          weekly_email_enabled: boolean
         }
         Insert: {
           monitor_enabled?: boolean
           updated_at?: string
           user_id: string
+          weekly_email_enabled?: boolean
         }
         Update: {
           monitor_enabled?: boolean
           updated_at?: string
           user_id?: string
+          weekly_email_enabled?: boolean
+        }
+        Relationships: []
+      }
+      user_memory_profiles: {
+        Row: {
+          comfort_boundaries: Json
+          created_at: string
+          preference_notes: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          comfort_boundaries?: Json
+          created_at?: string
+          preference_notes?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          comfort_boundaries?: Json
+          created_at?: string
+          preference_notes?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_weekly_insights: {
+        Row: {
+          ai_help_summary: string
+          boundary_respect: string
+          calm_progress: string
+          created_at: string
+          emotion_trend: string
+          id: string
+          overthinking_reduction: string
+          response_patterns: string
+          source_message_count: number
+          thought_patterns: string
+          updated_at: string
+          user_id: string
+          week_start: string
+          what_didnt: string
+          what_worked: string
+        }
+        Insert: {
+          ai_help_summary?: string
+          boundary_respect?: string
+          calm_progress?: string
+          created_at?: string
+          emotion_trend?: string
+          id?: string
+          overthinking_reduction?: string
+          response_patterns?: string
+          source_message_count?: number
+          thought_patterns?: string
+          updated_at?: string
+          user_id: string
+          week_start: string
+          what_didnt?: string
+          what_worked?: string
+        }
+        Update: {
+          ai_help_summary?: string
+          boundary_respect?: string
+          calm_progress?: string
+          created_at?: string
+          emotion_trend?: string
+          id?: string
+          overthinking_reduction?: string
+          response_patterns?: string
+          source_message_count?: number
+          thought_patterns?: string
+          updated_at?: string
+          user_id?: string
+          week_start?: string
+          what_didnt?: string
+          what_worked?: string
         }
         Relationships: []
       }

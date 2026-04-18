@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -39,6 +40,14 @@ Adapt your tone silently:
 - Otherwise → balanced.
 
 Never mention these modes or call yourself an AI. You are RealTalk — a thinking companion.`;
+
+const RELATIONSHIP_MEMORY_MODE = `
+
+Relationship memory and comfort boundaries:
+- Build trust over time by adapting to recurring user needs and preferences.
+- If the user sounds uncomfortable or asks you to stop/slow down/change tone, pull back immediately.
+- Respect known comfort boundaries in future responses.
+- Keep support warm and steady, never clingy or coercive.`;
 
 const REAL_MODE = `\n\nBe Real Mode - BRUTAL HONESTY:
 - No sugar-coating, no cushioning, no softening language.
@@ -491,6 +500,70 @@ const latestUserContent = (messages: Array<{ role: string; content: string }>): 
   return "";
 };
 
+const discomfortSignals = [
+  "uncomfortable",
+  "stop",
+  "don't do that",
+  "dont do that",
+  "too much",
+  "back off",
+  "pull back",
+  "i don't like that",
+  "i dont like that",
+  "that doesn't help",
+  "that doesnt help",
+  "change your tone",
+  "not like that",
+  "please don't",
+  "please dont",
+];
+
+const extractBoundaryNote = (text: string): string | null => {
+  const clean = text.replace(/\s+/g, " ").trim();
+  const lower = clean.toLowerCase();
+  if (!clean) return null;
+  if (!discomfortSignals.some((signal) => lower.includes(signal))) return null;
+  return clean.slice(0, 300);
+};
+
+const toBoundaryItems = (value: unknown): Array<{ note: string; created_at: string }> => {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item: any) => ({
+      note: String(item?.note ?? "").trim(),
+      created_at: String(item?.created_at ?? "").trim(),
+    }))
+    .filter((item) => item.note);
+};
+
+const mergeBoundaryItems = (
+  existing: unknown,
+  newNote: string,
+): Array<{ note: string; created_at: string }> => {
+  const current = toBoundaryItems(existing);
+  const lower = newNote.toLowerCase();
+  if (current.some((x) => x.note.toLowerCase() === lower)) return current.slice(-12);
+  return [...current, { note: newNote, created_at: new Date().toISOString() }].slice(-12);
+};
+
+const buildMemoryInstruction = (memoryProfile: any): string => {
+  if (!memoryProfile) return "";
+
+  const lines: string[] = [];
+  const notes = String(memoryProfile.preference_notes ?? "").trim();
+  if (notes) lines.push(`Known user preferences: ${notes}`);
+
+  const boundaries = toBoundaryItems(memoryProfile.comfort_boundaries)
+    .map((entry) => entry.note)
+    .slice(-6);
+
+  if (boundaries.length > 0) {
+    lines.push(`Comfort boundaries to respect: ${boundaries.join(" | ")}`);
+  }
+
+  return lines.join("\n");
+};
+
 const buildSearchQuery = (text: string): string => {
   return text
     .replace(/\s+/g, " ")
@@ -505,7 +578,10 @@ const fetchGoogleCseResults = async (query: string): Promise<string[]> => {
   if (!GOOGLE_API_KEY || !GOOGLE_CSE_ID) return [];
 
   const url = `https://www.googleapis.com/customsearch/v1?key=${encodeURIComponent(GOOGLE_API_KEY)}&cx=${encodeURIComponent(GOOGLE_CSE_ID)}&q=${encodeURIComponent(query)}&num=8`;
-  const resp = await fetch(url);
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), 5000);
+  let resp: Response;
+  try { resp = await fetch(url, { signal: ac.signal }); } catch { return []; } finally { clearTimeout(t); }
   if (!resp.ok) return [];
 
   const data = await resp.json();
@@ -524,7 +600,10 @@ const fetchGoogleCseResults = async (query: string): Promise<string[]> => {
 
 const fetchDuckDuckGoResults = async (query: string): Promise<string[]> => {
   const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
-  const resp = await fetch(url);
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), 5000);
+  let resp: Response;
+  try { resp = await fetch(url, { signal: ac.signal }); } catch { return []; } finally { clearTimeout(t); }
   if (!resp.ok) return [];
 
   const data = await resp.json();
@@ -612,20 +691,148 @@ const getVentReadTime = (text: string, ventMode: boolean): number => {
   return Math.min(computed, 7000);
 };
 
+const buildWorkersPrompt = (systemText: string, messages: Array<{ role: string; content: string }>): string => {
+  const convo = messages
+    .filter((m) => m?.content)
+    .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
+    .join("\n\n");
+  return `${systemText}\n\n${convo}\n\nASSISTANT:`.trim();
+};
+
+const runGeminiFallback = async (
+  apiKey: string | undefined,
+  systemText: string,
+  messages: Array<{ role: string; content: string }>,
+): Promise<string | null> => {
+  if (!apiKey) return null;
+
+  const geminiMessages = messages
+    .filter((m) => m?.content)
+    .map((m) => ({
+      role: m.role === "assistant" ? "model" : "user",
+      parts: [{ text: m.content }],
+    }));
+
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), 20000);
+  try {
+    const resp = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(apiKey)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: systemText }] },
+          contents: geminiMessages,
+        }),
+        signal: ac.signal,
+      },
+    );
+
+    if (!resp.ok) return null;
+    const json = await resp.json().catch(() => ({}));
+    const text = Array.isArray(json?.candidates?.[0]?.content?.parts)
+      ? json.candidates[0].content.parts.map((p: any) => String(p?.text ?? "")).join("")
+      : "";
+    return text.trim() || null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(t);
+  }
+};
+
+const runWorkersFallback = async (
+  apiKey: string | undefined,
+  accountId: string | undefined,
+  systemText: string,
+  messages: Array<{ role: string; content: string }>,
+): Promise<string | null> => {
+  if (!apiKey || !accountId) return null;
+
+  const prompt = buildWorkersPrompt(systemText, messages);
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), 20000);
+  try {
+    const resp = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/ai/run/@cf/meta/llama-3.1-8b-instruct`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          prompt,
+          max_tokens: 700,
+        }),
+        signal: ac.signal,
+      },
+    );
+
+    if (!resp.ok) return null;
+    const json = await resp.json().catch(() => ({}));
+    const text = String(json?.result?.response ?? "").trim();
+    return text || null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(t);
+  }
+};
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { messages, beReal, thinkDeeply, forcePlan, forceVent, ventAdviceMode } = await req.json();
+    const { messages, beReal, thinkDeeply, forcePlan, forceVent, ventAdviceMode, userId } = await req.json();
     const MISTRAL_API_KEY = Deno.env.get("MISTRAL_API_KEY");
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+    const WORKERS_API_KEY = Deno.env.get("WORKERS_API_KEY");
+    const CF_ACCOUNT_ID = Deno.env.get("CF_ACCOUNT_ID") ?? Deno.env.get("CLOUDFLARE_ACCOUNT_ID");
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     const aiKey = MISTRAL_API_KEY;
     const aiUrl = "https://api.mistral.ai/v1/chat/completions";
     const aiModel = "mistral-small-latest";
-    if (!aiKey) {
-      throw new Error("Missing AI key. Set MISTRAL_API_KEY in Supabase secrets.");
+    const hasAnyProvider = Boolean(aiKey || GEMINI_API_KEY || (WORKERS_API_KEY && CF_ACCOUNT_ID));
+    if (!hasAnyProvider) {
+      throw new Error("Missing AI provider keys. Set MISTRAL_API_KEY or GEMINI_API_KEY or WORKERS_API_KEY + CF_ACCOUNT_ID.");
     }
 
     const lastUserMessage = latestUserContent(messages ?? []);
+    const admin =
+      SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY
+        ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+        : null;
+
+    let memoryProfile: any = null;
+    if (admin && userId) {
+      const { data } = await admin
+        .from("user_memory_profiles")
+        .select("preference_notes, comfort_boundaries")
+        .eq("user_id", userId)
+        .maybeSingle();
+      memoryProfile = data ?? null;
+
+      const boundaryNote = extractBoundaryNote(lastUserMessage);
+      if (boundaryNote) {
+        const nextBoundaries = mergeBoundaryItems(memoryProfile?.comfort_boundaries, boundaryNote);
+        await admin.from("user_memory_profiles").upsert({
+          user_id: userId,
+          preference_notes: String(memoryProfile?.preference_notes ?? ""),
+          comfort_boundaries: nextBoundaries,
+          updated_at: new Date().toISOString(),
+        });
+
+        memoryProfile = {
+          preference_notes: String(memoryProfile?.preference_notes ?? ""),
+          comfort_boundaries: nextBoundaries,
+        };
+      }
+    }
+
+    const memoryInstruction = buildMemoryInstruction(memoryProfile);
   const emailRequested = isEmailRequest(lastUserMessage);
   const deepThinkingRequested = thinkDeeply || emailRequested;
   const planningRequested = forcePlan || emailRequested || isPlanningRequest(lastUserMessage);
@@ -646,6 +853,7 @@ serve(async (req) => {
       : "";
     const system =
       SYSTEM_BASE +
+      RELATIONSHIP_MEMORY_MODE +
       (beReal ? REAL_MODE : "") +
       (deepThinkingRequested ? THINK_DEEPLY_MODE : "") +
       (planningRequested ? PLANNING_MODE : "") +
@@ -657,7 +865,8 @@ serve(async (req) => {
       (logicalExecutionRequested && !emotionalRequested ? `\n\nExecution-focused response: Options first, no questions. Provide 2-4 actionable options with pros/cons immediately. Then recommend one and give a clear starter plan. Ask at most one optional follow-up question. Include sources when available.` : "") +
       (emotionalRequested && !beReal ? EMOTIONAL_SUPPORT_MODE : "") +
       (ventMode && !beReal ? VENT_MODE_BASE : "") +
-      (beReal && ventMode ? `\n\nVent mode + Be Real: Listen and validate briefly, but prioritize honest feedback over endless sympathy. Be empathetic but not coddling.` : ventAdviceInstruction);
+      (beReal && ventMode ? `\n\nVent mode + Be Real: Listen and validate briefly, but prioritize honest feedback over endless sympathy. Be empathetic but not coddling.` : ventAdviceInstruction) +
+      (memoryInstruction ? `\n\nUser memory context:\n${memoryInstruction}` : "");
 
     const shouldUseResearch = (deepThinkingRequested || practicalRequested || logicalExecutionRequested) && !emotionalRequested;
     const researchQuery = shouldUseResearch ? buildSearchQuery(lastUserMessage) : "";
@@ -696,7 +905,9 @@ serve(async (req) => {
           sendSse({ event: "thinking_end" });
         }
         
-        // Now fetch and stream the actual response
+        // Provider chain: Mistral (primary) -> Gemini -> Cloudflare Workers AI
+        const aiAbort = new AbortController();
+        const aiTimeout = setTimeout(() => aiAbort.abort(), 25000);
         try {
           const aiResp = await fetch(aiUrl, {
             method: "POST",
@@ -709,7 +920,9 @@ serve(async (req) => {
               messages: [...systemMessages, ...messages],
               stream: true,
             }),
+            signal: aiAbort.signal,
           });
+          clearTimeout(aiTimeout);
 
           if (!aiResp.ok || !aiResp.body) {
             const errJson = await aiResp.json().catch(() => ({}));
@@ -719,9 +932,7 @@ serve(async (req) => {
                 : typeof errJson?.error?.message === "string"
                   ? errJson.error.message
                   : JSON.stringify(errJson?.error ?? errJson ?? { message: "AI gateway error" });
-            sendSse({ error: errMsg });
-            controller.close();
-            return;
+            throw new Error(`Mistral error: ${errMsg}`);
           }
 
           const reader = aiResp.body.getReader();
@@ -734,7 +945,35 @@ serve(async (req) => {
 
           controller.enqueue(encoder.encode("data: [DONE]\n\n"));
         } catch (err) {
-          const msg = err instanceof Error ? err.message : "Unknown error";
+          clearTimeout(aiTimeout);
+
+          const systemText = systemMessages
+            .map((m: any) => String(m?.content ?? "").trim())
+            .filter(Boolean)
+            .join("\n\n");
+
+          const geminiText = await runGeminiFallback(GEMINI_API_KEY, systemText, messages ?? []);
+          if (geminiText) {
+            sendSse({ choices: [{ delta: { content: geminiText } }] });
+            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+            controller.close();
+            return;
+          }
+
+          const workersText = await runWorkersFallback(
+            WORKERS_API_KEY,
+            CF_ACCOUNT_ID,
+            systemText,
+            messages ?? [],
+          );
+          if (workersText) {
+            sendSse({ choices: [{ delta: { content: workersText } }] });
+            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+            controller.close();
+            return;
+          }
+
+          const msg = err instanceof Error ? err.message : "All AI providers failed";
           sendSse({ error: msg });
         } finally {
           controller.close();

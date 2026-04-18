@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 import { toast } from "sonner";
-import { Check, Download, Pencil, X } from "lucide-react";
+import { Brain, Check, ChevronDown, Download, Pencil, X } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -91,10 +91,15 @@ type Insight = {
   calm_progress: string;
   overthinking_reduction: string;
   ai_help_summary: string;
+  what_worked: string;
+  what_didnt: string;
+  response_patterns: string;
+  boundary_respect: string;
   updated_at: string;
 };
 
 type EditablePlanDraft = { title: string; content: string };
+type MemoryProfile = { preference_notes: string | null; comfort_boundaries: string[] | null };
 
 const getUtcWeekStart = (): string => {
   const now = new Date();
@@ -116,7 +121,7 @@ const planPreviewText = (content: string, maxChars = 140): string => {
 };
 
 function ProfilePage() {
-  const { user, loading, signOut } = useAuth();
+  const { user, session, loading, signOut } = useAuth();
   const navigate = useNavigate();
   const search = useSearch({ strict: false }) as { tab?: ProfileTab };
   const [tab, setTab] = useState<ProfileTab>(search?.tab ?? "plans");
@@ -127,6 +132,7 @@ function ProfilePage() {
   const [isEditingPlan, setIsEditingPlan] = useState(false);
   const [isSavingPlanEdit, setIsSavingPlanEdit] = useState(false);
   const [insightMonitoringEnabled, setInsightMonitoringEnabled] = useState(false);
+  const [weeklyEmailEnabled, setWeeklyEmailEnabled] = useState(false);
   const [displayName, setDisplayName] = useState("");
   const [pendingName, setPendingName] = useState("");
   const [avatarDataUrl, setAvatarDataUrl] = useState("");
@@ -136,6 +142,8 @@ function ProfilePage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
+  const [memoryProfile, setMemoryProfile] = useState<MemoryProfile | null>(null);
+  const [brainOpen, setBrainOpen] = useState(false);
   const [autoPdfEnabled, setAutoPdfEnabled] = useState(() => {
     if (typeof window !== "undefined") {
       return localStorage.getItem("autoPdfSave") !== "false";
@@ -179,26 +187,37 @@ function ProfilePage() {
     const loadInsightSettings = async () => {
       const { data } = await supabase
         .from("user_insight_settings")
-        .select("monitor_enabled")
+        .select("monitor_enabled, weekly_email_enabled")
         .eq("user_id", user.id)
         .maybeSingle();
       setInsightMonitoringEnabled(Boolean(data?.monitor_enabled));
+      setWeeklyEmailEnabled(Boolean(data?.weekly_email_enabled));
     };
 
     const loadInsights = async () => {
       const { data } = await supabase
-        .from("conversation_weekly_insights")
+        .from("user_weekly_insights")
         .select(
-          "id,week_start,emotion_trend,thought_patterns,calm_progress,overthinking_reduction,ai_help_summary,updated_at",
+          "id,week_start,emotion_trend,thought_patterns,calm_progress,overthinking_reduction,ai_help_summary,what_worked,what_didnt,response_patterns,boundary_respect,updated_at",
         )
         .order("week_start", { ascending: false })
         .order("updated_at", { ascending: false });
       setInsights(data ?? []);
     };
 
+    const loadMemoryProfile = async () => {
+      const { data } = await supabase
+        .from("user_memory_profiles")
+        .select("preference_notes,comfort_boundaries")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (data) setMemoryProfile(data as MemoryProfile);
+    };
+
     void loadPlans();
     void loadInsightSettings();
     void loadInsights();
+    void loadMemoryProfile();
 
     const channel = supabase
       .channel(`profile-sync-${user.id}`)
@@ -221,6 +240,19 @@ function ProfilePage() {
           filter: `user_id=eq.${user.id}`,
         },
         () => void loadInsights(),
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "user_memory_profiles",
+          filter: `user_id=eq.${user.id}`,
+        },
+        (payload) => {
+          const row = payload.new as MemoryProfile | null;
+          if (row) setMemoryProfile(row);
+        },
       )
       .subscribe();
 
@@ -267,6 +299,64 @@ function ProfilePage() {
 
     void run();
   }, [user, insightMonitoringEnabled, tab]);
+
+  useEffect(() => {
+    if (!user || !session || !weeklyEmailEnabled || insights.length === 0 || !user.email) return;
+
+    const latest = insights[0];
+    if (!latest?.week_start || !session.provider_token) return;
+
+    const sendKey = `weekly_insight_email_${user.id}_${latest.week_start}`;
+    if (typeof window !== "undefined" && localStorage.getItem(sendKey) === "1") return;
+
+    const run = async () => {
+      try {
+        const body = [
+          `Weekly RealTalk insight for week of ${new Date(latest.week_start).toLocaleDateString()}`,
+          "",
+          `What worked: ${latest.what_worked}`,
+          `What didn't work: ${latest.what_didnt}`,
+          `Your response pattern: ${latest.response_patterns}`,
+          `Boundary comfort check: ${latest.boundary_respect}`,
+          "",
+          `Emotion trend: ${latest.emotion_trend}`,
+          `Thought patterns: ${latest.thought_patterns}`,
+          `Calm progress: ${latest.calm_progress}`,
+          `Overthinking reduction: ${latest.overthinking_reduction}`,
+          `How RealTalk helped: ${latest.ai_help_summary}`,
+        ].join("\n");
+
+        const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gmail-send`;
+        const resp = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+            apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "",
+          },
+          body: JSON.stringify({
+            to: user.email,
+            subject: `Your RealTalk weekly insight (${latest.week_start})`,
+            body,
+            googleAccessToken: session.provider_token,
+          }),
+        });
+
+        if (!resp.ok) {
+          const json = await resp.json().catch(() => ({}));
+          throw new Error(json.error || "Failed to send weekly insight email");
+        }
+
+        if (typeof window !== "undefined") {
+          localStorage.setItem(sendKey, "1");
+        }
+      } catch {
+        // Silent fail: insights remain available in-app.
+      }
+    };
+
+    void run();
+  }, [user, session, weeklyEmailEnabled, insights]);
 
   if (!user) return null;
 
@@ -344,6 +434,7 @@ function ProfilePage() {
     const { error } = await supabase.from("user_insight_settings").upsert({
       user_id: user.id,
       monitor_enabled: enabled,
+      weekly_email_enabled: weeklyEmailEnabled,
       updated_at: new Date().toISOString(),
     });
 
@@ -354,6 +445,26 @@ function ProfilePage() {
     }
 
     toast.success(enabled ? "Weekly insights monitoring enabled" : "Weekly insights monitoring disabled");
+  };
+
+  const toggleWeeklyEmail = async (enabled: boolean) => {
+    if (!user) return;
+    setWeeklyEmailEnabled(enabled);
+
+    const { error } = await supabase.from("user_insight_settings").upsert({
+      user_id: user.id,
+      monitor_enabled: insightMonitoringEnabled,
+      weekly_email_enabled: enabled,
+      updated_at: new Date().toISOString(),
+    });
+
+    if (error) {
+      setWeeklyEmailEnabled(!enabled);
+      toast.error("Failed to update weekly email setting");
+      return;
+    }
+
+    toast.success(enabled ? "Weekly insight email enabled" : "Weekly insight email disabled");
   };
 
   const saveProfileIdentity = async (nameInput = displayName, avatarInput = avatarDataUrl) => {
@@ -611,14 +722,39 @@ function ProfilePage() {
 
       {tab === "insights" && (
         <div className="space-y-3">
-          {!insightMonitoringEnabled && (
-            <EmptyState text="Turn on Insights Monitoring in Settings to receive weekly emotional and thinking-pattern insights every Friday." />
-          )}
-          {insightMonitoringEnabled && insights.length === 0 && (
+          <div className="rounded-xl border border-border bg-surface/60 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setBrainOpen((o) => !o)}
+              className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-surface-elevated transition-colors"
+            >
+              <div className="flex items-center gap-2.5">
+                <Brain className="h-4 w-4 text-primary" />
+                <span className="text-sm font-semibold">RealTalk's brain</span>
+                <span className="text-[11px] text-muted-foreground">What I've learned about you</span>
+              </div>
+              <ChevronDown
+                className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${
+                  brainOpen ? "rotate-180" : ""
+                }`}
+              />
+            </button>
+            {brainOpen && (
+                <div className="px-5 pb-5 space-y-4 border-t border-border/50">
+                  <BrainCard
+                    userId={user.id}
+                    profile={{
+                      preference_notes: memoryProfile?.preference_notes ?? null,
+                      comfort_boundaries: memoryProfile?.comfort_boundaries ?? null,
+                    }}
+                  />
+              </div>
+            )}
+          </div>
+          {insights.length === 0 && (
             <EmptyState text="No weekly insights yet. Insights are generated every Friday based on this week’s chats." />
           )}
-          {insightMonitoringEnabled &&
-            insights.map((insight) => {
+          {insights.map((insight) => {
               return (
                 <div key={insight.id} className="rounded-xl border border-border bg-surface/60 p-5">
                   <div className="flex items-center justify-between gap-3">
@@ -640,6 +776,10 @@ function ProfilePage() {
                       value={insight.overthinking_reduction}
                     />
                     <InsightRow title="How RealTalk helped" value={insight.ai_help_summary} />
+                    <InsightRow title="What worked" value={insight.what_worked} />
+                    <InsightRow title="What didn't work" value={insight.what_didnt} />
+                    <InsightRow title="Your response pattern" value={insight.response_patterns} />
+                    <InsightRow title="Boundary comfort" value={insight.boundary_respect} />
                   </div>
                 </div>
               );
@@ -653,14 +793,13 @@ function ProfilePage() {
             <div className="flex items-center justify-between">
               <div>
                 <Label className="text-sm font-semibold text-foreground cursor-pointer">
-                  Weekly insights monitoring
+                  Weekly insight email (Gmail)
                 </Label>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Allow RealTalk to analyze this week’s conversations and surface emotional trends,
-                  thought loops, and calmer-thinking progress every Friday.
+                  Send your latest weekly insight summary to your Gmail address when available.
                 </p>
               </div>
-              <Switch checked={insightMonitoringEnabled} onCheckedChange={toggleInsightMonitoring} />
+              <Switch checked={weeklyEmailEnabled} onCheckedChange={toggleWeeklyEmail} />
             </div>
           </div>
 
@@ -832,6 +971,239 @@ function InsightRow({ title, value }: { title: string; value: string }) {
     <div>
       <div className="text-xs uppercase tracking-wide text-muted-foreground">{title}</div>
       <p className="mt-1 text-foreground/90">{value}</p>
+    </div>
+  );
+}
+
+function parsePreferenceNotes(notes: string | null): Record<string, string> {
+  if (!notes) return {};
+  const result: Record<string, string> = {};
+
+  const normalizeKey = (key: string): string => {
+    const k = key.trim().toLowerCase().replace(/\s+/g, " ");
+    if (k === "interests") return "interests";
+    if (k === "communication style" || k === "communication_style" || k === "style") return "communication_style";
+    if (k === "life context" || k === "life_context") return "life_context";
+    if (k === "positive signals" || k === "positive_signals") return "positive_signals";
+    return k.replace(/\s+/g, "_");
+  };
+
+  notes
+    .split(/\n|\|/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .forEach((part) => {
+      const idx = part.indexOf(":");
+      if (idx === -1) return;
+      const key = normalizeKey(part.slice(0, idx));
+      const val = part.slice(idx + 1).trim();
+      if (key && val) result[key] = val;
+    });
+
+  return result;
+}
+
+function BrainCard({
+  userId,
+  profile,
+}: {
+  userId: string;
+  profile: { preference_notes: string | null; comfort_boundaries: string[] | null };
+}) {
+  const fields = parsePreferenceNotes(profile.preference_notes);
+  const interests = fields.interests ? fields.interests.split(",").map((s) => s.trim()).filter(Boolean) : [];
+  const positiveSignals = fields.positive_signals ? fields.positive_signals.split(",").map((s) => s.trim()).filter(Boolean) : [];
+  const boundaries = Array.isArray(profile.comfort_boundaries)
+    ? profile.comfort_boundaries
+        .map((b: any) => (typeof b === "string" ? b : String(b?.note ?? "")).trim())
+        .filter(Boolean)
+    : [];
+  const scoreInterests = Math.min(interests.length / 8, 1);
+  const scoreStyle = fields.communication_style ? 1 : 0;
+  const scoreContext = fields.life_context ? 1 : 0;
+  const scoreSignals = Math.min(positiveSignals.length / 6, 1);
+  const scoreBoundaries = Math.min(boundaries.length / 5, 1);
+
+  const rawGrowth = Math.round(
+    ((scoreInterests + scoreStyle + scoreContext + scoreSignals + scoreBoundaries) / 5) * 100,
+  );
+
+  const [growth, setGrowth] = useState(0);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const storageKey = `brain_growth_v2_${userId}`;
+    const signatureKey = `brain_growth_sig_v2_${userId}`;
+
+    const signature = JSON.stringify({
+      i: interests,
+      s: fields.communication_style ?? "",
+      c: fields.life_context ?? "",
+      p: positiveSignals,
+      b: boundaries,
+      r: rawGrowth,
+    });
+
+    const previous = Number(localStorage.getItem(storageKey) || "0");
+    const previousSig = localStorage.getItem(signatureKey) || "";
+
+    let next = previous;
+    if (rawGrowth > previous) {
+      // Grow intentionally slowly: 1-4% per newly learned update.
+      const step = previousSig !== signature ? Math.min(4, Math.max(1, Math.ceil((rawGrowth - previous) / 18))) : 1;
+      next = Math.min(rawGrowth, previous + step);
+    }
+
+    localStorage.setItem(storageKey, String(next));
+    localStorage.setItem(signatureKey, signature);
+    setGrowth(next);
+  }, [
+    userId,
+    rawGrowth,
+    fields.communication_style,
+    fields.life_context,
+    interests,
+    positiveSignals,
+    boundaries,
+  ]);
+
+  const growthDrivers = [
+    {
+      label: "Interests learned",
+      value: interests.length,
+      score: scoreInterests,
+      hint: "More recurring interests increase memory depth.",
+    },
+    {
+      label: "Communication style clarity",
+      value: fields.communication_style ? 1 : 0,
+      score: scoreStyle,
+      hint: "When your preferred tone is clear, adaptation improves.",
+    },
+    {
+      label: "Life context awareness",
+      value: fields.life_context ? 1 : 0,
+      score: scoreContext,
+      hint: "Current life context helps RealTalk respond better.",
+    },
+    {
+      label: "Positive response signals",
+      value: positiveSignals.length,
+      score: scoreSignals,
+      hint: "What resonates with you strengthens the pattern map.",
+    },
+    {
+      label: "Boundary awareness",
+      value: boundaries.length,
+      score: scoreBoundaries,
+      hint: "Comfort boundaries make support safer and smarter.",
+    },
+  ];
+
+  const progressMultiplier = Math.max(0.08, growth / 100);
+
+  const nodePower = [
+    scoreInterests,
+    scoreStyle,
+    scoreContext,
+    scoreSignals,
+    scoreBoundaries,
+    (scoreInterests + scoreSignals) / 2,
+    (scoreStyle + scoreContext) / 2,
+    (scoreContext + scoreBoundaries) / 2,
+  ];
+
+  const dotPositions = [
+    { x: 18, y: 40 },
+    { x: 34, y: 22 },
+    { x: 52, y: 18 },
+    { x: 70, y: 26 },
+    { x: 82, y: 42 },
+    { x: 68, y: 60 },
+    { x: 48, y: 66 },
+    { x: 28, y: 58 },
+  ];
+
+  return (
+    <div className="pt-4">
+      <div className="rounded-xl border border-border/50 bg-background/35 p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-xs text-muted-foreground">Neural growth</div>
+          <div className="text-sm font-semibold text-primary">{growth}%</div>
+        </div>
+
+        <div className="relative mx-auto w-full max-w-[360px] aspect-[2/1.1] rounded-xl bg-primary/[0.04] border border-primary/10 overflow-hidden">
+          <svg className="absolute inset-0 w-full h-full" viewBox="0 0 100 70" preserveAspectRatio="none" aria-hidden="true">
+            <g stroke="currentColor" className="text-primary/25" strokeWidth="0.7" fill="none">
+              <path d="M18 40 L34 22 L52 18 L70 26 L82 42" />
+              <path d="M18 40 L28 58 L48 66 L68 60 L82 42" />
+              <path d="M34 22 L28 58" />
+              <path d="M52 18 L48 66" />
+              <path d="M70 26 L68 60" />
+            </g>
+          </svg>
+
+          {dotPositions.map((p, idx) => {
+            const power = Math.max(0.08, Math.min(1, (nodePower[idx] ?? 0) * progressMultiplier));
+            return (
+              <motion.div
+                key={`${p.x}-${p.y}-${idx}`}
+                className="absolute rounded-full bg-primary"
+                style={{
+                  left: `${p.x}%`,
+                  top: `${p.y}%`,
+                  width: `${8 + power * 10}px`,
+                  height: `${8 + power * 10}px`,
+                  transform: "translate(-50%, -50%)",
+                  opacity: 0.18 + power * 0.82,
+                  boxShadow: `0 0 ${8 + power * 14}px rgba(59,130,246,${0.2 + power * 0.35})`,
+                }}
+                animate={{ scale: [1, 1 + power * 0.18, 1] }}
+                transition={{ duration: 2 + (1 - power), repeat: Infinity, ease: "easeInOut", delay: idx * 0.12 }}
+              />
+            );
+          })}
+        </div>
+
+        <div className="mt-3 grid grid-cols-5 gap-1.5">
+          {[scoreInterests, scoreStyle, scoreContext, scoreSignals, scoreBoundaries].map((s, idx) => (
+            <div key={idx} className="h-1.5 rounded-full bg-primary/15 overflow-hidden">
+              <motion.div
+                className="h-full bg-primary"
+                initial={{ width: 0 }}
+                animate={{ width: `${Math.round(s * Math.max(0.12, growth / 100) * 100)}%` }}
+                transition={{ duration: 0.6, ease: "easeOut", delay: 0.08 * idx }}
+              />
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-4 space-y-2.5">
+          <div className="text-[11px] uppercase tracking-wide text-muted-foreground">What is making it grow</div>
+          {growthDrivers.map((driver) => (
+            <div key={driver.label} className="rounded-lg border border-border/40 bg-background/40 p-2.5">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-xs text-foreground/90">{driver.label}</div>
+                <div className="text-[11px] text-primary">+{Math.round(driver.score * Math.max(0.12, growth / 100) * 100)}%</div>
+              </div>
+              <div className="mt-1.5 h-1.5 rounded-full bg-primary/10 overflow-hidden">
+                <motion.div
+                  className="h-full bg-primary/70"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${Math.round(driver.score * Math.max(0.12, growth / 100) * 100)}%` }}
+                  transition={{ duration: 0.7, ease: "easeOut" }}
+                />
+              </div>
+              <div className="mt-1 text-[10px] text-muted-foreground">{driver.hint}</div>
+            </div>
+          ))}
+        </div>
+
+        <p className="mt-3 text-[11px] text-muted-foreground">
+          Brain growth is intentionally slow. RealTalk increases this as it learns consistent patterns over time.
+        </p>
+      </div>
     </div>
   );
 }
