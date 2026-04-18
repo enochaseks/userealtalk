@@ -1101,6 +1101,59 @@ function BrainCard({
     },
   ];
 
+  const neuronMeta = [
+    {
+      title: "Interests learned",
+      score: scoreInterests,
+      value: `${interests.length} interests mapped`,
+      hint: "Recurring interests deepen memory depth and long-term personalization.",
+    },
+    {
+      title: "Communication style",
+      score: scoreStyle,
+      value: fields.communication_style ? "Style identified" : "Style still emerging",
+      hint: "The clearer your tone preferences are, the better RealTalk adapts responses.",
+    },
+    {
+      title: "Life context",
+      score: scoreContext,
+      value: fields.life_context ? "Context identified" : "Context still emerging",
+      hint: "Knowing your real-world context helps with relevance and timing.",
+    },
+    {
+      title: "Positive signals",
+      score: scoreSignals,
+      value: `${positiveSignals.length} positive cues detected`,
+      hint: "Signals from good moments teach RealTalk what works best for you.",
+    },
+    {
+      title: "Boundary awareness",
+      score: scoreBoundaries,
+      value: `${boundaries.length} comfort boundaries tracked`,
+      hint: "Boundary memory improves emotional safety and respect over time.",
+    },
+    {
+      title: "Pattern linking",
+      score: (scoreInterests + scoreSignals) / 2,
+      value: "Interests + response resonance",
+      hint: "This neuron connects what you care about to what helps you most.",
+    },
+    {
+      title: "Adaptive tone balance",
+      score: (scoreStyle + scoreContext) / 2,
+      value: "Style + context fusion",
+      hint: "This neuron tunes tone based on both how you talk and what you're facing.",
+    },
+    {
+      title: "Safety calibration",
+      score: (scoreContext + scoreBoundaries) / 2,
+      value: "Context + boundaries alignment",
+      hint: "This neuron helps RealTalk support you without crossing comfort lines.",
+    },
+  ];
+
+  const [selectedNeuron, setSelectedNeuron] = useState<number | null>(null);
+
   const progressMultiplier = Math.max(0.08, growth / 100);
 
   const nodePower = [
@@ -1146,18 +1199,24 @@ function BrainCard({
 
           {dotPositions.map((p, idx) => {
             const power = Math.max(0.08, Math.min(1, (nodePower[idx] ?? 0) * progressMultiplier));
+            const active = selectedNeuron === idx;
             return (
-              <motion.div
+              <motion.button
                 key={`${p.x}-${p.y}-${idx}`}
-                className="absolute rounded-full bg-primary"
+                type="button"
+                aria-label={`Open neuron: ${neuronMeta[idx]?.title ?? `Neuron ${idx + 1}`}`}
+                onClick={() => setSelectedNeuron((prev) => (prev === idx ? null : idx))}
+                className="absolute rounded-full bg-primary border border-transparent hover:border-primary/70 focus:outline-none focus:ring-2 focus:ring-primary/60"
                 style={{
                   left: `${p.x}%`,
                   top: `${p.y}%`,
                   width: `${8 + power * 10}px`,
                   height: `${8 + power * 10}px`,
                   transform: "translate(-50%, -50%)",
-                  opacity: 0.18 + power * 0.82,
-                  boxShadow: `0 0 ${8 + power * 14}px rgba(59,130,246,${0.2 + power * 0.35})`,
+                  opacity: active ? 1 : 0.18 + power * 0.82,
+                  boxShadow: active
+                    ? "0 0 22px rgba(59,130,246,0.75)"
+                    : `0 0 ${8 + power * 14}px rgba(59,130,246,${0.2 + power * 0.35})`,
                 }}
                 animate={{ scale: [1, 1 + power * 0.18, 1] }}
                 transition={{ duration: 2 + (1 - power), repeat: Infinity, ease: "easeInOut", delay: idx * 0.12 }}
@@ -1180,24 +1239,31 @@ function BrainCard({
         </div>
 
         <div className="mt-4 space-y-2.5">
-          <div className="text-[11px] uppercase tracking-wide text-muted-foreground">What is making it grow</div>
-          {growthDrivers.map((driver) => (
-            <div key={driver.label} className="rounded-lg border border-border/40 bg-background/40 p-2.5">
+          <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Tap a neuron to inspect growth</div>
+          {selectedNeuron !== null && neuronMeta[selectedNeuron] && (
+            <motion.div
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="rounded-lg border border-border/40 bg-background/40 p-3"
+            >
               <div className="flex items-center justify-between gap-3">
-                <div className="text-xs text-foreground/90">{driver.label}</div>
-                <div className="text-[11px] text-primary">+{Math.round(driver.score * Math.max(0.12, growth / 100) * 100)}%</div>
+                <div className="text-sm text-foreground font-medium">{neuronMeta[selectedNeuron].title}</div>
+                <div className="text-xs text-primary">
+                  +{Math.round(neuronMeta[selectedNeuron].score * Math.max(0.12, growth / 100) * 100)}%
+                </div>
               </div>
-              <div className="mt-1.5 h-1.5 rounded-full bg-primary/10 overflow-hidden">
+              <div className="mt-1 text-xs text-foreground/85">{neuronMeta[selectedNeuron].value}</div>
+              <div className="mt-2 h-1.5 rounded-full bg-primary/10 overflow-hidden">
                 <motion.div
                   className="h-full bg-primary/70"
                   initial={{ width: 0 }}
-                  animate={{ width: `${Math.round(driver.score * Math.max(0.12, growth / 100) * 100)}%` }}
+                  animate={{ width: `${Math.round(neuronMeta[selectedNeuron].score * Math.max(0.12, growth / 100) * 100)}%` }}
                   transition={{ duration: 0.7, ease: "easeOut" }}
                 />
               </div>
-              <div className="mt-1 text-[10px] text-muted-foreground">{driver.hint}</div>
-            </div>
-          ))}
+              <div className="mt-1.5 text-[11px] text-muted-foreground">{neuronMeta[selectedNeuron].hint}</div>
+            </motion.div>
+          )}
         </div>
 
         <p className="mt-3 text-[11px] text-muted-foreground">
