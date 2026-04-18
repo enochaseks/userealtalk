@@ -56,48 +56,6 @@ export type Database = {
         }
         Relationships: []
       }
-      user_weekly_insights: {
-        Row: {
-          ai_help_summary: string
-          calm_progress: string
-          created_at: string
-          emotion_trend: string
-          id: string
-          overthinking_reduction: string
-          source_message_count: number
-          thought_patterns: string
-          updated_at: string
-          user_id: string
-          week_start: string
-        }
-        Insert: {
-          ai_help_summary?: string
-          calm_progress?: string
-          created_at?: string
-          emotion_trend?: string
-          id?: string
-          overthinking_reduction?: string
-          source_message_count?: number
-          thought_patterns?: string
-          updated_at?: string
-          user_id: string
-          week_start: string
-        }
-        Update: {
-          ai_help_summary?: string
-          calm_progress?: string
-          created_at?: string
-          emotion_trend?: string
-          id?: string
-          overthinking_reduction?: string
-          source_message_count?: number
-          thought_patterns?: string
-          updated_at?: string
-          user_id?: string
-          week_start?: string
-        }
-        Relationships: []
-      }
       conversations: {
         Row: {
           created_at: string
