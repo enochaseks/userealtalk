@@ -581,7 +581,7 @@ function ProfilePage() {
                     <div>
                       <div className="text-sm font-semibold">Week of {new Date(insight.week_start).toLocaleDateString()}</div>
                       <div className="text-xs text-muted-foreground mt-0.5">
-                        Full weekly analysis • {insight.source_message_count} messages reviewed
+                        Full weekly analysis
                       </div>
                     </div>
                     <div className="text-[11px] text-muted-foreground">Every Friday</div>
