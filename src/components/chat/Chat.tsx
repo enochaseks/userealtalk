@@ -20,9 +20,24 @@ type Msg = {
   features?: string[];
 };
 type VentAdviceMode = "none" | "advice";
+type EmailTone = "professional" | "formal" | "casual" | "fun";
+
+const EMAIL_TONE_LABELS: Record<EmailTone, string> = {
+  professional: "Professional",
+  formal: "Formal",
+  casual: "Casual",
+  fun: "Fun",
+};
+
+const EMAIL_TONE_INSTRUCTIONS: Record<EmailTone, string> = {
+  professional: "Use a polished, professional tone that is clear, balanced, and confident.",
+  formal: "Use a formal tone that is respectful, structured, and more traditional.",
+  casual: "Use a casual tone that feels natural, friendly, and relaxed.",
+  fun: "Use a fun tone that is warm, lively, and light without sounding unprofessional.",
+};
 
 export function Chat() {
-  const { user } = useAuth();
+  const { user, session, connectGoogleForGmail } = useAuth();
   const navigate = useNavigate();
   const search = useSearch({ strict: false }) as { c?: string };
   const [convId, setConvId] = useState<string | null>(search?.c ?? null);
@@ -42,7 +57,10 @@ export function Chat() {
   const [emailSubject, setEmailSubject] = useState("");
   const [emailPrompt, setEmailPrompt] = useState("");
   const [emailBody, setEmailBody] = useState("");
+  const [emailTone, setEmailTone] = useState<EmailTone>("professional");
+  const [emailReview, setEmailReview] = useState("");
   const [emailBusy, setEmailBusy] = useState(false);
+  const [gmailConnectBusy, setGmailConnectBusy] = useState(false);
   const [editingPlanIndex, setEditingPlanIndex] = useState<number | null>(null);
   const [editedPlanText, setEditedPlanText] = useState("");
   const [isRegeneratingPlan, setIsRegeneratingPlan] = useState(false);
@@ -977,6 +995,76 @@ export function Chat() {
     }
   };
 
+  const runEmailAiPrompt = async (instruction: string) => {
+    const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+      },
+      body: JSON.stringify({
+        messages: [{ role: "user", content: instruction }],
+        beReal: false,
+        thinkDeeply: false,
+        forcePlan: false,
+        forceVent: false,
+        ventAdviceMode: "none",
+      }),
+    });
+
+    if (!resp.ok || !resp.body) {
+      const errJson = await resp.json().catch(() => ({}));
+      throw new Error(errJson.error || "AI request failed");
+    }
+
+    let generated = "";
+    let streamedError: string | null = null;
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    let done = false;
+
+    while (!done) {
+      const { done: d, value } = await reader.read();
+      if (d) break;
+
+      buf += decoder.decode(value, { stream: true });
+
+      let nl: number;
+      while ((nl = buf.indexOf("\n")) !== -1) {
+        let line = buf.slice(0, nl);
+        buf = buf.slice(nl + 1);
+
+        if (line.endsWith("\r")) line = line.slice(0, -1);
+        if (!line.startsWith("data: ")) continue;
+
+        const json = line.slice(6).trim();
+        if (json === "[DONE]") {
+          done = true;
+          break;
+        }
+
+        try {
+          const parsed = JSON.parse(json);
+          if (parsed?.error) {
+            streamedError = String(parsed.error);
+            done = true;
+            break;
+          }
+          const delta = parsed.choices?.[0]?.delta?.content;
+          if (delta) generated += delta;
+        } catch {
+          // ignore malformed chunks
+        }
+      }
+    }
+
+    if (streamedError) throw new Error(streamedError);
+    if (!generated.trim()) throw new Error("No response was generated");
+    return generated.trim();
+  };
+
   const generateEmailDraft = async () => {
     if (!user) return;
     const to = emailTo.trim();
@@ -993,19 +1081,22 @@ export function Chat() {
 
     setEmailBusy(true);
     try {
+      setEmailReview("");
       const context = messages
         .slice(-6)
         .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
         .join("\n\n");
 
       const draftInstruction = [
-        "Draft a concise professional email body only.",
+        "Draft an email body only.",
         "Do not include a subject line.",
         "Do not include markdown or bullet points unless necessary.",
         "Use plain text and keep tone natural.",
+        EMAIL_TONE_INSTRUCTIONS[emailTone],
         "",
         `Recipient: ${to}`,
         `Subject: ${subject}`,
+        `Tone: ${EMAIL_TONE_LABELS[emailTone]}`,
         `Intent: ${prompt}`,
         "",
         context ? `Recent conversation context:\n${context}` : "",
@@ -1013,79 +1104,8 @@ export function Chat() {
         .filter(Boolean)
         .join("\n");
 
-      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
-      const resp = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-        },
-        body: JSON.stringify({
-          messages: [{ role: "user", content: draftInstruction }],
-          beReal: false,
-          thinkDeeply: false,
-          forcePlan: false,
-          forceVent: false,
-          ventAdviceMode: "none",
-        }),
-      });
-
-      if (!resp.ok || !resp.body) {
-        const errJson = await resp.json().catch(() => ({}));
-        throw new Error(errJson.error || "Failed to generate email draft");
-      }
-
-      let generated = "";
-      let streamedError: string | null = null;
-      const reader = resp.body.getReader();
-      const decoder = new TextDecoder();
-      let buf = "";
-      let done = false;
-
-      while (!done) {
-        const { done: d, value } = await reader.read();
-        if (d) break;
-
-        buf += decoder.decode(value, { stream: true });
-
-        let nl: number;
-        while ((nl = buf.indexOf("\n")) !== -1) {
-          let line = buf.slice(0, nl);
-          buf = buf.slice(nl + 1);
-
-          if (line.endsWith("\r")) line = line.slice(0, -1);
-          if (!line.startsWith("data: ")) continue;
-
-          const json = line.slice(6).trim();
-          if (json === "[DONE]") {
-            done = true;
-            break;
-          }
-
-          try {
-            const parsed = JSON.parse(json);
-            if (parsed?.error) {
-              streamedError = String(parsed.error);
-              done = true;
-              break;
-            }
-            const delta = parsed.choices?.[0]?.delta?.content;
-            if (delta) generated += delta;
-          } catch {
-            // ignore malformed chunks
-          }
-        }
-      }
-
-      if (streamedError) {
-        throw new Error(streamedError);
-      }
-
-      if (!generated.trim()) {
-        throw new Error("No draft was generated");
-      }
-
-      setEmailBody(generated.trim());
+      const generated = await runEmailAiPrompt(draftInstruction);
+      setEmailBody(generated);
       toast.success("Email draft ready");
     } catch (e: any) {
       toast.error(e.message || "Failed to generate email draft");
@@ -1094,11 +1114,70 @@ export function Chat() {
     }
   };
 
+  const reviewEmailDraft = async () => {
+    if (!user) return;
+    const to = emailTo.trim();
+    const subject = emailSubject.trim();
+    const body = emailBody.trim() || emailPrompt.trim();
+
+    if (!subject || !body) {
+      const missing: string[] = [];
+      if (!subject) missing.push("subject");
+      if (!body) missing.push("email body");
+      toast.error(`Please add ${missing.join(", ")}`);
+      return;
+    }
+
+    setEmailBusy(true);
+    try {
+      const reviewInstruction = [
+        "Review this email draft.",
+        "Tell me if it is good, what works, what could be better, and then give an improved version.",
+        "Keep the review concise and practical.",
+        "Use short sections: Verdict, Improvements, Better Version.",
+        to ? `Recipient: ${to}` : "",
+        `Subject: ${subject}`,
+        `Target tone: ${EMAIL_TONE_LABELS[emailTone]}`,
+        "",
+        "Email draft:",
+        body,
+      ]
+        .filter(Boolean)
+        .join("\n");
+
+      const review = await runEmailAiPrompt(reviewInstruction);
+      setEmailReview(review);
+      toast.success("Email review ready");
+    } catch (e: any) {
+      toast.error(e.message || "Failed to review email draft");
+    } finally {
+      setEmailBusy(false);
+    }
+  };
+
+  const connectGmail = async () => {
+    setGmailConnectBusy(true);
+    try {
+      const { error } = await connectGoogleForGmail();
+      if (error) {
+        toast.error(error);
+        setGmailConnectBusy(false);
+        return;
+      }
+
+      toast.success("Redirecting to Google to connect Gmail");
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to connect Gmail");
+    } finally {
+      setGmailConnectBusy(false);
+    }
+  };
+
   const sendGmailMessage = async () => {
     if (!user) return;
     const to = emailTo.trim();
     const subject = emailSubject.trim();
-    const body = emailBody.trim();
+    const body = emailBody.trim() || emailPrompt.trim();
 
     if (!to || !subject || !body) {
       const missing: string[] = [];
@@ -1120,9 +1199,9 @@ export function Chat() {
 
       const googleAccessToken = session.provider_token;
       if (!googleAccessToken) {
-        throw new Error(
-          "Google Gmail permission is missing. Sign out and sign in with Google again to grant Gmail access.",
-        );
+        setEmailBusy(false);
+        await connectGmail();
+        return;
       }
 
       const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gmail-send`;
@@ -1158,6 +1237,10 @@ export function Chat() {
 
   const isEmpty = messages.length === 0;
   const chatSceneKey = convId ?? "new-chat";
+  const hasGoogleIdentity = Boolean(
+    user?.identities?.some((identity) => identity.provider?.toLowerCase() === "google"),
+  );
+  const hasGmailAccess = Boolean(session?.provider_token);
   const userName =
     (user?.user_metadata?.full_name as string | undefined) ||
     (user?.user_metadata?.name as string | undefined) ||
@@ -1400,6 +1483,27 @@ export function Chat() {
                 <div className="text-xs text-muted-foreground">
                   AI-assisted Gmail sender (uses your Google account)
                 </div>
+                <div className="text-xs text-muted-foreground">
+                  Generate with AI and Review with AI are optional. You can type your email and send it directly.
+                </div>
+                <div className="flex items-center justify-between gap-3 rounded-md border border-border/60 bg-background/30 px-3 py-2 text-xs">
+                  <span className="text-muted-foreground">
+                    {hasGmailAccess
+                      ? "Gmail connected"
+                      : hasGoogleIdentity
+                        ? "Reconnect Google to refresh Gmail access"
+                        : "Connect Google to send Gmail from here"}
+                  </span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={emailBusy || gmailConnectBusy}
+                    onClick={() => void connectGmail()}
+                  >
+                    {gmailConnectBusy ? "Connecting..." : hasGmailAccess ? "Reconnect Gmail" : "Connect Gmail"}
+                  </Button>
+                </div>
                 <input
                   type="email"
                   value={emailTo}
@@ -1413,17 +1517,36 @@ export function Chat() {
                   placeholder="Subject"
                   className="w-full rounded-md border border-border bg-background/60 px-3 py-2 text-sm outline-none focus:border-primary/60"
                 />
+                <div className="space-y-1">
+                  <div className="text-xs text-muted-foreground">Tone</div>
+                  <div className="flex flex-wrap gap-2">
+                    {(Object.keys(EMAIL_TONE_LABELS) as EmailTone[]).map((tone) => (
+                      <button
+                        key={tone}
+                        type="button"
+                        onClick={() => setEmailTone(tone)}
+                        className={`rounded-full px-3 py-1.5 text-xs transition-colors ${
+                          emailTone === tone
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-background/60 border border-border text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        {EMAIL_TONE_LABELS[tone]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <textarea
                   value={emailPrompt}
                   onChange={(e) => setEmailPrompt(e.target.value)}
-                  placeholder="What should this email say?"
+                  placeholder="Write your email here directly, or describe what you want AI to write"
                   rows={3}
                   className="w-full rounded-md border border-border bg-background/60 px-3 py-2 text-sm outline-none focus:border-primary/60 resize-y"
                 />
                 <textarea
                   value={emailBody}
                   onChange={(e) => setEmailBody(e.target.value)}
-                  placeholder="Generated email body will appear here"
+                  placeholder="Generated or final email body"
                   rows={5}
                   className="w-full rounded-md border border-border bg-background/60 px-3 py-2 text-sm outline-none focus:border-primary/60 resize-y"
                 />
@@ -1440,12 +1563,26 @@ export function Chat() {
                   <Button
                     type="button"
                     size="sm"
+                    variant="outline"
+                    disabled={emailBusy}
+                    onClick={() => void reviewEmailDraft()}
+                  >
+                    {emailBusy ? "Working..." : "Review with AI"}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
                     disabled={emailBusy}
                     onClick={() => void sendGmailMessage()}
                   >
                     {emailBusy ? "Sending..." : "Send via Gmail"}
                   </Button>
                 </div>
+                {emailReview && (
+                  <div className="rounded-md border border-border bg-background/40 px-3 py-3 text-sm whitespace-pre-wrap">
+                    {emailReview}
+                  </div>
+                )}
               </div>
             )}
             <textarea

@@ -35,6 +35,17 @@ function mapAuthError(error?: { message?: string; code?: string; status?: number
   return error.message || "Authentication failed";
 }
 
+function getGoogleAuthOptions() {
+  return {
+    redirectTo: window.location.href,
+    queryParams: {
+      access_type: "offline",
+      prompt: "consent",
+      scope: "openid email profile https://www.googleapis.com/auth/gmail.send",
+    },
+  };
+}
+
 type AuthCtx = {
   user: User | null;
   session: Session | null;
@@ -42,6 +53,7 @@ type AuthCtx = {
   signIn: (email: string, password: string, keep?: boolean) => Promise<{ error?: string }>;
   signUp: (email: string, password: string, keep?: boolean) => Promise<{ error?: string }>;
   signInWithGoogle: (keep?: boolean) => Promise<{ error?: string }>;
+  connectGoogleForGmail: () => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
 };
 
@@ -179,14 +191,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.setItem(KEEP_KEY, String(keep));
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
-        options: {
-          redirectTo: window.location.origin,
-          queryParams: {
-            access_type: "offline",
-            prompt: "consent",
-            scope: "openid email profile https://www.googleapis.com/auth/gmail.send",
-          },
-        },
+        options: getGoogleAuthOptions(),
+      });
+      return { error: error?.message };
+    },
+    connectGoogleForGmail: async () => {
+      if (session?.user) {
+        const { error } = await supabase.auth.linkIdentity({
+          provider: "google",
+          options: getGoogleAuthOptions(),
+        });
+
+        if (!error) return {};
+
+        const message = (error.message || "").toLowerCase();
+        const shouldFallbackToOauth =
+          error.code === "identity_already_exists" ||
+          message.includes("already linked") ||
+          message.includes("identity already exists") ||
+          message.includes("manual linking");
+
+        if (!shouldFallbackToOauth) {
+          return { error: mapAuthError(error) ?? error.message };
+        }
+      }
+
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: getGoogleAuthOptions(),
       });
       return { error: error?.message };
     },

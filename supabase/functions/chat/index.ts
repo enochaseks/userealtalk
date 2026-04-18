@@ -298,6 +298,28 @@ const isBusinessMarketingRequest = (text: string): boolean => {
   return keys.some((k) => lower.includes(k));
 };
 
+const isEmailRequest = (text: string): boolean => {
+  const lower = text.toLowerCase();
+  const keys = [
+    "email",
+    "gmail",
+    "write an email",
+    "draft an email",
+    "rewrite this email",
+    "improve this email",
+    "review this email",
+    "does this email sound",
+    "reply to this email",
+    "respond to this email",
+    "subject line",
+    "follow-up email",
+    "follow up email",
+    "cold email",
+    "send this email",
+  ];
+  return keys.some((k) => lower.includes(k));
+};
+
 const isEmotionalRequest = (text: string): boolean => {
   const lower = text.toLowerCase();
   
@@ -604,13 +626,15 @@ serve(async (req) => {
     }
 
     const lastUserMessage = latestUserContent(messages ?? []);
-    const planningRequested = forcePlan || isPlanningRequest(lastUserMessage);
+  const emailRequested = isEmailRequest(lastUserMessage);
+  const deepThinkingRequested = thinkDeeply || emailRequested;
+  const planningRequested = forcePlan || emailRequested || isPlanningRequest(lastUserMessage);
     const ventMode = Boolean(forceVent) || isVentingRequest(lastUserMessage);
-    const emotionalRequested = ventMode || isEmotionalRequest(lastUserMessage);
-    const practicalRequested = planningRequested || isPracticalLogicRequest(lastUserMessage);
+  const emotionalRequested = !emailRequested && (ventMode || isEmotionalRequest(lastUserMessage));
+  const practicalRequested = planningRequested || emailRequested || isPracticalLogicRequest(lastUserMessage);
     const logicalExecutionRequested = isLogicalExecutionRequest(lastUserMessage);
     const businessMarketingRequested = isBusinessMarketingRequest(lastUserMessage);
-    const thinkingTime = getThinkingTime(lastUserMessage, thinkDeeply);
+  const thinkingTime = getThinkingTime(lastUserMessage, deepThinkingRequested);
     const ventReadTime = getVentReadTime(lastUserMessage, ventMode);
     const totalReadTime = Math.max(thinkingTime, ventReadTime);
     const ventAdviceInstruction = ventMode
@@ -623,8 +647,11 @@ serve(async (req) => {
     const system =
       SYSTEM_BASE +
       (beReal ? REAL_MODE : "") +
-      (thinkDeeply ? THINK_DEEPLY_MODE : "") +
+      (deepThinkingRequested ? THINK_DEEPLY_MODE : "") +
       (planningRequested ? PLANNING_MODE : "") +
+      (emailRequested
+        ? "\n\nEmail mode: Treat email requests as strategic writing tasks, not emotional support. Think like a sharp editor and planner. Optimize for clarity, tone, structure, persuasion, and outcome. When reviewing an email, identify weaknesses directly and propose stronger wording."
+        : "") +
       ((practicalRequested || logicalExecutionRequested) && !emotionalRequested ? PRACTICAL_LOGIC_MODE : "") +
       (businessMarketingRequested && !emotionalRequested ? BUSINESS_MARKETING_CONNOISSEUR_MODE : "") +
       (logicalExecutionRequested && !emotionalRequested ? `\n\nExecution-focused response: Options first, no questions. Provide 2-4 actionable options with pros/cons immediately. Then recommend one and give a clear starter plan. Ask at most one optional follow-up question. Include sources when available.` : "") +
@@ -632,7 +659,7 @@ serve(async (req) => {
       (ventMode && !beReal ? VENT_MODE_BASE : "") +
       (beReal && ventMode ? `\n\nVent mode + Be Real: Listen and validate briefly, but prioritize honest feedback over endless sympathy. Be empathetic but not coddling.` : ventAdviceInstruction);
 
-    const shouldUseResearch = (thinkDeeply || practicalRequested || logicalExecutionRequested) && !emotionalRequested;
+    const shouldUseResearch = (deepThinkingRequested || practicalRequested || logicalExecutionRequested) && !emotionalRequested;
     const researchQuery = shouldUseResearch ? buildSearchQuery(lastUserMessage) : "";
     const researchContext = shouldUseResearch ? await getResearchContext(researchQuery) : "";
 
@@ -640,7 +667,7 @@ serve(async (req) => {
       {
         role: "system",
         content:
-          system + REFERENCES_GUARDRAIL_MODE + (planningRequested ? DETAILED_PLAN_OUTPUT_MODE : "") + (thinkDeeply ? DEEP_THINKING_DETAILED_MODE : ""),
+          system + REFERENCES_GUARDRAIL_MODE + (planningRequested ? DETAILED_PLAN_OUTPUT_MODE : "") + (deepThinkingRequested ? DEEP_THINKING_DETAILED_MODE : ""),
       },
     ];
     if (researchContext) {
