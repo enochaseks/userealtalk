@@ -5,6 +5,36 @@ import { supabase } from "@/integrations/supabase/client";
 const KEEP_KEY = "realtalk_keep_logged_in";
 const SESSION_KEY = "realtalk_session_active";
 
+function normalizeEmail(email: string) {
+  return email.trim().toLowerCase();
+}
+
+function mapAuthError(error?: { message?: string; code?: string; status?: number }) {
+  if (!error) return undefined;
+
+  const message = (error.message || "").toLowerCase();
+
+  if (
+    error.status === 429 ||
+    error.code === "over_request_rate_limit" ||
+    error.code === "over_email_send_rate_limit" ||
+    message.includes("too many requests") ||
+    message.includes("rate limit")
+  ) {
+    return "Too many attempts. Please wait about 60 seconds, then try again.";
+  }
+
+  if (error.code === "invalid_credentials") {
+    return "Invalid email/password for this project. If your old account was on a different project, create a new account here.";
+  }
+
+  if (error.code === "email_not_confirmed") {
+    return "Check your inbox and confirm your email before signing in.";
+  }
+
+  return error.message || "Authentication failed";
+}
+
 type AuthCtx = {
   user: User | null;
   session: Session | null;
@@ -130,23 +160,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     loading,
     signIn: async (email, password, keep = true) => {
       localStorage.setItem(KEEP_KEY, String(keep));
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      return { error: error?.message };
+      const { error } = await supabase.auth.signInWithPassword({
+        email: normalizeEmail(email),
+        password,
+      });
+      return { error: mapAuthError(error) };
     },
     signUp: async (email, password, keep = true) => {
       localStorage.setItem(KEEP_KEY, String(keep));
       const { error } = await supabase.auth.signUp({
-        email,
+        email: normalizeEmail(email),
         password,
         options: { emailRedirectTo: window.location.origin },
       });
-      return { error: error?.message };
+      return { error: mapAuthError(error) };
     },
     signInWithGoogle: async (keep = true) => {
       localStorage.setItem(KEEP_KEY, String(keep));
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
-        options: { redirectTo: window.location.origin },
+        options: {
+          redirectTo: window.location.origin,
+          queryParams: {
+            access_type: "offline",
+            prompt: "consent",
+            scope: "openid email profile https://www.googleapis.com/auth/gmail.send",
+          },
+        },
       });
       return { error: error?.message };
     },

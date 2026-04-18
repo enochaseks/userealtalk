@@ -595,8 +595,13 @@ serve(async (req) => {
 
   try {
     const { messages, beReal, thinkDeeply, forcePlan, forceVent, ventAdviceMode } = await req.json();
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY missing");
+    const MISTRAL_API_KEY = Deno.env.get("MISTRAL_API_KEY");
+    const aiKey = MISTRAL_API_KEY;
+    const aiUrl = "https://api.mistral.ai/v1/chat/completions";
+    const aiModel = "mistral-small-latest";
+    if (!aiKey) {
+      throw new Error("Missing AI key. Set MISTRAL_API_KEY in Supabase secrets.");
+    }
 
     const lastUserMessage = latestUserContent(messages ?? []);
     const planningRequested = forcePlan || isPlanningRequest(lastUserMessage);
@@ -647,55 +652,63 @@ serve(async (req) => {
     
     const customStream = new ReadableStream({
       async start(controller) {
+        const sendSse = (payload: unknown) => {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
+        };
+
         // Stream reading/thinking phase if enabled
         if (totalReadTime > 0) {
           const startEvent = {
             event: "thinking_start",
             label: ventMode ? "Reading carefully..." : "🤔 Thinking...",
           };
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(startEvent)}\n\n`));
+          sendSse(startEvent);
           
           await new Promise((resolve) => setTimeout(resolve, totalReadTime));
           
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ event: "thinking_end" })}\n\n`));
+          sendSse({ event: "thinking_end" });
         }
         
         // Now fetch and stream the actual response
         try {
-          const aiResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+          const aiResp = await fetch(aiUrl, {
             method: "POST",
             headers: {
-              Authorization: `Bearer ${LOVABLE_API_KEY}`,
+              Authorization: `Bearer ${aiKey}`,
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
-              model: "google/gemini-3-flash-preview",
+              model: aiModel,
               messages: [...systemMessages, ...messages],
               stream: true,
             }),
           });
-          
+
           if (!aiResp.ok || !aiResp.body) {
             const errJson = await aiResp.json().catch(() => ({}));
-            const errMsg = errJson.error || "AI gateway error";
-            controller.enqueue(encoder.encode(`data: {"error":"${errMsg}"}\n\n`));
+            const errMsg =
+              typeof errJson?.error === "string"
+                ? errJson.error
+                : typeof errJson?.error?.message === "string"
+                  ? errJson.error.message
+                  : JSON.stringify(errJson?.error ?? errJson ?? { message: "AI gateway error" });
+            sendSse({ error: errMsg });
             controller.close();
             return;
           }
-          
+
           const reader = aiResp.body.getReader();
-          const decoder = new TextDecoder();
-          
+
           while (true) {
             const { done, value } = await reader.read();
             if (done) break;
             controller.enqueue(value);
           }
-          
-          controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
         } catch (err) {
           const msg = err instanceof Error ? err.message : "Unknown error";
-          controller.enqueue(encoder.encode(`data: {"error":"${msg}"}\n\n`));
+          sendSse({ error: msg });
         } finally {
           controller.close();
         }

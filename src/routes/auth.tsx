@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,9 @@ import { motion } from "framer-motion";
 import { toast } from "sonner";
 
 import logo from "../assets/logo.png";
+
+const SIGNUP_COOLDOWN_MS = 60_000;
+const SIGNUP_LAST_ATTEMPT_KEY = "realtalk_signup_last_attempt";
 
 export const Route = createFileRoute("/auth")({
   component: AuthPage,
@@ -24,13 +27,27 @@ function AuthPage() {
   const [keep, setKeep] = useState(true);
   const [busy, setBusy] = useState(false);
 
-  if (user) {
-    navigate({ to: "/" });
-    return null;
-  }
+  useEffect(() => {
+    if (user) {
+      navigate({ to: "/" });
+    }
+  }, [user, navigate]);
+
+  if (user) return null;
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (mode === "signup") {
+      const lastAttempt = Number(localStorage.getItem(SIGNUP_LAST_ATTEMPT_KEY) || "0");
+      const waitMs = SIGNUP_COOLDOWN_MS - (Date.now() - lastAttempt);
+      if (waitMs > 0) {
+        toast.error(`Please wait ${Math.ceil(waitMs / 1000)}s before trying again.`);
+        return;
+      }
+      localStorage.setItem(SIGNUP_LAST_ATTEMPT_KEY, String(Date.now()));
+    }
+
     setBusy(true);
     const { error } =
       mode === "signin"
@@ -40,7 +57,11 @@ function AuthPage() {
     if (error) {
       toast.error(error);
     } else {
-      if (mode === "signup") toast.success("Account created. Welcome to RealTalk.");
+      if (mode === "signup") {
+        toast.success("Account created. Check your email to confirm, then sign in.");
+        setMode("signin");
+        return;
+      }
       navigate({ to: "/" });
     }
   };

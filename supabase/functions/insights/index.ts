@@ -39,10 +39,13 @@ serve(async (req) => {
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    const MISTRAL_API_KEY = Deno.env.get("MISTRAL_API_KEY");
+    const aiKey = MISTRAL_API_KEY;
+    const aiUrl = "https://api.mistral.ai/v1/chat/completions";
+    const aiModel = "mistral-small-latest";
 
-    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !LOVABLE_API_KEY) {
-      throw new Error("Missing required environment variables");
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !aiKey) {
+      throw new Error("Missing required environment variables. Set MISTRAL_API_KEY.");
     }
 
     const { userId, force } = await req.json();
@@ -88,24 +91,24 @@ serve(async (req) => {
       .map((m) => `${m.role.toUpperCase()}: ${m.content.slice(0, 900)}`)
       .join("\n\n");
 
-    const aiResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const insightPrompt = `Generate strict JSON weekly insight from this user's full chat history (old + new):\n\n${compact}`;
+
+    const aiResp = await fetch(aiUrl, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        Authorization: `Bearer ${aiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
+        model: aiModel,
         stream: false,
         messages: [
           { role: "system", content: INSIGHT_SYSTEM },
           {
             role: "user",
-            content:
-              `Generate strict JSON weekly insight from this user's full chat history (old + new):\n\n${compact}`,
+            content: insightPrompt,
           },
         ],
-        response_format: { type: "json_object" },
       }),
     });
 
