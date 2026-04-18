@@ -1243,6 +1243,7 @@ export function Chat() {
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${session.access_token}`,
+          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "",
         },
         body: JSON.stringify({
           to,
@@ -1254,13 +1255,32 @@ export function Chat() {
 
       const json = await resp.json().catch(() => ({}));
       if (!resp.ok) {
+        // If Google says the token is invalid, prompt reconnect
+        if (json.error?.toLowerCase().includes("invalid") || json.error?.toLowerCase().includes("expired") || json.error?.toLowerCase().includes("auth")) {
+          toast.error("Gmail access expired. Please reconnect Google.");
+          await connectGmail();
+          return;
+        }
         throw new Error(json.error || "Failed to send Gmail message");
       }
 
-      toast.success("Email sent via Gmail");
+      // Success — reset panel and inject confirmation into chat
+      const sentTo = to;
+      const sentSubject = subject;
       setShowEmailPanel(false);
+      setEmailTo("");
+      setEmailSubject("");
       setEmailPrompt("");
       setEmailBody("");
+      setEmailReview("");
+
+      // Add a confirmation note into the conversation
+      const confirmationMsg: Msg = {
+        role: "assistant",
+        content: `✅ **Email sent successfully**\n\n**To:** ${sentTo}\n**Subject:** ${sentSubject}\n\nYour email has been delivered via Gmail.`,
+      };
+      setMessages((prev) => [...prev, confirmationMsg]);
+      toast.success(`Email sent to ${sentTo}`);
     } catch (e: any) {
       toast.error(e.message || "Failed to send email");
     } finally {

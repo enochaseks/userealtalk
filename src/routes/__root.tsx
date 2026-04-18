@@ -34,7 +34,7 @@ export const Route = createRootRoute({
       {
         httpEquiv: "Content-Security-Policy",
         content:
-          "default-src 'self'; connect-src 'self' https://*.supabase.co https://api.mistral.ai https://fonts.googleapis.com; img-src 'self' data: https: blob:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+          "default-src 'self'; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.mistral.ai https://fonts.googleapis.com https://gmail.googleapis.com; img-src 'self' data: https: blob:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
       },
       { name: "referrer", content: "strict-origin-when-cross-origin" },
       { title: "RealTalk — Think clearly. Decide better." },

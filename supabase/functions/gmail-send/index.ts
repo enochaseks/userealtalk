@@ -1,27 +1,36 @@
 // @ts-nocheck
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const toBase64Url = (value: string) => {
-  const bytes = new TextEncoder().encode(value);
+const encodeBase64Url = (bytes: Uint8Array): string => {
   let binary = "";
-  for (const b of bytes) binary += String.fromCharCode(b);
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 };
 
+const encodeWordQ = (str: string): string => {
+  // RFC 2047 encoded-word for non-ASCII subject lines
+  const bytes = new TextEncoder().encode(str);
+  return `=?UTF-8?B?${encodeBase64Url(bytes)}?=`;
+};
+
 const buildMimeMessage = ({ to, subject, body }: { to: string; subject: string; body: string }) => {
+  const encodedSubject = /[^\x00-\x7F]/.test(subject) ? encodeWordQ(subject) : subject;
+  // Encode body as base64 for reliable UTF-8 transport
+  const bodyBytes = new TextEncoder().encode(body);
+  const encodedBody = encodeBase64Url(bodyBytes);
   return [
     `To: ${to}`,
-    `Subject: ${subject}`,
-    "Content-Type: text/plain; charset=UTF-8",
+    `Subject: ${encodedSubject}`,
     "MIME-Version: 1.0",
+    "Content-Type: text/plain; charset=UTF-8",
+    "Content-Transfer-Encoding: base64",
     "",
-    body,
+    encodedBody,
   ].join("\r\n");
 };
 
@@ -31,37 +40,8 @@ serve(async (req) => {
   }
 
   try {
-    const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
-    const SUPABASE_PUBLISHABLE_KEY = Deno.env.get("SUPABASE_PUBLISHABLE_KEY");
-
-    if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
-      throw new Error("Missing Supabase environment variables");
-    }
-
     const authHeader = req.headers.get("authorization");
     if (!authHeader?.startsWith("Bearer ")) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const supabaseJwt = authHeader.replace("Bearer ", "").trim();
-    if (!supabaseJwt) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    // Validate Supabase user session
-    const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
-      global: { headers: { Authorization: `Bearer ${supabaseJwt}` } },
-      auth: { persistSession: false, autoRefreshToken: false, storage: undefined },
-    });
-
-    const { data: userData, error: userErr } = await supabase.auth.getUser(supabaseJwt);
-    if (userErr || !userData?.user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -85,7 +65,7 @@ serve(async (req) => {
     }
 
     const mime = buildMimeMessage({ to, subject, body });
-    const raw = toBase64Url(mime);
+    const raw = encodeBase64Url(new TextEncoder().encode(mime));
 
     const gmailResp = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
       method: "POST",
