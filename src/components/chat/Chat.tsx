@@ -527,8 +527,6 @@ export function Chat() {
   if (!overrideText && isEmailIntent(text)) {
     setInput("");
     setShowEmailPanel(true);
-    // Pre-fill the prompt field with whatever the user typed so the AI can use it
-    setEmailPrompt(text);
     return;
   }
 
