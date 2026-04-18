@@ -73,7 +73,6 @@ type Insight = {
   calm_progress: string;
   overthinking_reduction: string;
   ai_help_summary: string;
-  source_message_count: number;
   updated_at: string;
 };
 
@@ -169,9 +168,9 @@ function ProfilePage() {
 
     const loadInsights = async () => {
       const { data } = await supabase
-        .from("user_weekly_insights")
+        .from("conversation_weekly_insights")
         .select(
-          "id,week_start,emotion_trend,thought_patterns,calm_progress,overthinking_reduction,ai_help_summary,source_message_count,updated_at",
+          "id,week_start,emotion_trend,thought_patterns,calm_progress,overthinking_reduction,ai_help_summary,updated_at",
         )
         .order("week_start", { ascending: false })
         .order("updated_at", { ascending: false });
