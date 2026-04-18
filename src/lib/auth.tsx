@@ -2,12 +2,16 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 
+const KEEP_KEY = "realtalk_keep_logged_in";
+const SESSION_KEY = "realtalk_session_active";
+
 type AuthCtx = {
   user: User | null;
   session: Session | null;
   loading: boolean;
-  signIn: (email: string, password: string) => Promise<{ error?: string }>;
-  signUp: (email: string, password: string) => Promise<{ error?: string }>;
+  signIn: (email: string, password: string, keep?: boolean) => Promise<{ error?: string }>;
+  signUp: (email: string, password: string, keep?: boolean) => Promise<{ error?: string }>;
+  signInWithGoogle: (keep?: boolean) => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
 };
 
@@ -16,6 +20,17 @@ const Ctx = createContext<AuthCtx | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // "Keep me logged in" enforcement: if user opted out, clear session on new browser start
+  useEffect(() => {
+    const keep = localStorage.getItem(KEEP_KEY);
+    const sessionAlive = sessionStorage.getItem(SESSION_KEY);
+    if (keep === "false" && !sessionAlive) {
+      // New browser session and user didn't want persistence — sign out silently
+      void supabase.auth.signOut({ scope: "local" });
+    }
+    sessionStorage.setItem(SESSION_KEY, "1");
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -113,15 +128,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     user: session?.user ?? null,
     session,
     loading,
-    signIn: async (email, password) => {
+    signIn: async (email, password, keep = true) => {
+      localStorage.setItem(KEEP_KEY, String(keep));
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       return { error: error?.message };
     },
-    signUp: async (email, password) => {
+    signUp: async (email, password, keep = true) => {
+      localStorage.setItem(KEEP_KEY, String(keep));
       const { error } = await supabase.auth.signUp({
         email,
         password,
         options: { emailRedirectTo: window.location.origin },
+      });
+      return { error: error?.message };
+    },
+    signInWithGoogle: async (keep = true) => {
+      localStorage.setItem(KEEP_KEY, String(keep));
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo: window.location.origin },
       });
       return { error: error?.message };
     },

@@ -4,6 +4,7 @@ import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 
@@ -15,11 +16,12 @@ export const Route = createFileRoute("/auth")({
 });
 
 function AuthPage() {
-  const { signIn, signUp, user } = useAuth();
+  const { signIn, signUp, signInWithGoogle, user } = useAuth();
   const navigate = useNavigate();
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [keep, setKeep] = useState(true);
   const [busy, setBusy] = useState(false);
 
   if (user) {
@@ -31,7 +33,9 @@ function AuthPage() {
     e.preventDefault();
     setBusy(true);
     const { error } =
-      mode === "signin" ? await signIn(email, password) : await signUp(email, password);
+      mode === "signin"
+        ? await signIn(email, password, keep)
+        : await signUp(email, password, keep);
     setBusy(false);
     if (error) {
       toast.error(error);
@@ -39,6 +43,16 @@ function AuthPage() {
       if (mode === "signup") toast.success("Account created. Welcome to RealTalk.");
       navigate({ to: "/" });
     }
+  };
+
+  const handleGoogle = async () => {
+    setBusy(true);
+    const { error } = await signInWithGoogle(keep);
+    if (error) {
+      toast.error(error);
+      setBusy(false);
+    }
+    // On success, Supabase redirects automatically.
   };
 
   return (
@@ -85,10 +99,42 @@ function AuthPage() {
                 onChange={(e) => setPassword(e.target.value)}
               />
             </div>
+
+            {/* Keep me logged in */}
+            <div className="flex items-center justify-between py-1">
+              <Label htmlFor="keep" className="text-sm text-muted-foreground cursor-pointer select-none">
+                Keep me logged in
+              </Label>
+              <Switch
+                id="keep"
+                checked={keep}
+                onCheckedChange={setKeep}
+              />
+            </div>
+
             <Button type="submit" disabled={busy} className="w-full">
               {busy ? "…" : mode === "signin" ? "Sign in" : "Create account"}
             </Button>
           </form>
+
+          <div className="relative my-5">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t border-border" />
+            </div>
+            <div className="relative flex justify-center text-xs text-muted-foreground">
+              <span className="bg-surface/60 px-2">or</span>
+            </div>
+          </div>
+
+          <Button
+            type="button"
+            variant="outline"
+            disabled={busy}
+            onClick={handleGoogle}
+            className="w-full"
+          >
+            Continue with Google
+          </Button>
 
           <button
             type="button"
