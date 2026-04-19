@@ -12,6 +12,12 @@ function Index() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
 
+  // During SSR, render the public landing page so crawlers/review bots can
+  // always access homepage legal links without client auth initialization.
+  if (typeof window === "undefined") {
+    return <Landing />;
+  }
+
   useEffect(() => {
     // no-op: Landing has its own CTA
   }, [user, loading, navigate]);

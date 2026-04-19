@@ -200,6 +200,9 @@ export function Landing() {
         <div className="mx-auto max-w-2xl px-3 sm:px-4 py-2 flex items-center justify-between gap-2 sm:gap-3">
           <img src={logo} alt="RealTalk" className="h-10 w-auto" />
           <div className="flex items-center gap-1.5 sm:gap-2">
+            <a href="/privacy" className="text-xs text-muted-foreground hover:text-foreground transition-colors px-1">
+              Privacy
+            </a>
             <Link to="/auth">
               <Button
                 variant="ghost"

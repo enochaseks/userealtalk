@@ -58,6 +58,8 @@ export const Route = createRootRoute({
     ],
     links: [
       { rel: "stylesheet", href: APP_CSS_HREF },
+      { rel: "privacy-policy", href: "https://userealtalk.co.uk/privacy" },
+      { rel: "terms-of-service", href: "https://userealtalk.co.uk/terms" },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "" },
       {
@@ -68,6 +70,7 @@ export const Route = createRootRoute({
   }),
   shellComponent: RootShell,
   component: RootComponent,
+  errorComponent: RootError,
   notFoundComponent: NotFound,
 });
 
@@ -199,13 +202,15 @@ function AppFrame() {
   const { user, loading } = useAuth();
   const path = useRouterState({ select: (s) => s.location.pathname });
   const showNav = user && path !== "/auth";
+  const isServer = typeof window === "undefined";
+  const showLoadingState = !isServer && loading;
 
   return (
     <div className="min-h-screen min-h-[100dvh] flex flex-col">
       <OfflineBanner />
       {showNav && <TopNav />}
       <main className="flex-1 flex flex-col">
-        {loading ? (
+        {showLoadingState ? (
           <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
             …
           </div>
@@ -431,6 +436,22 @@ function NotFound() {
           <img src={logo} alt="RealTalk" className="h-5 w-auto" />
           Back home
         </Link>
+      </div>
+    </div>
+  );
+}
+
+function RootError() {
+  return (
+    <div className="flex-1 min-h-screen flex items-center justify-center px-4">
+      <div className="max-w-xl w-full text-center space-y-4">
+        <h1 className="font-serif text-4xl">Something went wrong</h1>
+        <p className="text-muted-foreground">An unexpected error occurred. Please try again.</p>
+        <div className="flex items-center justify-center gap-3 text-sm">
+          <a href="/" className="text-primary hover:underline">Go home</a>
+          <a href="/privacy" className="text-primary hover:underline">Privacy Policy</a>
+          <a href="/terms" className="text-primary hover:underline">Terms of Service</a>
+        </div>
       </div>
     </div>
   );
