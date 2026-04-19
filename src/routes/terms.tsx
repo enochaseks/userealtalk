@@ -62,8 +62,9 @@ function TermsPage() {
         <section>
           <h2 className="font-semibold text-base">AI providers &amp; service availability</h2>
           <p className="mt-2 text-muted-foreground">
-            RealTalk uses Mistral AI as its primary AI provider, with automatic fallback to Google Gemini
-            and Cloudflare Workers AI (Llama 3.1 8B) if the primary provider is unavailable. Response
+            RealTalk uses Mistral AI as its primary AI provider, with automatic fallback to
+            Cloudflare Workers AI (Llama 3.1 8B) if the primary provider is unavailable.
+            Optional Gemini fallback may be enabled during maintenance windows. Response
             quality and availability may vary between providers. RealTalk makes no guarantee of
             uninterrupted service or consistent AI output. If an AI response fails, a retry option will
             be shown — you may use it to attempt the request again.
@@ -83,8 +84,18 @@ function TermsPage() {
           <h2 className="font-semibold text-base">Gmail integration</h2>
           <p className="mt-2 text-muted-foreground">
             If you connect Google, you authorise RealTalk to send Gmail messages on your behalf only
-            when you explicitly initiate a send action within the app. RealTalk does not read, store,
+            when you explicitly initiate a send action within the app, or when you opt into
+            weekly insight emails and schedule reminder emails. RealTalk does not read, store,
             or index your Gmail messages. Gmail connection is optional and can be disconnected at any time.
+          </p>
+        </section>
+
+        <section>
+          <h2 className="font-semibold text-base">Schedule reminders</h2>
+          <p className="mt-2 text-muted-foreground">
+            If you enable schedule reminder emails in settings, RealTalk may send reminder emails shortly
+            before your saved schedule time. Reminder timing can be configured in-app and can be disabled
+            at any time. Delivery depends on active Google connection and service availability.
           </p>
         </section>
 

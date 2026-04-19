@@ -28,7 +28,9 @@ function PrivacyPage() {
           <p className="mt-2 text-muted-foreground">
             We store account details (email address), your chat conversations, saved plans, comfort boundary
             settings, profile preference notes extracted from your chats, optional weekly insight data, and
-            any profile information you choose to provide (such as a display name or avatar).
+            any profile information you choose to provide (such as a display name or avatar). If schedule
+            reminder emails are enabled, we also store reminder preference settings and reminder delivery logs
+            (for example: which schedule item reminder was sent and when).
           </p>
         </section>
 
@@ -78,8 +80,8 @@ function PrivacyPage() {
           <p className="mt-2 text-muted-foreground">
             RealTalk uses a cascade of AI providers to power chat responses, profile learning, and weekly
             insights. The primary provider is <strong>Mistral AI</strong>. If Mistral is unavailable,
-            requests fall back to <strong>Google Gemini</strong>, then to <strong>Cloudflare Workers AI
-            (Llama 3.1 8B)</strong>. Your messages are sent to whichever provider handles your request.
+            requests fall back to <strong>Cloudflare Workers AI (Llama 3.1 8B)</strong>. Optional
+            Gemini fallback may be enabled during maintenance windows. Your messages are sent to whichever provider handles your request.
             All providers process data under their own privacy policies. We do not share your identity
             with these providers — only the text content of the current request is transmitted.
           </p>
@@ -89,9 +91,9 @@ function PrivacyPage() {
           <h2 className="font-semibold text-base">How Gmail access works</h2>
           <p className="mt-2 text-muted-foreground">
             Gmail access is entirely optional. If you choose to connect Google, RealTalk requests the Gmail
-            send scope only — used to send emails you explicitly initiate from within the app. RealTalk
-            does not read, index, or store your Gmail messages. Gmail connection is not required for any
-            core feature.
+            send scope only — used to send emails you explicitly initiate from within the app, plus optional
+            schedule reminder emails and weekly insight emails if you opt in. RealTalk does not read,
+            index, or store your Gmail messages. Gmail connection is not required for any core feature.
           </p>
         </section>
 
@@ -119,8 +121,8 @@ function PrivacyPage() {
           <h2 className="font-semibold text-base">Your choices</h2>
           <p className="mt-2 text-muted-foreground">
             You can export your data, review what is stored, and permanently delete your account from
-            the account data page. You can disable weekly insights and email delivery at any time in
-            your profile settings.
+            the account data page. You can disable weekly insights, weekly insight email delivery, and
+            schedule reminder emails at any time in your profile settings.
           </p>
           <div className="mt-2">
             <Link to="/account-data" className="text-primary hover:underline">

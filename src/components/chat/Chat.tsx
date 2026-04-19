@@ -38,6 +38,41 @@ type ScheduleItem = {
   is_completed: boolean;
 };
 
+const parseScheduleCandidateFromText = (text: string): {
+  cleanContent: string;
+  candidate?: NonNullable<Msg["scheduleCandidate"]>;
+} => {
+  const match = text.match(/\[SCHEDULE_SAVE:(\{[\s\S]+?\})\]/);
+  const cleanContent = text.replace(/\[SCHEDULE_SAVE:\{[\s\S]+?\}\]/g, "").trimEnd();
+
+  if (!match) {
+    return { cleanContent };
+  }
+
+  try {
+    const parsed = JSON.parse(match[1]) as {
+      title?: string;
+      starts_at?: string;
+      notes?: string;
+    };
+
+    if (parsed.title && parsed.starts_at) {
+      return {
+        cleanContent,
+        candidate: {
+          title: parsed.title.trim(),
+          starts_at: new Date(parsed.starts_at).toISOString(),
+          notes: (parsed.notes ?? "").trim(),
+        },
+      };
+    }
+  } catch {
+    // Ignore malformed schedule marker
+  }
+
+  return { cleanContent };
+};
+
 const EMAIL_TONE_LABELS: Record<EmailTone, string> = {
   professional: "Professional",
   formal: "Formal",
@@ -112,7 +147,21 @@ export function Chat() {
         .order("created_at");
 
       if (!cancelled && data && !isSendingRef.current) {
-        setMessages(data as Msg[]);
+        setMessages((prev) =>
+          (data as Msg[]).map((incoming) => {
+            const parsed = parseScheduleCandidateFromText(incoming.content);
+            const previousMatch = prev.find(
+              (item) => item.id === incoming.id || (item.role === incoming.role && item.content === parsed.cleanContent),
+            );
+
+            return {
+              ...incoming,
+              content: parsed.cleanContent,
+              scheduleCandidate: previousMatch?.scheduleCandidate ?? parsed.candidate,
+              scheduleSaved: previousMatch?.scheduleSaved ?? false,
+            };
+          }),
+        );
       }
     };
 
@@ -290,7 +339,7 @@ export function Chat() {
   const addScheduleCandidateToProfile = async (messageIndex: number) => {
     if (!user) return;
     const message = messages[messageIndex];
-    const candidate = message?.scheduleCandidate;
+    const candidate = message?.scheduleCandidate ?? parseScheduleCandidateFromText(message?.content ?? "").candidate;
     if (!candidate || message.scheduleSaved) return;
 
     setScheduleMessageBusyId(message.id ?? `msg-${messageIndex}`);
@@ -952,29 +1001,11 @@ export function Chat() {
     }
 
     // Parse any [SCHEDULE_SAVE:{...}] marker the AI outputs and attach a schedule candidate to the message
-    const scheduleSaveMatch = assistant.match(/\[SCHEDULE_SAVE:(\{[\s\S]+?\})\]/);
-    let cleanAssistant = assistant;
-    let scheduleCandidate: Msg["scheduleCandidate"];
-    if (scheduleSaveMatch) {
-      try {
-        const schedulePayload = JSON.parse(scheduleSaveMatch[1]) as {
-          title?: string;
-          starts_at?: string;
-          notes?: string;
-        };
-        if (schedulePayload.title && schedulePayload.starts_at) {
-          scheduleCandidate = {
-            title: schedulePayload.title.trim(),
-            starts_at: new Date(schedulePayload.starts_at).toISOString(),
-            notes: (schedulePayload.notes ?? "").trim(),
-          };
-        }
-      } catch {
-        // Silently ignore malformed marker
-      }
-    }
+    const parsedAssistant = parseScheduleCandidateFromText(assistant);
+    const cleanAssistant = parsedAssistant.cleanContent;
+    const scheduleCandidate = parsedAssistant.candidate;
+
     // Strip the hidden marker from what gets displayed and stored
-    cleanAssistant = assistant.replace(/\[SCHEDULE_SAVE:\{[\s\S]+?\}\]/g, "").trimEnd();
     setMessages((prev) => {
       const copy = [...prev];
       for (let i = copy.length - 1; i >= 0; i--) {
@@ -1624,43 +1655,52 @@ export function Chat() {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.25 }}
                   >
-                    {m.role === "user" ? (
-                      <div className="flex justify-end">
-                        <div className="max-w-[85%]">
-                          {m.features && m.features.length > 0 && (
-                            <div className="mb-1.5 flex flex-wrap gap-1.5 justify-end">
-                              {m.features.map((feature) => (
-                                <span
-                                  key={feature}
-                                  className="text-[10px] px-2 py-0.5 rounded-full bg-primary/20 text-primary"
-                                >
-                                  {feature}
-                                </span>
-                              ))}
+                    {(() => {
+                      const parsedMessage = parseScheduleCandidateFromText(m.content || "");
+                      const visibleContent = parsedMessage.cleanContent;
+                      const scheduleCandidate = m.scheduleCandidate ?? parsedMessage.candidate;
+
+                      if (m.role === "user") {
+                        return (
+                          <div className="flex justify-end">
+                            <div className="max-w-[85%]">
+                              {m.features && m.features.length > 0 && (
+                                <div className="mb-1.5 flex flex-wrap gap-1.5 justify-end">
+                                  {m.features.map((feature) => (
+                                    <span
+                                      key={feature}
+                                      className="text-[10px] px-2 py-0.5 rounded-full bg-primary/20 text-primary"
+                                    >
+                                      {feature}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                              <div className="bg-surface-elevated rounded-2xl rounded-tr-sm px-4 py-2.5 text-[0.95rem] whitespace-pre-wrap">
+                                {m.content}
+                              </div>
                             </div>
-                          )}
-                          <div className="bg-surface-elevated rounded-2xl rounded-tr-sm px-4 py-2.5 text-[0.95rem] whitespace-pre-wrap">
-                            {m.content}
                           </div>
-                        </div>
-                      </div>
-                    ) : (
-                      <div>
+                        );
+                      }
+
+                      return (
+                        <div>
                         {m.thinking && (
                           <div className="mb-3 p-3 bg-primary/10 border border-primary/20 rounded-lg">
                             <p className="text-xs text-primary/80 font-semibold mb-1">💭 Thinking:</p>
                             <p className="text-xs text-muted-foreground">{m.thinking}</p>
                           </div>
                         )}
-                        {(m.content || (busy && i === messages.length - 1 && !m.ventChoicePending)) && (
+                        {(visibleContent || (busy && i === messages.length - 1 && !m.ventChoicePending)) && (
                           <div className="prose-realtalk">
-                            <ReactMarkdown>{m.content || " "}</ReactMarkdown>
-                            {busy && i === messages.length - 1 && !m.content && !m.ventChoicePending && (
+                            <ReactMarkdown>{visibleContent || " "}</ReactMarkdown>
+                            {busy && i === messages.length - 1 && !visibleContent && !m.ventChoicePending && (
                               <span className="caret text-muted-foreground" />
                             )}
                           </div>
                         )}
-                        {m.content && !(busy && i === messages.length - 1) && shouldShowSavePlan(messages, i) && (
+                        {visibleContent && !(busy && i === messages.length - 1) && shouldShowSavePlan(messages, i) && (
                           <div className="mt-3 flex items-center gap-2">
                             <Button
                               variant="ghost"
@@ -1682,7 +1722,7 @@ export function Chat() {
                             </Button>
                           </div>
                         )}
-                        {m.scheduleCandidate && (
+                        {scheduleCandidate && (
                           <div className="mt-3 flex items-center gap-2">
                             <Button
                               variant={m.scheduleSaved ? "secondary" : "ghost"}
@@ -1699,7 +1739,7 @@ export function Chat() {
                                   : "Add to schedule"}
                             </Button>
                             <span className="text-xs text-muted-foreground">
-                              {new Date(m.scheduleCandidate.starts_at).toLocaleString()}
+                              {new Date(scheduleCandidate.starts_at).toLocaleString()}
                             </span>
                           </div>
                         )}
@@ -1751,7 +1791,8 @@ export function Chat() {
                           </div>
                         )}
                       </div>
-                    )}
+                      );
+                    })()}
                   </motion.div>
                 ))}
               </AnimatePresence>
@@ -2121,7 +2162,7 @@ export function Chat() {
       </div>
 
       {editingPlanIndex !== null && (
-        <div className="fixed inset-0 z-50 bg-background/70 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
           <div className="w-full max-w-2xl rounded-2xl border border-border bg-surface p-4">
             <h3 className="text-sm font-semibold mb-2">Edit plan</h3>
             <textarea

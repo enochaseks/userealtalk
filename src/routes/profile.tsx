@@ -139,7 +139,7 @@ const toLocalInputDateTime = (iso?: string | null): string => {
 };
 
 function ProfilePage() {
-  const { user, session, loading, signOut } = useAuth();
+  const { user, session, loading, signOut, connectGoogleForGmail } = useAuth();
   const navigate = useNavigate();
   const search = useSearch({ strict: false }) as { tab?: ProfileTab };
   const [tab, setTab] = useState<ProfileTab>(search?.tab ?? "plans");
@@ -151,6 +151,8 @@ function ProfilePage() {
   const [isSavingPlanEdit, setIsSavingPlanEdit] = useState(false);
   const [insightMonitoringEnabled, setInsightMonitoringEnabled] = useState(false);
   const [weeklyEmailEnabled, setWeeklyEmailEnabled] = useState(false);
+  const [scheduleEmailRemindersEnabled, setScheduleEmailRemindersEnabled] = useState(false);
+  const [scheduleReminderMinutes, setScheduleReminderMinutes] = useState(30);
   const [displayName, setDisplayName] = useState("");
   const [pendingName, setPendingName] = useState("");
   const [avatarDataUrl, setAvatarDataUrl] = useState("");
@@ -213,11 +215,13 @@ function ProfilePage() {
     const loadInsightSettings = async () => {
       const { data } = await supabase
         .from("user_insight_settings")
-        .select("monitor_enabled, weekly_email_enabled")
+        .select("monitor_enabled, weekly_email_enabled, schedule_email_reminders_enabled, schedule_email_reminder_minutes")
         .eq("user_id", user.id)
         .maybeSingle();
       setInsightMonitoringEnabled(Boolean(data?.monitor_enabled));
       setWeeklyEmailEnabled(Boolean(data?.weekly_email_enabled));
+      setScheduleEmailRemindersEnabled(Boolean(data?.schedule_email_reminders_enabled));
+      setScheduleReminderMinutes(Number(data?.schedule_email_reminder_minutes ?? 30));
     };
 
     const loadInsights = async () => {
@@ -488,6 +492,8 @@ function ProfilePage() {
       user_id: user.id,
       monitor_enabled: enabled,
       weekly_email_enabled: weeklyEmailEnabled,
+      schedule_email_reminders_enabled: scheduleEmailRemindersEnabled,
+      schedule_email_reminder_minutes: scheduleReminderMinutes,
       updated_at: new Date().toISOString(),
     });
 
@@ -508,6 +514,8 @@ function ProfilePage() {
       user_id: user.id,
       monitor_enabled: insightMonitoringEnabled,
       weekly_email_enabled: enabled,
+      schedule_email_reminders_enabled: scheduleEmailRemindersEnabled,
+      schedule_email_reminder_minutes: scheduleReminderMinutes,
       updated_at: new Date().toISOString(),
     });
 
@@ -518,6 +526,66 @@ function ProfilePage() {
     }
 
     toast.success(enabled ? "Weekly insight email enabled" : "Weekly insight email disabled");
+  };
+
+  const toggleScheduleEmailReminders = async (enabled: boolean) => {
+    if (!user) return;
+
+    if (enabled && !session?.provider_token) {
+      toast.info("Connect Gmail to enable schedule reminder emails");
+      const { error } = await connectGoogleForGmail();
+      if (error) {
+        toast.error(error);
+      } else {
+        toast.success("Redirecting to Google to connect Gmail");
+      }
+      return;
+    }
+
+    setScheduleEmailRemindersEnabled(enabled);
+
+    const { error } = await supabase.from("user_insight_settings").upsert({
+      user_id: user.id,
+      monitor_enabled: insightMonitoringEnabled,
+      weekly_email_enabled: weeklyEmailEnabled,
+      schedule_email_reminders_enabled: enabled,
+      schedule_email_reminder_minutes: scheduleReminderMinutes,
+      updated_at: new Date().toISOString(),
+    });
+
+    if (error) {
+      setScheduleEmailRemindersEnabled(!enabled);
+      toast.error("Failed to update schedule reminder setting");
+      return;
+    }
+
+    toast.success(enabled ? "Schedule email reminders enabled" : "Schedule email reminders disabled");
+  };
+
+  const changeScheduleReminderMinutes = async (value: string) => {
+    if (!user) return;
+    const minutes = Number(value);
+    if (!Number.isFinite(minutes) || minutes < 5 || minutes > 180) return;
+
+    const previous = scheduleReminderMinutes;
+    setScheduleReminderMinutes(minutes);
+
+    const { error } = await supabase.from("user_insight_settings").upsert({
+      user_id: user.id,
+      monitor_enabled: insightMonitoringEnabled,
+      weekly_email_enabled: weeklyEmailEnabled,
+      schedule_email_reminders_enabled: scheduleEmailRemindersEnabled,
+      schedule_email_reminder_minutes: minutes,
+      updated_at: new Date().toISOString(),
+    });
+
+    if (error) {
+      setScheduleReminderMinutes(previous);
+      toast.error("Failed to update reminder lead time");
+      return;
+    }
+
+    toast.success(`Reminders will be sent ${minutes} minutes before schedule time`);
   };
 
   const saveProfileIdentity = async (nameInput = displayName, avatarInput = avatarDataUrl) => {
@@ -683,8 +751,30 @@ function ProfilePage() {
       toast.error("Failed to delete schedule");
       return;
     }
+    setSchedules((prev) => prev.filter((item) => item.id !== itemId));
     if (scheduleEditingId === itemId) resetScheduleForm();
     toast.success("Schedule deleted");
+  };
+
+  const clearAllSchedules = async () => {
+    if (!user) return;
+    if (schedules.length === 0) {
+      toast.error("No schedules to clear");
+      return;
+    }
+
+    const confirmed = window.confirm("Clear all schedules from your profile calendar?");
+    if (!confirmed) return;
+
+    const { error } = await supabase.from("user_schedules").delete().eq("user_id", user.id);
+    if (error) {
+      toast.error("Failed to clear schedules");
+      return;
+    }
+
+    setSchedules([]);
+    resetScheduleForm();
+    toast.success("Calendar cleared");
   };
 
   const deleteAccount = async () => {
@@ -815,6 +905,13 @@ function ProfilePage() {
             <div className="absolute right-0 top-10 z-20 w-[320px] rounded-xl border border-border bg-background/95 shadow-xl p-3">
               <div className="flex items-center justify-between mb-2">
                 <div className="text-sm font-semibold">Your schedule</div>
+                <button
+                  type="button"
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                  onClick={() => void clearAllSchedules()}
+                >
+                  Clear all
+                </button>
               </div>
               <div className="space-y-2 max-h-64 overflow-y-auto">
                 {schedules.length === 0 ? (
@@ -822,9 +919,20 @@ function ProfilePage() {
                 ) : (
                   schedules.slice(0, 6).map((item) => (
                     <div key={item.id} className="rounded-md border border-border/70 px-2.5 py-2">
-                      <div className="text-sm">{item.title}</div>
-                      <div className="text-[11px] text-muted-foreground mt-0.5">
-                        {new Date(item.starts_at).toLocaleString()}
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <div className="text-sm">{item.title}</div>
+                          <div className="text-[11px] text-muted-foreground mt-0.5">
+                            {new Date(item.starts_at).toLocaleString()}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          className="text-[11px] text-muted-foreground hover:text-foreground"
+                          onClick={() => void deleteSchedule(item.id)}
+                        >
+                          Delete
+                        </button>
                       </div>
                     </div>
                   ))
@@ -973,6 +1081,42 @@ function ProfilePage() {
               </div>
               <Switch checked={weeklyEmailEnabled} onCheckedChange={toggleWeeklyEmail} />
             </div>
+          </div>
+
+          <div className="rounded-xl border border-border bg-surface/60 p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <Label className="text-sm font-semibold text-foreground cursor-pointer">
+                  Schedule reminder emails (Gmail)
+                </Label>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Send a reminder email shortly before each upcoming schedule item.
+                </p>
+              </div>
+              <Switch checked={scheduleEmailRemindersEnabled} onCheckedChange={toggleScheduleEmailReminders} />
+            </div>
+
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs text-muted-foreground">Reminder timing</p>
+              <select
+                value={String(scheduleReminderMinutes)}
+                onChange={(e) => void changeScheduleReminderMinutes(e.target.value)}
+                className="rounded-md border border-border bg-background/60 px-2.5 py-1.5 text-xs text-foreground"
+                disabled={!scheduleEmailRemindersEnabled}
+              >
+                <option value="5">5 minutes before</option>
+                <option value="10">10 minutes before</option>
+                <option value="15">15 minutes before</option>
+                <option value="30">30 minutes before</option>
+                <option value="45">45 minutes before</option>
+                <option value="60">60 minutes before</option>
+                <option value="120">2 hours before</option>
+                <option value="180">3 hours before</option>
+              </select>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Works with connected Gmail accounts. Standard non-Gmail provider delivery is not enabled yet.
+            </p>
           </div>
 
           <div className="rounded-xl border border-border bg-surface/60 p-5">

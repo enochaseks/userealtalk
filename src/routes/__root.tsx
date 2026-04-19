@@ -199,11 +199,124 @@ function OfflineBanner() {
 }
 
 function AppFrame() {
-  const { user, loading } = useAuth();
+  const { user, session, loading } = useAuth();
   const path = useRouterState({ select: (s) => s.location.pathname });
   const showNav = user && path !== "/auth";
   const isServer = typeof window === "undefined";
   const showLoadingState = !isServer && loading;
+
+  useEffect(() => {
+    if (!user || !session?.access_token || !user.email) return;
+
+    let disposed = false;
+    let running = false;
+
+    const runReminderCheck = async () => {
+      if (disposed || running) return;
+      if (!session.provider_token) return;
+
+      running = true;
+      try {
+        const { data: settingRow } = await supabase
+          .from("user_insight_settings")
+          .select("schedule_email_reminders_enabled, schedule_email_reminder_minutes")
+          .eq("user_id", user.id)
+          .maybeSingle();
+
+        if (!settingRow?.schedule_email_reminders_enabled) return;
+
+        const leadMinutes = Number(settingRow.schedule_email_reminder_minutes ?? 30);
+        const now = new Date();
+        const windowStart = now.toISOString();
+        const windowEnd = new Date(now.getTime() + leadMinutes * 60_000).toISOString();
+
+        const { data: upcoming } = await supabase
+          .from("user_schedules")
+          .select("id,title,notes,starts_at")
+          .eq("user_id", user.id)
+          .eq("is_completed", false)
+          .gte("starts_at", windowStart)
+          .lte("starts_at", windowEnd)
+          .order("starts_at", { ascending: true })
+          .limit(6);
+
+        const scheduleItems = (upcoming ?? []) as Array<{
+          id: string;
+          title: string;
+          notes: string;
+          starts_at: string;
+        }>;
+
+        if (scheduleItems.length === 0) return;
+
+        const scheduleIds = scheduleItems.map((item) => item.id);
+        const { data: sentLogs } = await supabase
+          .from("user_schedule_reminder_logs")
+          .select("schedule_id")
+          .eq("user_id", user.id)
+          .eq("channel", "gmail")
+          .in("schedule_id", scheduleIds);
+
+        const sentSet = new Set((sentLogs ?? []).map((row: any) => String(row.schedule_id)));
+        const pending = scheduleItems.filter((item) => !sentSet.has(item.id));
+        if (pending.length === 0) return;
+
+        for (const item of pending) {
+          const startsAt = new Date(item.starts_at);
+          const subject = `Reminder: ${item.title} at ${startsAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+          const body = [
+            `Hi${user.email ? " " + user.email.split("@")[0] : ""},`,
+            "",
+            `This is your RealTalk schedule reminder for: ${item.title}`,
+            `Date: ${startsAt.toLocaleDateString()}`,
+            `Time: ${startsAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`,
+            item.notes ? `Notes: ${item.notes}` : "",
+            "",
+            "You can manage your schedule from your RealTalk profile calendar.",
+          ]
+            .filter(Boolean)
+            .join("\n");
+
+          const emailResp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gmail-send`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${session.access_token}`,
+              apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "",
+            },
+            body: JSON.stringify({
+              to: user.email,
+              subject,
+              body,
+              googleAccessToken: session.provider_token,
+            }),
+          });
+
+          if (!emailResp.ok) continue;
+
+          await supabase.from("user_schedule_reminder_logs").insert({
+            user_id: user.id,
+            schedule_id: item.id,
+            channel: "gmail",
+          });
+        }
+      } catch {
+        // Silent fail for reminder checks.
+      } finally {
+        running = false;
+      }
+    };
+
+    void runReminderCheck();
+    const timer = window.setInterval(() => {
+      void runReminderCheck();
+    }, 60_000);
+
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+    };
+  }, [user?.id, user?.email, session?.access_token, session?.provider_token]);
 
   return (
     <div className="min-h-screen min-h-[100dvh] flex flex-col">
@@ -343,7 +456,7 @@ function TopNav() {
               </Button>
             </SheetTrigger>
             <SheetContent side="left" className="w-64 pt-2">
-              <div className="pt-0 pb-3 h-full flex flex-col">
+              <div className="pt-0 pb-3 h-full flex flex-col overflow-hidden">
                 <div className="px-3 pb-2 mb-1 border-b border-border/60 flex items-center justify-center">
                   <Link
                     to="/"
@@ -365,36 +478,37 @@ function TopNav() {
                   </div>
                   <Plus className="h-4 w-4 text-primary" />
                 </button>
-
-                <h2 className="px-4 text-sm font-semibold text-foreground mb-4">
-                  Recent Chats
-                </h2>
-                {conversations.length === 0 ? (
-                  <div className="px-4 text-sm text-muted-foreground">No conversations yet</div>
-                ) : (
-                  <nav className="flex flex-col gap-1">
-                    {conversations.map((conv) => (
-                      <div
-                        key={conv.id}
-                        className="group flex items-center gap-2 px-2 py-1 hover:bg-surface rounded-md transition-colors"
-                      >
-                        <button
-                          onClick={() => navigateToConversation(conv.id)}
-                          className="flex-1 px-2 py-1 text-left text-sm text-muted-foreground hover:text-foreground truncate"
+                <div className="flex-1 min-h-0 overflow-y-auto pr-1 desktop-nav-scroll">
+                  <h2 className="px-4 text-sm font-semibold text-foreground mb-4">
+                    Recent Chats
+                  </h2>
+                  {conversations.length === 0 ? (
+                    <div className="px-4 text-sm text-muted-foreground">No conversations yet</div>
+                  ) : (
+                    <nav className="flex flex-col gap-1">
+                      {conversations.map((conv) => (
+                        <div
+                          key={conv.id}
+                          className="group flex items-center gap-2 px-2 py-1 hover:bg-surface rounded-md transition-colors"
                         >
-                          {conv.title}
-                        </button>
-                        <button
-                          onClick={() => deleteConversation(conv.id)}
-                          className="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-foreground transition-all"
-                          title="Delete conversation"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    ))}
-                  </nav>
-                )}
+                          <button
+                            onClick={() => navigateToConversation(conv.id)}
+                            className="flex-1 px-2 py-1 text-left text-sm text-muted-foreground hover:text-foreground truncate"
+                          >
+                            {conv.title}
+                          </button>
+                          <button
+                            onClick={() => deleteConversation(conv.id)}
+                            className="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-foreground transition-all"
+                            title="Delete conversation"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </nav>
+                  )}
+                </div>
 
                 <Link
                   to="/profile"

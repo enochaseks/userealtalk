@@ -833,6 +833,7 @@ serve(async (req) => {
     const { messages, beReal, thinkDeeply, forcePlan, forceVent, ventAdviceMode, userId } = await req.json();
     const MISTRAL_API_KEY = Deno.env.get("MISTRAL_API_KEY");
     const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+    const ENABLE_GEMINI_FALLBACK = Deno.env.get("ENABLE_GEMINI_FALLBACK") === "true";
     const WORKERS_API_KEY = Deno.env.get("WORKERS_API_KEY");
     const CF_ACCOUNT_ID = Deno.env.get("CF_ACCOUNT_ID") ?? Deno.env.get("CLOUDFLARE_ACCOUNT_ID");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
@@ -840,9 +841,9 @@ serve(async (req) => {
     const aiKey = MISTRAL_API_KEY;
     const aiUrl = "https://api.mistral.ai/v1/chat/completions";
     const aiModel = "mistral-small-latest";
-    const hasAnyProvider = Boolean(aiKey || GEMINI_API_KEY || (WORKERS_API_KEY && CF_ACCOUNT_ID));
+    const hasAnyProvider = Boolean(aiKey || (ENABLE_GEMINI_FALLBACK && GEMINI_API_KEY) || (WORKERS_API_KEY && CF_ACCOUNT_ID));
     if (!hasAnyProvider) {
-      throw new Error("Missing AI provider keys. Set MISTRAL_API_KEY or GEMINI_API_KEY or WORKERS_API_KEY + CF_ACCOUNT_ID.");
+      throw new Error("Missing AI provider keys. Set MISTRAL_API_KEY or WORKERS_API_KEY + CF_ACCOUNT_ID (or enable Gemini fallback with ENABLE_GEMINI_FALLBACK=true).");
     }
 
     const lastUserMessage = latestUserContent(messages ?? []);
@@ -952,7 +953,7 @@ serve(async (req) => {
           sendSse({ event: "thinking_end" });
         }
         
-        // Provider chain: Mistral (primary) -> Gemini -> Cloudflare Workers AI
+        // Provider chain: Mistral (primary) -> (optional Gemini fallback) -> Cloudflare Workers AI
         const aiAbort = new AbortController();
         const aiTimeout = setTimeout(() => aiAbort.abort(), 25000);
         try {
@@ -999,12 +1000,14 @@ serve(async (req) => {
             .filter(Boolean)
             .join("\n\n");
 
-          const geminiText = await runGeminiFallback(GEMINI_API_KEY, systemText, messages ?? []);
-          if (geminiText) {
-            sendSse({ choices: [{ delta: { content: geminiText } }] });
-            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-            controller.close();
-            return;
+          if (ENABLE_GEMINI_FALLBACK) {
+            const geminiText = await runGeminiFallback(GEMINI_API_KEY, systemText, messages ?? []);
+            if (geminiText) {
+              sendSse({ choices: [{ delta: { content: geminiText } }] });
+              controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+              controller.close();
+              return;
+            }
           }
 
           const workersText = await runWorkersFallback(

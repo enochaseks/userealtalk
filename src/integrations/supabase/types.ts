@@ -153,23 +153,61 @@ export type Database = {
       user_insight_settings: {
         Row: {
           monitor_enabled: boolean
+          schedule_email_reminder_minutes: number
+          schedule_email_reminders_enabled: boolean
           updated_at: string
           user_id: string
           weekly_email_enabled: boolean
         }
         Insert: {
           monitor_enabled?: boolean
+          schedule_email_reminder_minutes?: number
+          schedule_email_reminders_enabled?: boolean
           updated_at?: string
           user_id: string
           weekly_email_enabled?: boolean
         }
         Update: {
           monitor_enabled?: boolean
+          schedule_email_reminder_minutes?: number
+          schedule_email_reminders_enabled?: boolean
           updated_at?: string
           user_id?: string
           weekly_email_enabled?: boolean
         }
         Relationships: []
+      }
+      user_schedule_reminder_logs: {
+        Row: {
+          channel: string
+          id: string
+          schedule_id: string
+          sent_at: string
+          user_id: string
+        }
+        Insert: {
+          channel?: string
+          id?: string
+          schedule_id: string
+          sent_at?: string
+          user_id: string
+        }
+        Update: {
+          channel?: string
+          id?: string
+          schedule_id?: string
+          sent_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_schedule_reminder_logs_schedule_id_fkey"
+            columns: ["schedule_id"]
+            isOneToOne: false
+            referencedRelation: "user_schedules"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_memory_profiles: {
         Row: {
