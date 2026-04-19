@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import { ArrowUp, ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { PLAN_CATALOG, STRIPE_BILLING_ENABLED } from "@/lib/subscriptions";
 import logo from "../assets/logo.png";
 
 type DemoMsg = { role: "user" | "assistant"; content: string };
@@ -495,6 +496,47 @@ export function Landing() {
             <p><span className="font-semibold">1) Share what’s heavy:</span> say what’s on your mind in plain words.</p>
             <p><span className="font-semibold">2) Get clarity:</span> RealTalk helps break down noise and identify what matters most.</p>
             <p><span className="font-semibold">3) Move forward:</span> turn insight into small practical actions you can follow today.</p>
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-2xl border border-border/70 bg-surface/60 backdrop-blur px-4 py-4 text-left">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-sm md:text-base font-semibold tracking-tight">Subscription plans</h3>
+            {!STRIPE_BILLING_ENABLED && (
+              <span className="text-[11px] rounded-full border border-border/70 px-2 py-0.5 text-muted-foreground">
+                Stripe not live yet
+              </span>
+            )}
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Compare plans below. Until billing is enabled, all users stay on Free.
+          </p>
+
+          <div className="mt-3 -mx-1 px-1 overflow-x-auto">
+            <div className="flex gap-3 min-w-max pb-1">
+              {PLAN_CATALOG.map((item) => (
+                <div
+                  key={item.plan}
+                  className="w-[250px] shrink-0 rounded-xl border border-border/70 bg-background/50 p-3"
+                >
+                  <div className="text-sm font-semibold">{item.title}</div>
+                  <div className="mt-1 text-sm text-foreground">
+                    £{item.pricing.monthlyGbp.toFixed(2)} /month
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    £{item.pricing.annualGbp.toFixed(2)} /year
+                  </div>
+                  <div className="mt-2 text-[11px] text-muted-foreground">{item.blurb}</div>
+                  <div className="mt-2 space-y-1">
+                    {item.features.slice(0, 4).map((feature) => (
+                      <p key={feature} className="text-[11px] text-muted-foreground">
+                        • {feature}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 

@@ -9,6 +9,14 @@ import ReactMarkdown from "react-markdown";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import { useSearch, useNavigate } from "@tanstack/react-router";
+import {
+  consumeMeteredFeature,
+  getUsageWindowLabel,
+  hasFeatureAccess,
+  loadSubscriptionSnapshot,
+  type MeteredFeature,
+  type SubscriptionSnapshot,
+} from "@/lib/subscriptions";
 import logo from "../../assets/logo.png";
 
 type Msg = {
@@ -87,6 +95,12 @@ const EMAIL_TONE_INSTRUCTIONS: Record<EmailTone, string> = {
   fun: "Use a fun tone that is warm, lively, and light without sounding unprofessional.",
 };
 
+const FEATURE_LABELS: Record<MeteredFeature, string> = {
+  deep_thinking: "Deep Thinking",
+  plan: "Plan Mode",
+  gmail_send: "Gmail send",
+};
+
 export function Chat() {
   const { user, session, connectGoogleForGmail } = useAuth();
   const navigate = useNavigate();
@@ -120,6 +134,7 @@ export function Chat() {
   const [emailBusy, setEmailBusy] = useState(false);
   const [gmailConnectBusy, setGmailConnectBusy] = useState(false);
   const emailUseGmail = true;
+  const [subscriptionSnapshot, setSubscriptionSnapshot] = useState<SubscriptionSnapshot | null>(null);
   const [editingPlanIndex, setEditingPlanIndex] = useState<number | null>(null);
   const [editedPlanText, setEditedPlanText] = useState("");
   const [isRegeneratingPlan, setIsRegeneratingPlan] = useState(false);
@@ -130,6 +145,67 @@ export function Chat() {
   useEffect(() => {
     setConvId(search?.c ?? null);
   }, [search?.c]);
+
+  const refreshSubscription = async () => {
+    if (!user) {
+      setSubscriptionSnapshot(null);
+      return null;
+    }
+
+    const snapshot = await loadSubscriptionSnapshot(user.id);
+    setSubscriptionSnapshot(snapshot);
+    return snapshot;
+  };
+
+  const showFeatureLimitToast = (feature: MeteredFeature, snapshot: SubscriptionSnapshot) => {
+    const usage = snapshot.usage[feature];
+    if (usage.limit === null) return;
+    toast.error(`${FEATURE_LABELS[feature]} limit reached for ${getUsageWindowLabel(feature)} on ${snapshot.plan}.`);
+  };
+
+  const canUseMeteredFeature = (feature: MeteredFeature, snapshot: SubscriptionSnapshot) => {
+    const usage = snapshot.usage[feature];
+    return usage.limit === null || usage.used < usage.limit;
+  };
+
+  const requireScheduleAccess = async () => {
+    const snapshot = await refreshSubscription();
+    if (!snapshot) return false;
+    if (!hasFeatureAccess(snapshot.plan, "schedule")) {
+      toast.error("Schedule is available on Pro and Platinum.");
+      return false;
+    }
+    return true;
+  };
+
+  const recordFeatureUsage = async (feature: MeteredFeature) => {
+    if (!user) return;
+    try {
+      const result = await consumeMeteredFeature(user.id, feature);
+      setSubscriptionSnapshot(result.snapshot);
+    } catch {
+      // Do not break the user flow if usage tracking fails.
+    }
+  };
+
+  const canEnableFeatureFromUi = async (feature: MeteredFeature) => {
+    const snapshot = await refreshSubscription();
+    if (!snapshot) return false;
+    if (!canUseMeteredFeature(feature, snapshot)) {
+      showFeatureLimitToast(feature, snapshot);
+      return false;
+    }
+    return true;
+  };
+
+  useEffect(() => {
+    if (!user) {
+      setSubscriptionSnapshot(null);
+      return;
+    }
+
+    void refreshSubscription();
+  }, [user]);
 
    // load + live-sync current conversation messages
    useEffect(() => {
@@ -302,6 +378,7 @@ export function Chat() {
 
   const addScheduleFromChat = async () => {
     if (!user) return;
+    if (!(await requireScheduleAccess())) return;
     const title = scheduleTitle.trim();
     if (!title) {
       toast.error("Please add a schedule title");
@@ -339,6 +416,7 @@ export function Chat() {
 
   const addScheduleCandidateToProfile = async (messageIndex: number) => {
     if (!user) return;
+    if (!(await requireScheduleAccess())) return;
     const message = messages[messageIndex];
     const candidate = message?.scheduleCandidate ?? parseScheduleCandidateFromText(message?.content ?? "").candidate;
     if (!candidate || message.scheduleSaved) return;
@@ -726,14 +804,19 @@ export function Chat() {
 
   // If the user expresses email intent, open the Gmail panel instead of chatting
   if (!overrideText && isEmailIntent(text)) {
+    const emailSnapshot = await refreshSubscription();
+    if (emailSnapshot && !canUseMeteredFeature("gmail_send", emailSnapshot)) {
+      showFeatureLimitToast("gmail_send", emailSnapshot);
+      return;
+    }
     setInput("");
     setShowEmailPanel(true);
     return;
   }
 
     const scheduleRequested = isScheduleIntent(text);
-    const thinkingRequested = forceThinking || shouldUseThinkingMode(text);
-    const planningRequested = !scheduleRequested && (forcePlan || userAskedForPlan(text));
+    let thinkingRequested = forceThinking || shouldUseThinkingMode(text);
+    let planningRequested = !scheduleRequested && (forcePlan || userAskedForPlan(text));
     const ventDetectedFromText = shouldUseVentMode(text);
     const ventRequested = forceVent || ventDetectedFromText || !!overrideVentAdviceMode;
     const activeVentAdviceMode = overrideVentAdviceMode ?? ventAdviceMode;
@@ -741,6 +824,22 @@ export function Chat() {
     // Show manual vent choice only when vent was explicitly forced by toggle.
     // If vent is auto-detected from text, respond immediately in vent mode.
     const shouldOfferVentChoice = forceVent && !overrideVentAdviceMode && activeVentAdviceMode === "none";
+
+    const featureSnapshot = await refreshSubscription();
+    if (scheduleRequested && featureSnapshot && !hasFeatureAccess(featureSnapshot.plan, "schedule")) {
+      toast.error("Schedule is available on Pro and Platinum.");
+      return;
+    }
+    if (thinkingRequested && featureSnapshot && !canUseMeteredFeature("deep_thinking", featureSnapshot)) {
+      showFeatureLimitToast("deep_thinking", featureSnapshot);
+      thinkingRequested = false;
+      if (forceThinking) setForceThinking(false);
+    }
+    if (planningRequested && featureSnapshot && !canUseMeteredFeature("plan", featureSnapshot)) {
+      showFeatureLimitToast("plan", featureSnapshot);
+      planningRequested = false;
+      if (forcePlan) setForcePlan(false);
+    }
 
     const activeFeatures: string[] = [
       thinkingRequested ? "Deep Thinking" : "",
@@ -1061,6 +1160,13 @@ export function Chat() {
           // Silent — never block the chat experience
         }
       })();
+
+      if (thinkingRequested) {
+        await recordFeatureUsage("deep_thinking");
+      }
+      if (planningRequested) {
+        await recordFeatureUsage("plan");
+      }
     }
 
     window.dispatchEvent(new Event("conversationCreated"));
@@ -1154,6 +1260,12 @@ export function Chat() {
     const edited = editedPlanText.trim();
     if (!edited) {
       toast.error("Please add your edits before regenerating");
+      return;
+    }
+
+    const planSnapshot = await refreshSubscription();
+    if (planSnapshot && !canUseMeteredFeature("plan", planSnapshot)) {
+      showFeatureLimitToast("plan", planSnapshot);
       return;
     }
 
@@ -1279,6 +1391,8 @@ export function Chat() {
         content: regenerated,
         source_message_id: sourceMessageId,
       });
+
+      await recordFeatureUsage("plan");
 
       window.dispatchEvent(new Event("conversationUpdated"));
       toast.success("Plan regenerated and saved");
@@ -1518,6 +1632,11 @@ export function Chat() {
 
   const sendEmailMessage = async () => {
     if (!user) return;
+    const emailSnapshot = await refreshSubscription();
+    if (emailSnapshot && !canUseMeteredFeature("gmail_send", emailSnapshot)) {
+      showFeatureLimitToast("gmail_send", emailSnapshot);
+      return;
+    }
     const to = emailTo.trim();
     const subject = emailSubject.trim();
     const body = emailBody.trim() || emailPrompt.trim();
@@ -1627,6 +1746,7 @@ export function Chat() {
         content: `✅ **Email sent successfully**\n\n**To:** ${sentTo}\n**Subject:** ${sentSubject}\n\nDelivery channel: ${provider}.`,
       };
       setMessages((prev) => [...prev, confirmationMsg]);
+      await recordFeatureUsage("gmail_send");
       toast.success(`Email sent to ${sentTo}`);
     } catch (e: any) {
       toast.error(e.message || "Failed to send email");
@@ -1861,7 +1981,18 @@ export function Chat() {
               </Label>
               <button
                 type="button"
-                onClick={() => setShowSchedulePanel((v) => !v)}
+                onClick={() => {
+                  void (async () => {
+                    if (showSchedulePanel) {
+                      setShowSchedulePanel(false);
+                      return;
+                    }
+
+                    if (await requireScheduleAccess()) {
+                      setShowSchedulePanel(true);
+                    }
+                  })();
+                }}
                 className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs transition-colors ${
                   showSchedulePanel
                     ? "bg-primary/20 text-primary"
@@ -1951,6 +2082,11 @@ export function Chat() {
                 <div className="text-xs text-muted-foreground">
                   Add to your RealTalk schedule. Saved items appear in your Profile schedule tab.
                 </div>
+                {subscriptionSnapshot && (
+                  <div className="text-[11px] text-muted-foreground">
+                    Plan: {subscriptionSnapshot.plan}. Schedule is {hasFeatureAccess(subscriptionSnapshot.plan, "schedule") ? "included" : "available on Pro and Platinum"}.
+                  </div>
+                )}
                 <input
                   value={scheduleTitle}
                   onChange={(e) => setScheduleTitle(e.target.value)}
@@ -1990,6 +2126,13 @@ export function Chat() {
                 <div className="text-xs text-muted-foreground">
                   Generate with AI and Review with AI are optional. Gmail connection is required so emails send from the user's Gmail address.
                 </div>
+                {subscriptionSnapshot && (
+                  <div className="text-[11px] text-muted-foreground">
+                    {subscriptionSnapshot.usage.gmail_send.limit === null
+                      ? "Gmail send: unlimited this month"
+                      : `Gmail send: ${subscriptionSnapshot.usage.gmail_send.remaining} left of ${subscriptionSnapshot.usage.gmail_send.limit} this month`}
+                  </div>
+                )}
                 <div className="flex items-center justify-between gap-3 rounded-md border border-border/60 bg-background/30 px-3 py-2 text-xs">
                   <span className="text-muted-foreground">
                     {hasGmailAccess
@@ -2130,8 +2273,17 @@ export function Chat() {
                     <div className="absolute bottom-full left-0 mb-2 bg-surface border border-border rounded-lg shadow-lg z-50 w-56 p-2">
                       <button
                         onClick={() => {
-                          setForceThinking(!forceThinking);
-                          setShowFeatureMenu(false);
+                          void (async () => {
+                            if (forceThinking) {
+                              setForceThinking(false);
+                              setShowFeatureMenu(false);
+                              return;
+                            }
+                            if (await canEnableFeatureFromUi("deep_thinking")) {
+                              setForceThinking(true);
+                              setShowFeatureMenu(false);
+                            }
+                          })();
                         }}
                         className={`w-full text-left px-3 py-2 text-sm rounded-md transition-colors ${
                           forceThinking
@@ -2143,8 +2295,17 @@ export function Chat() {
                       </button>
                       <button
                         onClick={() => {
-                          setForcePlan(!forcePlan);
-                          setShowFeatureMenu(false);
+                          void (async () => {
+                            if (forcePlan) {
+                              setForcePlan(false);
+                              setShowFeatureMenu(false);
+                              return;
+                            }
+                            if (await canEnableFeatureFromUi("plan")) {
+                              setForcePlan(true);
+                              setShowFeatureMenu(false);
+                            }
+                          })();
                         }}
                         className={`w-full text-left px-3 py-2 text-sm rounded-md transition-colors ${
                           forcePlan
@@ -2170,8 +2331,17 @@ export function Chat() {
                       </button>
                       <button
                         onClick={() => {
-                          setShowEmailPanel(!showEmailPanel);
-                          setShowFeatureMenu(false);
+                          void (async () => {
+                            if (showEmailPanel) {
+                              setShowEmailPanel(false);
+                              setShowFeatureMenu(false);
+                              return;
+                            }
+                            if (await canEnableFeatureFromUi("gmail_send")) {
+                              setShowEmailPanel(true);
+                              setShowFeatureMenu(false);
+                            }
+                          })();
                         }}
                         className={`w-full text-left px-3 py-2 text-sm rounded-md transition-colors ${
                           showEmailPanel

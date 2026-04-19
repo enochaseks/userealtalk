@@ -180,6 +180,39 @@ export type Database = {
         }
         Relationships: []
       }
+      user_feature_usage: {
+        Row: {
+          created_at: string
+          feature: string
+          id: string
+          period_key: string
+          period_type: string
+          updated_at: string
+          used_count: number
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          feature: string
+          id?: string
+          period_key: string
+          period_type: string
+          updated_at?: string
+          used_count?: number
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          feature?: string
+          id?: string
+          period_key?: string
+          period_type?: string
+          updated_at?: string
+          used_count?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_schedule_reminder_logs: {
         Row: {
           channel: string
@@ -211,6 +244,42 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      user_subscriptions: {
+        Row: {
+          billing_provider: string | null
+          created_at: string
+          current_period_end: string | null
+          plan: string
+          provider_customer_id: string | null
+          provider_subscription_id: string | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          billing_provider?: string | null
+          created_at?: string
+          current_period_end?: string | null
+          plan?: string
+          provider_customer_id?: string | null
+          provider_subscription_id?: string | null
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          billing_provider?: string | null
+          created_at?: string
+          current_period_end?: string | null
+          plan?: string
+          provider_customer_id?: string | null
+          provider_subscription_id?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       user_memory_profiles: {
         Row: {

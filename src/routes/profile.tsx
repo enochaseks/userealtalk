@@ -20,6 +20,17 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  getUsageWindowLabel,
+  hasFeatureAccess,
+  PLAN_CATALOG,
+  loadSubscriptionSnapshot,
+  setSubscriptionPlan,
+  STRIPE_BILLING_ENABLED,
+  type MeteredFeature,
+  type SubscriptionPlan,
+  type SubscriptionSnapshot,
+} from "@/lib/subscriptions";
 
 const fileToOptimizedBlob = (file: File, maxSize = 512): Promise<Blob> => {
   return new Promise((resolve, reject) => {
@@ -100,6 +111,7 @@ type Insight = {
 
 type EditablePlanDraft = { title: string; content: string };
 type MemoryProfile = { preference_notes: string | null; comfort_boundaries: string[] | null };
+type BillingCycle = "monthly" | "annual";
 type ScheduleItem = {
   id: string;
   title: string;
@@ -109,6 +121,12 @@ type ScheduleItem = {
   is_completed: boolean;
   created_at: string;
   updated_at: string;
+};
+
+const SUBSCRIPTION_FEATURE_LABELS: Record<MeteredFeature, string> = {
+  deep_thinking: "Deep Thinking",
+  plan: "Plan Mode",
+  gmail_send: "Gmail send",
 };
 
 const getUtcWeekStart = (): string => {
@@ -173,6 +191,9 @@ function ProfilePage() {
   const [scheduleStartsAt, setScheduleStartsAt] = useState("");
   const [scheduleEndsAt, setScheduleEndsAt] = useState("");
   const [scheduleSaving, setScheduleSaving] = useState(false);
+  const [subscriptionSnapshot, setSubscriptionSnapshot] = useState<SubscriptionSnapshot | null>(null);
+  const [planUpdateBusy, setPlanUpdateBusy] = useState(false);
+  const [billingCycle, setBillingCycle] = useState<BillingCycle>("monthly");
   const [autoPdfEnabled, setAutoPdfEnabled] = useState(() => {
     if (typeof window !== "undefined") {
       return localStorage.getItem("autoPdfSave") !== "false";
@@ -183,6 +204,56 @@ function ProfilePage() {
   useEffect(() => {
     if (!loading && !user) navigate({ to: "/auth" });
   }, [user, loading, navigate]);
+
+  const refreshSubscription = async () => {
+    if (!user) {
+      setSubscriptionSnapshot(null);
+      return null;
+    }
+
+    const snapshot = await loadSubscriptionSnapshot(user.id);
+    setSubscriptionSnapshot(snapshot);
+    return snapshot;
+  };
+
+  const formatUsageSummary = (feature: MeteredFeature) => {
+    const usage = subscriptionSnapshot?.usage[feature];
+    if (!usage) return "Loading...";
+    if (usage.limit === null) return `Unlimited ${getUsageWindowLabel(feature)}`;
+    return `${usage.remaining} left of ${usage.limit} ${getUsageWindowLabel(feature)}`;
+  };
+
+  const planLabel = subscriptionSnapshot?.plan
+    ? subscriptionSnapshot.plan.charAt(0).toUpperCase() + subscriptionSnapshot.plan.slice(1)
+    : "Loading";
+
+  const formatGbp = (value: number) =>
+    new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" }).format(value);
+
+  const changePlan = async (plan: SubscriptionPlan) => {
+    if (!user || planUpdateBusy) return;
+    if (subscriptionSnapshot?.plan === plan) return;
+
+    setPlanUpdateBusy(true);
+    try {
+      const next = await setSubscriptionPlan(user.id, plan);
+      setSubscriptionSnapshot(next);
+      toast.success(`Plan changed to ${plan.charAt(0).toUpperCase()}${plan.slice(1)}`);
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to change plan");
+    } finally {
+      setPlanUpdateBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!user) {
+      setSubscriptionSnapshot(null);
+      return;
+    }
+
+    void refreshSubscription();
+  }, [user]);
 
   useEffect(() => {
     if (search?.tab && search.tab !== tab) {
@@ -363,7 +434,7 @@ function ProfilePage() {
     if (!user || !session || !weeklyEmailEnabled || insights.length === 0 || !user.email) return;
 
     const latest = insights[0];
-    if (!latest?.week_start || !session.provider_token) return;
+    if (!latest?.week_start) return;
 
     const sendKey = `weekly_insight_email_${user.id}_${latest.week_start}`;
     if (typeof window !== "undefined" && localStorage.getItem(sendKey) === "1") return;
@@ -385,25 +456,22 @@ function ProfilePage() {
           `How RealTalk helped: ${latest.ai_help_summary}`,
         ].join("\n");
 
-        const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gmail-send`;
-        const resp = await fetch(url, {
-          method: "POST",
+        const { error } = await supabase.functions.invoke("gmail-send", {
           headers: {
-            "Content-Type": "application/json",
             Authorization: `Bearer ${session.access_token}`,
             apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "",
           },
-          body: JSON.stringify({
+          body: {
             to: user.email,
             subject: `Your RealTalk weekly insight (${latest.week_start})`,
             body,
-            googleAccessToken: session.provider_token,
-          }),
+            googleAccessToken: session.provider_token ?? null,
+          },
         });
 
-        if (!resp.ok) {
-          const json = await resp.json().catch(() => ({}));
-          throw new Error(json.error || "Failed to send weekly insight email");
+        if (error) {
+          const json = await error.context?.json?.().catch(() => ({}));
+          throw new Error(json?.error || error.message || "Failed to send weekly insight email");
         }
 
         if (typeof window !== "undefined") {
@@ -718,6 +786,11 @@ function ProfilePage() {
 
   const saveSchedule = async () => {
     if (!user) return;
+    const snapshot = await refreshSubscription();
+    if (snapshot && !hasFeatureAccess(snapshot.plan, "schedule")) {
+      toast.error("Schedule is available on Pro and Platinum.");
+      return;
+    }
     const title = scheduleTitle.trim();
     if (!title) {
       toast.error("Please add a title");
@@ -914,6 +987,7 @@ function ProfilePage() {
               )}
             </div>
             <p className="text-sm text-muted-foreground mt-1">{user.email}</p>
+            <p className="text-xs text-muted-foreground mt-1">Subscription: {planLabel}</p>
           </div>
         </div>
 
@@ -1100,14 +1174,116 @@ function ProfilePage() {
 
       {tab === "settings" && (
         <div className="space-y-6 max-w-md">
+          <div className="rounded-xl border border-border bg-surface/60 p-5 space-y-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <Label className="text-sm font-semibold text-foreground cursor-pointer">
+                  Subscription
+                </Label>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Current plan: {planLabel}
+                </p>
+              </div>
+              <div className="rounded-full border border-border/70 px-2.5 py-1 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                {planLabel}
+              </div>
+            </div>
+            <div className="space-y-2 text-xs text-muted-foreground">
+              <div className="flex items-center justify-between gap-3">
+                <span>Schedule</span>
+                <span>{subscriptionSnapshot ? (hasFeatureAccess(subscriptionSnapshot.plan, "schedule") ? "Included" : "Pro / Platinum") : "Loading..."}</span>
+              </div>
+              {(["deep_thinking", "plan", "gmail_send"] as MeteredFeature[]).map((feature) => (
+                <div key={feature} className="flex items-center justify-between gap-3">
+                  <span>{SUBSCRIPTION_FEATURE_LABELS[feature]}</span>
+                  <span>{formatUsageSummary(feature)}</span>
+                </div>
+              ))}
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              {STRIPE_BILLING_ENABLED
+                ? "Choose your plan. Changes take effect immediately."
+                : "Billing is not live yet. All users are currently on Free until Stripe is enabled."}
+            </p>
+            <div className="inline-flex rounded-full border border-border/70 bg-background/30 p-1">
+              <button
+                type="button"
+                onClick={() => setBillingCycle("monthly")}
+                className={`rounded-full px-3 py-1 text-xs transition-colors ${
+                  billingCycle === "monthly" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Monthly
+              </button>
+              <button
+                type="button"
+                onClick={() => setBillingCycle("annual")}
+                className={`rounded-full px-3 py-1 text-xs transition-colors ${
+                  billingCycle === "annual" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Annual
+              </button>
+            </div>
+            <div className="grid grid-cols-1 gap-2 pt-1">
+              {PLAN_CATALOG.map((item) => {
+                const selected = subscriptionSnapshot?.plan === item.plan;
+                const cyclePrice =
+                  billingCycle === "monthly" ? item.pricing.monthlyGbp : item.pricing.annualGbp;
+                const cycleSuffix = billingCycle === "monthly" ? "/month" : "/year";
+                return (
+                  <div
+                    key={item.plan}
+                    className={`rounded-lg border px-3 py-3 ${selected ? "border-primary/60 bg-primary/10" : "border-border/60 bg-background/30"}`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-medium">{item.title}</div>
+                        <div className="mt-1 text-base font-semibold text-foreground">
+                          {formatGbp(cyclePrice)}
+                          <span className="ml-1 text-xs font-normal text-muted-foreground">{cycleSuffix}</span>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">{item.blurb}</p>
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={selected ? "secondary" : "outline"}
+                        disabled={planUpdateBusy || selected || !subscriptionSnapshot || !STRIPE_BILLING_ENABLED}
+                        onClick={() => void changePlan(item.plan)}
+                      >
+                        {selected
+                          ? "Current"
+                          : !STRIPE_BILLING_ENABLED
+                            ? "Coming with Stripe"
+                            : planUpdateBusy
+                              ? "Updating..."
+                              : item.plan === "free"
+                                ? "Downgrade"
+                                : "Choose"}
+                      </Button>
+                    </div>
+                    <div className="mt-2 space-y-1.5">
+                      {item.features.map((feature) => (
+                        <div key={feature} className="text-[11px] text-muted-foreground">
+                          • {feature}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
           <div className="rounded-xl border border-border bg-surface/60 p-5">
             <div className="flex items-center justify-between">
               <div>
                 <Label className="text-sm font-semibold text-foreground cursor-pointer">
-                  Weekly insight email (Gmail)
+                  Weekly insight email
                 </Label>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Send your latest weekly insight summary to your Gmail address when available.
+                  Send your latest weekly insight summary to your email address. Uses Gmail when connected, otherwise standard email delivery.
                 </p>
               </div>
               <Switch checked={weeklyEmailEnabled} onCheckedChange={toggleWeeklyEmail} />

@@ -13,6 +13,7 @@ import { Toaster } from "@/components/ui/sonner";
 import logo from "../assets/logo.png";
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { loadSubscriptionSnapshot } from "@/lib/subscriptions";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Menu, Plus, Trash2 } from "lucide-react";
@@ -343,6 +344,7 @@ function TopNav() {
   const [open, setOpen] = useState(false);
   const [profileName, setProfileName] = useState("Profile");
   const [avatarUrl, setAvatarUrl] = useState("");
+  const [subscriptionLabel, setSubscriptionLabel] = useState("Free");
 
   useEffect(() => {
     const syncProfile = (detail?: { name?: string; avatarUrl?: string }) => {
@@ -372,6 +374,30 @@ function TopNav() {
     window.addEventListener("profileUpdated", onProfileUpdated);
     return () => window.removeEventListener("profileUpdated", onProfileUpdated);
   }, [user]);
+
+  useEffect(() => {
+    if (!user) {
+      setSubscriptionLabel("Free");
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const snapshot = await loadSubscriptionSnapshot(user.id);
+        if (!cancelled) {
+          const label = snapshot.plan.charAt(0).toUpperCase() + snapshot.plan.slice(1);
+          setSubscriptionLabel(label);
+        }
+      } catch {
+        if (!cancelled) setSubscriptionLabel("Free");
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
 
   const initials = profileName
     .split(" ")
@@ -520,6 +546,7 @@ function TopNav() {
                   <div className="min-w-0 text-left">
                     <p className="text-xs text-muted-foreground">Profile</p>
                     <p className="text-sm text-foreground truncate">{profileName}</p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">Subscription: {subscriptionLabel}</p>
                   </div>
                   <div className="h-8 w-8 rounded-full bg-primary/20 text-primary text-xs font-semibold flex items-center justify-center overflow-hidden">
                     {avatarUrl ? (
