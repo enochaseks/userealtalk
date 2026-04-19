@@ -1028,13 +1028,13 @@ function BrainCard({
     ((scoreInterests + scoreStyle + scoreContext + scoreSignals + scoreBoundaries) / 5) * 100,
   );
 
-  const [growth, setGrowth] = useState(0);
+  const [growth, setGrowth] = useState(0.5);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const storageKey = `brain_growth_v2_${userId}`;
-    const signatureKey = `brain_growth_sig_v2_${userId}`;
+    const storageKey = `brain_growth_v3_${userId}`;
+    const signatureKey = `brain_growth_sig_v3_${userId}`;
 
     const signature = JSON.stringify({
       i: interests,
@@ -1042,22 +1042,26 @@ function BrainCard({
       c: fields.life_context ?? "",
       p: positiveSignals,
       b: boundaries,
-      r: rawGrowth,
     });
 
-    const previous = Number(localStorage.getItem(storageKey) || "0");
+    const previous = Number(localStorage.getItem(storageKey) || "0.5");
     const previousSig = localStorage.getItem(signatureKey) || "";
+    const hasMeaningfulUpdate = previousSig !== signature;
+    const clampedPrevious = Number.isFinite(previous) ? Math.max(0.5, previous) : 0.5;
 
-    let next = previous;
-    if (rawGrowth > previous) {
-      // Grow intentionally slowly: 1-4% per newly learned update.
-      const step = previousSig !== signature ? Math.min(4, Math.max(1, Math.ceil((rawGrowth - previous) / 18))) : 1;
-      next = Math.min(rawGrowth, previous + step);
+    let next = clampedPrevious;
+    if (rawGrowth > clampedPrevious && hasMeaningfulUpdate) {
+      // Grow very slowly: only when new profile signals are learned, with small fractional steps.
+      const gap = rawGrowth - clampedPrevious;
+      const step = Math.min(1.2, Math.max(0.5, gap / 120));
+      next = Math.min(rawGrowth, clampedPrevious + step);
     }
 
-    localStorage.setItem(storageKey, String(next));
+    const roundedNext = Number(next.toFixed(1));
+
+    localStorage.setItem(storageKey, String(roundedNext));
     localStorage.setItem(signatureKey, signature);
-    setGrowth(next);
+    setGrowth(roundedNext);
   }, [
     userId,
     rawGrowth,
@@ -1183,7 +1187,7 @@ function BrainCard({
       <div className="rounded-xl border border-border/50 bg-background/35 p-4">
         <div className="flex items-center justify-between mb-3">
           <div className="text-xs text-muted-foreground">Neural growth</div>
-          <div className="text-sm font-semibold text-primary">{growth}%</div>
+          <div className="text-sm font-semibold text-primary">{growth.toFixed(1)}%</div>
         </div>
 
         <div className="relative mx-auto w-full max-w-[360px] aspect-[2/1.1] rounded-xl bg-primary/[0.04] border border-primary/10 overflow-hidden">

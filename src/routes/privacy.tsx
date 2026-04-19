@@ -42,7 +42,7 @@ function PrivacyPage() {
           </p>
           <p className="mt-2 text-muted-foreground">
             Brain growth progress is stored in your browser's <strong>localStorage</strong> under the key
-            <code className="mx-1 px-1 rounded bg-muted text-xs font-mono">brain_growth_v2_&#123;userId&#125;</code>.
+            <code className="mx-1 px-1 rounded bg-muted text-xs font-mono">brain_growth_v3_&#123;userId&#125;</code>.
             This data stays on your device — it is not synced to our servers. Clearing your browser data or
             switching browsers will reset the displayed growth level. The underlying profile data that drives
             the neurons (interests, style, etc.) is always stored server-side in your account.
