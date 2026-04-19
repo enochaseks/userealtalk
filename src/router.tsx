@@ -49,6 +49,10 @@ function DefaultErrorComponent({ error, reset }: { error: Error; reset: () => vo
             Go home
           </a>
         </div>
+        <div className="mt-4 flex items-center justify-center gap-4 text-xs text-muted-foreground">
+          <a href="/privacy" className="hover:text-foreground hover:underline">Privacy Policy</a>
+          <a href="/terms" className="hover:text-foreground hover:underline">Terms of Service</a>
+        </div>
       </div>
     </div>
   );
