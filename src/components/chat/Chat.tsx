@@ -119,6 +119,7 @@ export function Chat() {
   const [emailReview, setEmailReview] = useState("");
   const [emailBusy, setEmailBusy] = useState(false);
   const [gmailConnectBusy, setGmailConnectBusy] = useState(false);
+  const emailUseGmail = true;
   const [editingPlanIndex, setEditingPlanIndex] = useState<number | null>(null);
   const [editedPlanText, setEditedPlanText] = useState("");
   const [isRegeneratingPlan, setIsRegeneratingPlan] = useState(false);
@@ -1515,7 +1516,7 @@ export function Chat() {
     }
   };
 
-  const sendGmailMessage = async () => {
+  const sendEmailMessage = async () => {
     if (!user) return;
     const to = emailTo.trim();
     const subject = emailSubject.trim();
@@ -1532,50 +1533,87 @@ export function Chat() {
 
     setEmailBusy(true);
     try {
+      const callEmailFunction = async (accessToken: string, googleToken: string | null) => {
+        const { data, error } = await supabase.functions.invoke("gmail-send", {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "",
+          },
+          body: {
+            to,
+            subject,
+            body,
+            googleAccessToken: emailUseGmail ? googleToken : null,
+            replyTo: user?.email ?? null,
+          },
+        });
+
+        return { data, error };
+      };
+
       const { data: sessionData } = await supabase.auth.getSession();
-      const session = sessionData.session;
+      let session = sessionData.session;
 
       if (!session?.access_token) {
         throw new Error("You need to be signed in to send email");
       }
 
-      const googleAccessToken = session.provider_token;
-      if (!googleAccessToken) {
+      let googleAccessToken = session.provider_token;
+      if (emailUseGmail && !googleAccessToken) {
         setEmailBusy(false);
         await connectGmail();
         return;
       }
 
-      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gmail-send`;
-      const resp = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
-          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "",
-        },
-        body: JSON.stringify({
-          to,
-          subject,
-          body,
-          googleAccessToken,
-        }),
-      });
+      let { data: invokeData, error: invokeError } = await callEmailFunction(
+        session.access_token,
+        googleAccessToken ?? null,
+      );
 
-      const json = await resp.json().catch(() => ({}));
-      if (!resp.ok) {
+      if (invokeError?.context?.status === 401) {
+        const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
+        session = refreshed.session;
+        googleAccessToken = session?.provider_token;
+
+        if (refreshError || !session?.access_token) {
+          throw new Error("Session expired. Please sign in again.");
+        }
+
+        if (emailUseGmail && !googleAccessToken) {
+          setEmailBusy(false);
+          await connectGmail();
+          return;
+        }
+
+        const retried = await callEmailFunction(session.access_token, googleAccessToken ?? null);
+        invokeData = retried.data;
+        invokeError = retried.error;
+      }
+
+      if (invokeError) {
+        const statusCode = invokeError.context?.status;
+        const functionResponse = await invokeError.context?.json?.().catch(() => ({}));
+        const message =
+          functionResponse?.error ||
+          functionResponse?.message ||
+          (statusCode === 401 ? "Email function authorization failed. Please reload and try again." : undefined) ||
+          (invokeError.name === "FunctionsFetchError" ? "Network/CORS error while calling email function." : undefined) ||
+          invokeError.message ||
+          "Failed to send email";
+
         // If Google says the token is invalid, prompt reconnect
-        if (json.error?.toLowerCase().includes("invalid") || json.error?.toLowerCase().includes("expired") || json.error?.toLowerCase().includes("auth")) {
+        if (emailUseGmail && (String(message).toLowerCase().includes("invalid") || String(message).toLowerCase().includes("expired") || String(message).toLowerCase().includes("auth"))) {
           toast.error("Gmail access expired. Please reconnect Google.");
           await connectGmail();
           return;
         }
-        throw new Error(json.error || "Failed to send Gmail message");
+        throw new Error(message);
       }
 
       // Success — reset panel and inject confirmation into chat
       const sentTo = to;
       const sentSubject = subject;
+      const provider = String((invokeData as any)?.provider || (emailUseGmail ? "gmail" : "resend"));
       setShowEmailPanel(false);
       setEmailTo("");
       setEmailSubject("");
@@ -1586,7 +1624,7 @@ export function Chat() {
       // Add a confirmation note into the conversation
       const confirmationMsg: Msg = {
         role: "assistant",
-        content: `✅ **Email sent successfully**\n\n**To:** ${sentTo}\n**Subject:** ${sentSubject}\n\nYour email has been delivered via Gmail.`,
+        content: `✅ **Email sent successfully**\n\n**To:** ${sentTo}\n**Subject:** ${sentSubject}\n\nDelivery channel: ${provider}.`,
       };
       setMessages((prev) => [...prev, confirmationMsg]);
       toast.success(`Email sent to ${sentTo}`);
@@ -1947,10 +1985,10 @@ export function Chat() {
             {showEmailPanel && (
               <div className="px-4 pt-3 pb-2 border-b border-border/60 space-y-2">
                 <div className="text-xs text-muted-foreground">
-                  AI-assisted Gmail sender (uses your Google account)
+                  AI-assisted email sender
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  Generate with AI and Review with AI are optional. You can type your email and send it directly.
+                  Generate with AI and Review with AI are optional. Gmail connection is required so emails send from the user's Gmail address.
                 </div>
                 <div className="flex items-center justify-between gap-3 rounded-md border border-border/60 bg-background/30 px-3 py-2 text-xs">
                   <span className="text-muted-foreground">
@@ -2039,7 +2077,7 @@ export function Chat() {
                     type="button"
                     size="sm"
                     disabled={emailBusy}
-                    onClick={() => void sendGmailMessage()}
+                    onClick={() => void sendEmailMessage()}
                   >
                     {emailBusy ? "Sending..." : "Send via Gmail"}
                   </Button>

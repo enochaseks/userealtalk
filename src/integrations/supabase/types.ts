@@ -155,6 +155,7 @@ export type Database = {
           monitor_enabled: boolean
           schedule_email_reminder_minutes: number
           schedule_email_reminders_enabled: boolean
+          schedule_email_use_gmail: boolean
           updated_at: string
           user_id: string
           weekly_email_enabled: boolean
@@ -163,6 +164,7 @@ export type Database = {
           monitor_enabled?: boolean
           schedule_email_reminder_minutes?: number
           schedule_email_reminders_enabled?: boolean
+          schedule_email_use_gmail?: boolean
           updated_at?: string
           user_id: string
           weekly_email_enabled?: boolean
@@ -171,6 +173,7 @@ export type Database = {
           monitor_enabled?: boolean
           schedule_email_reminder_minutes?: number
           schedule_email_reminders_enabled?: boolean
+          schedule_email_use_gmail?: boolean
           updated_at?: string
           user_id?: string
           weekly_email_enabled?: boolean

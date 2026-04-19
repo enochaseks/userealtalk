@@ -153,6 +153,7 @@ function ProfilePage() {
   const [weeklyEmailEnabled, setWeeklyEmailEnabled] = useState(false);
   const [scheduleEmailRemindersEnabled, setScheduleEmailRemindersEnabled] = useState(false);
   const [scheduleReminderMinutes, setScheduleReminderMinutes] = useState(30);
+  const [scheduleReminderUseGmail, setScheduleReminderUseGmail] = useState(false);
   const [displayName, setDisplayName] = useState("");
   const [pendingName, setPendingName] = useState("");
   const [avatarDataUrl, setAvatarDataUrl] = useState("");
@@ -215,13 +216,14 @@ function ProfilePage() {
     const loadInsightSettings = async () => {
       const { data } = await supabase
         .from("user_insight_settings")
-        .select("monitor_enabled, weekly_email_enabled, schedule_email_reminders_enabled, schedule_email_reminder_minutes")
+        .select("monitor_enabled, weekly_email_enabled, schedule_email_reminders_enabled, schedule_email_reminder_minutes, schedule_email_use_gmail")
         .eq("user_id", user.id)
         .maybeSingle();
       setInsightMonitoringEnabled(Boolean(data?.monitor_enabled));
       setWeeklyEmailEnabled(Boolean(data?.weekly_email_enabled));
       setScheduleEmailRemindersEnabled(Boolean(data?.schedule_email_reminders_enabled));
       setScheduleReminderMinutes(Number(data?.schedule_email_reminder_minutes ?? 30));
+      setScheduleReminderUseGmail(Boolean(data?.schedule_email_use_gmail));
     };
 
     const loadInsights = async () => {
@@ -494,6 +496,7 @@ function ProfilePage() {
       weekly_email_enabled: weeklyEmailEnabled,
       schedule_email_reminders_enabled: scheduleEmailRemindersEnabled,
       schedule_email_reminder_minutes: scheduleReminderMinutes,
+      schedule_email_use_gmail: scheduleReminderUseGmail,
       updated_at: new Date().toISOString(),
     });
 
@@ -516,6 +519,7 @@ function ProfilePage() {
       weekly_email_enabled: enabled,
       schedule_email_reminders_enabled: scheduleEmailRemindersEnabled,
       schedule_email_reminder_minutes: scheduleReminderMinutes,
+      schedule_email_use_gmail: scheduleReminderUseGmail,
       updated_at: new Date().toISOString(),
     });
 
@@ -531,17 +535,6 @@ function ProfilePage() {
   const toggleScheduleEmailReminders = async (enabled: boolean) => {
     if (!user) return;
 
-    if (enabled && !session?.provider_token) {
-      toast.info("Connect Gmail to enable schedule reminder emails");
-      const { error } = await connectGoogleForGmail();
-      if (error) {
-        toast.error(error);
-      } else {
-        toast.success("Redirecting to Google to connect Gmail");
-      }
-      return;
-    }
-
     setScheduleEmailRemindersEnabled(enabled);
 
     const { error } = await supabase.from("user_insight_settings").upsert({
@@ -550,6 +543,7 @@ function ProfilePage() {
       weekly_email_enabled: weeklyEmailEnabled,
       schedule_email_reminders_enabled: enabled,
       schedule_email_reminder_minutes: scheduleReminderMinutes,
+      schedule_email_use_gmail: scheduleReminderUseGmail,
       updated_at: new Date().toISOString(),
     });
 
@@ -576,6 +570,7 @@ function ProfilePage() {
       weekly_email_enabled: weeklyEmailEnabled,
       schedule_email_reminders_enabled: scheduleEmailRemindersEnabled,
       schedule_email_reminder_minutes: minutes,
+      schedule_email_use_gmail: scheduleReminderUseGmail,
       updated_at: new Date().toISOString(),
     });
 
@@ -586,6 +581,42 @@ function ProfilePage() {
     }
 
     toast.success(`Reminders will be sent ${minutes} minutes before schedule time`);
+  };
+
+  const toggleScheduleReminderChannel = async (useGmail: boolean) => {
+    if (!user) return;
+
+    if (useGmail && !session?.provider_token) {
+      toast.info("Connect Gmail to use Gmail delivery");
+      const { error } = await connectGoogleForGmail();
+      if (error) {
+        toast.error(error);
+      } else {
+        toast.success("Redirecting to Google to connect Gmail");
+      }
+      return;
+    }
+
+    const previous = scheduleReminderUseGmail;
+    setScheduleReminderUseGmail(useGmail);
+
+    const { error } = await supabase.from("user_insight_settings").upsert({
+      user_id: user.id,
+      monitor_enabled: insightMonitoringEnabled,
+      weekly_email_enabled: weeklyEmailEnabled,
+      schedule_email_reminders_enabled: scheduleEmailRemindersEnabled,
+      schedule_email_reminder_minutes: scheduleReminderMinutes,
+      schedule_email_use_gmail: useGmail,
+      updated_at: new Date().toISOString(),
+    });
+
+    if (error) {
+      setScheduleReminderUseGmail(previous);
+      toast.error("Failed to update reminder delivery channel");
+      return;
+    }
+
+    toast.success(useGmail ? "Reminder channel set to Gmail" : "Reminder channel set to normal email");
   };
 
   const saveProfileIdentity = async (nameInput = displayName, avatarInput = avatarDataUrl) => {
@@ -1087,7 +1118,7 @@ function ProfilePage() {
             <div className="flex items-center justify-between">
               <div>
                 <Label className="text-sm font-semibold text-foreground cursor-pointer">
-                  Schedule reminder emails (Gmail)
+                  Schedule reminder emails
                 </Label>
                 <p className="text-xs text-muted-foreground mt-1">
                   Send a reminder email shortly before each upcoming schedule item.
@@ -1114,8 +1145,21 @@ function ProfilePage() {
                 <option value="180">3 hours before</option>
               </select>
             </div>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs text-muted-foreground">Use Gmail for reminders</p>
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  Turn off to send with normal email provider instead of Gmail.
+                </p>
+              </div>
+              <Switch
+                checked={scheduleReminderUseGmail}
+                onCheckedChange={toggleScheduleReminderChannel}
+                disabled={!scheduleEmailRemindersEnabled}
+              />
+            </div>
             <p className="text-[11px] text-muted-foreground">
-              Works with connected Gmail accounts. Standard non-Gmail provider delivery is not enabled yet.
+              Gmail mode uses your connected Google account. Normal email mode uses the platform provider.
             </p>
           </div>
 

@@ -34,7 +34,7 @@ export const Route = createRootRoute({
       {
         httpEquiv: "Content-Security-Policy",
         content:
-          "default-src 'self'; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.mistral.ai https://fonts.googleapis.com https://gmail.googleapis.com; img-src 'self' data: https: blob:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+          "default-src 'self'; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.mistral.ai https://fonts.googleapis.com https://gmail.googleapis.com; img-src 'self' data: https: blob:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; base-uri 'self'; form-action 'self'",
       },
       { name: "referrer", content: "strict-origin-when-cross-origin" },
       { title: "RealTalk — Think clearly. Decide better." },
@@ -150,7 +150,7 @@ function RootShell({ children }: { children: React.ReactNode }) {
   `;
 
   return (
-    <html lang="en" className="dark">
+    <html lang="en" className="dark" suppressHydrationWarning>
       <head>
         <HeadContent />
         <script dangerouslySetInnerHTML={{ __html: forceUpdateScript }} />
@@ -202,8 +202,7 @@ function AppFrame() {
   const { user, session, loading } = useAuth();
   const path = useRouterState({ select: (s) => s.location.pathname });
   const showNav = user && path !== "/auth";
-  const isServer = typeof window === "undefined";
-  const showLoadingState = !isServer && loading;
+  const showLoadingState = loading;
 
   useEffect(() => {
     if (!user || !session?.access_token || !user.email) return;
@@ -213,19 +212,19 @@ function AppFrame() {
 
     const runReminderCheck = async () => {
       if (disposed || running) return;
-      if (!session.provider_token) return;
 
       running = true;
       try {
         const { data: settingRow } = await supabase
           .from("user_insight_settings")
-          .select("schedule_email_reminders_enabled, schedule_email_reminder_minutes")
+          .select("schedule_email_reminders_enabled, schedule_email_reminder_minutes, schedule_email_use_gmail")
           .eq("user_id", user.id)
           .maybeSingle();
 
         if (!settingRow?.schedule_email_reminders_enabled) return;
 
         const leadMinutes = Number(settingRow.schedule_email_reminder_minutes ?? 30);
+        const useGmailChannel = Boolean(settingRow.schedule_email_use_gmail && session.provider_token);
         const now = new Date();
         const windowStart = now.toISOString();
         const windowEnd = new Date(now.getTime() + leadMinutes * 60_000).toISOString();
@@ -254,7 +253,6 @@ function AppFrame() {
           .from("user_schedule_reminder_logs")
           .select("schedule_id")
           .eq("user_id", user.id)
-          .eq("channel", "gmail")
           .in("schedule_id", scheduleIds);
 
         const sentSet = new Set((sentLogs ?? []).map((row: any) => String(row.schedule_id)));
@@ -288,16 +286,19 @@ function AppFrame() {
               to: user.email,
               subject,
               body,
-              googleAccessToken: session.provider_token,
+              googleAccessToken: useGmailChannel ? session.provider_token : null,
             }),
           });
 
           if (!emailResp.ok) continue;
 
+          const emailJson = await emailResp.json().catch(() => ({}));
+          const providerChannel = String(emailJson?.provider || (useGmailChannel ? "gmail" : "resend"));
+
           await supabase.from("user_schedule_reminder_logs").insert({
             user_id: user.id,
             schedule_id: item.id,
-            channel: "gmail",
+            channel: providerChannel,
           });
         }
       } catch {

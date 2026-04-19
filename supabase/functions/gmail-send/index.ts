@@ -18,13 +18,14 @@ const encodeWordQ = (str: string): string => {
   return `=?UTF-8?B?${encodeBase64Url(bytes)}?=`;
 };
 
-const buildMimeMessage = ({ to, subject, body }: { to: string; subject: string; body: string }) => {
+const buildMimeMessage = ({ to, subject, body, replyTo }: { to: string; subject: string; body: string; replyTo?: string }) => {
   const encodedSubject = /[^\x00-\x7F]/.test(subject) ? encodeWordQ(subject) : subject;
   // Encode body as base64 for reliable UTF-8 transport
   const bodyBytes = new TextEncoder().encode(body);
   const encodedBody = encodeBase64Url(bodyBytes);
   return [
     `To: ${to}`,
+    replyTo ? `Reply-To: ${replyTo}` : "",
     `Subject: ${encodedSubject}`,
     "MIME-Version: 1.0",
     "Content-Type: text/plain; charset=UTF-8",
@@ -40,15 +41,9 @@ serve(async (req) => {
   }
 
   try {
-    const authHeader = req.headers.get("authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const { to, subject, body, googleAccessToken } = await req.json();
+    const { to, subject, body, googleAccessToken, replyTo } = await req.json();
+    const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
+    const RESEND_FROM_EMAIL = Deno.env.get("RESEND_FROM_EMAIL");
 
     if (!to || !subject || !body) {
       return new Response(JSON.stringify({ error: "Missing to, subject, or body" }), {
@@ -58,13 +53,46 @@ serve(async (req) => {
     }
 
     if (!googleAccessToken) {
-      return new Response(JSON.stringify({ error: "Missing Google access token" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      if (!RESEND_API_KEY || !RESEND_FROM_EMAIL) {
+        return new Response(JSON.stringify({ error: "Missing email provider credentials" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const resendResp = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${RESEND_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          from: RESEND_FROM_EMAIL,
+          to: [to],
+          reply_to: replyTo || undefined,
+          subject,
+          text: body,
+        }),
       });
+
+      const resendJson = await resendResp.json().catch(() => ({}));
+      if (!resendResp.ok) {
+        const details = resendJson?.message || resendJson?.error || "Failed to send email";
+        return new Response(JSON.stringify({ error: details, details: resendJson }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response(
+        JSON.stringify({ ok: true, provider: "resend", id: resendJson?.id ?? null }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
     }
 
-    const mime = buildMimeMessage({ to, subject, body });
+    const mime = buildMimeMessage({ to, subject, body, replyTo });
     const raw = encodeBase64Url(new TextEncoder().encode(mime));
 
     const gmailResp = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
@@ -87,7 +115,7 @@ serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({ ok: true, id: gmailJson?.id ?? null, threadId: gmailJson?.threadId ?? null }),
+      JSON.stringify({ ok: true, provider: "gmail", id: gmailJson?.id ?? null, threadId: gmailJson?.threadId ?? null }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       },

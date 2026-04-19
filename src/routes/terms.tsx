@@ -85,7 +85,7 @@ function TermsPage() {
           <p className="mt-2 text-muted-foreground">
             If you connect Google, you authorise RealTalk to send Gmail messages on your behalf only
             when you explicitly initiate a send action within the app, or when you opt into
-            weekly insight emails and schedule reminder emails. RealTalk does not read, store,
+            weekly insight emails. RealTalk does not read, store,
             or index your Gmail messages. Gmail connection is optional and can be disconnected at any time.
           </p>
         </section>
@@ -95,7 +95,8 @@ function TermsPage() {
           <p className="mt-2 text-muted-foreground">
             If you enable schedule reminder emails in settings, RealTalk may send reminder emails shortly
             before your saved schedule time. Reminder timing can be configured in-app and can be disabled
-            at any time. Delivery depends on active Google connection and service availability.
+            at any time. Delivery may use your connected Gmail account or our platform email provider,
+            depending on account setup and service availability.
           </p>
         </section>
 

@@ -91,9 +91,10 @@ function PrivacyPage() {
           <h2 className="font-semibold text-base">How Gmail access works</h2>
           <p className="mt-2 text-muted-foreground">
             Gmail access is entirely optional. If you choose to connect Google, RealTalk requests the Gmail
-            send scope only — used to send emails you explicitly initiate from within the app, plus optional
-            schedule reminder emails and weekly insight emails if you opt in. RealTalk does not read,
+            send scope only — used to send emails you explicitly initiate from within the app and optional
+            weekly insight emails if you opt in. RealTalk does not read,
             index, or store your Gmail messages. Gmail connection is not required for any core feature.
+            For users without Gmail connection, schedule reminder emails are sent via our platform email provider.
           </p>
         </section>
 
