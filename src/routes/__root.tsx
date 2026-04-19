@@ -16,7 +16,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { loadSubscriptionSnapshot } from "@/lib/subscriptions";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Menu, Plus, Trash2 } from "lucide-react";
+import { Menu, Plus, Settings, Trash2 } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
 const ASSET_VERSION = appCss;
@@ -537,25 +537,36 @@ function TopNav() {
                   )}
                 </div>
 
-                <Link
-                  to="/profile"
-                  search={{ tab: undefined }}
-                  onClick={() => setOpen(false)}
-                  className="mx-2 mt-auto pt-3 border-t border-border/70 flex items-center justify-between rounded-md px-3 py-2 hover:bg-surface-elevated transition-colors"
-                >
-                  <div className="min-w-0 text-left">
-                    <p className="text-xs text-muted-foreground">Profile</p>
-                    <p className="text-sm text-foreground truncate">{profileName}</p>
-                    <p className="text-[11px] text-muted-foreground mt-0.5">Subscription: {subscriptionLabel}</p>
-                  </div>
-                  <div className="h-8 w-8 rounded-full bg-primary/20 text-primary text-xs font-semibold flex items-center justify-center overflow-hidden">
-                    {avatarUrl ? (
-                      <img src={avatarUrl} alt="Profile avatar" className="h-full w-full object-cover" />
-                    ) : (
-                      initials
-                    )}
-                  </div>
-                </Link>
+                <div className="mx-2 mt-auto pt-3 border-t border-border/70 flex items-center gap-2">
+                  <Link
+                    to="/settings"
+                    onClick={() => setOpen(false)}
+                    aria-label="Settings"
+                    className="h-10 w-10 shrink-0 rounded-md border border-border/70 bg-surface text-muted-foreground hover:text-foreground hover:bg-surface-elevated flex items-center justify-center transition-colors"
+                  >
+                    <Settings className="h-4 w-4" />
+                  </Link>
+
+                  <Link
+                    to="/profile"
+                    search={{ tab: undefined }}
+                    onClick={() => setOpen(false)}
+                    className="flex-1 flex items-center justify-between rounded-md px-3 py-2 hover:bg-surface-elevated transition-colors"
+                  >
+                    <div className="min-w-0 text-left">
+                      <p className="text-xs text-muted-foreground">Profile</p>
+                      <p className="text-sm text-foreground truncate">{profileName}</p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">Subscription: {subscriptionLabel}</p>
+                    </div>
+                    <div className="h-8 w-8 rounded-full bg-primary/20 text-primary text-xs font-semibold flex items-center justify-center overflow-hidden">
+                      {avatarUrl ? (
+                        <img src={avatarUrl} alt="Profile avatar" className="h-full w-full object-cover" />
+                      ) : (
+                        initials
+                      )}
+                    </div>
+                  </Link>
+                </div>
               </div>
             </SheetContent>
           </Sheet>

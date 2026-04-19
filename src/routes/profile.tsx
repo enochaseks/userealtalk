@@ -80,12 +80,12 @@ const blobToDataUrl = (blob: Blob): Promise<string> => {
   });
 };
 
-type ProfileTab = "plans" | "insights" | "settings";
+type ProfileTab = "plans" | "insights";
 
 export const Route = createFileRoute("/profile")({
   validateSearch: (search: Record<string, unknown>) => ({
     tab:
-      typeof search.tab === "string" && ["plans", "insights", "settings"].includes(search.tab)
+      typeof search.tab === "string" && ["plans", "insights"].includes(search.tab)
         ? (search.tab as ProfileTab)
         : undefined,
   }),
@@ -1049,7 +1049,7 @@ function ProfilePage() {
       </div>
 
       <div className="flex gap-1 border-b border-border mb-6 -mx-1">
-          {(["plans", "insights", "settings"] as const).map((t) => (
+          {(["plans", "insights"] as const).map((t) => (
           <button
             key={t}
             onClick={() => {
@@ -1169,241 +1169,6 @@ function ProfilePage() {
                 </div>
               );
             })}
-        </div>
-      )}
-
-      {tab === "settings" && (
-        <div className="space-y-6 max-w-md">
-          <div className="rounded-xl border border-border bg-surface/60 p-5 space-y-3">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <Label className="text-sm font-semibold text-foreground cursor-pointer">
-                  Subscription
-                </Label>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Current plan: {planLabel}
-                </p>
-              </div>
-              <div className="rounded-full border border-border/70 px-2.5 py-1 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
-                {planLabel}
-              </div>
-            </div>
-            <div className="space-y-2 text-xs text-muted-foreground">
-              <div className="flex items-center justify-between gap-3">
-                <span>Schedule</span>
-                <span>{subscriptionSnapshot ? (hasFeatureAccess(subscriptionSnapshot.plan, "schedule") ? "Included" : "Pro / Platinum") : "Loading..."}</span>
-              </div>
-              {(["deep_thinking", "plan", "gmail_send"] as MeteredFeature[]).map((feature) => (
-                <div key={feature} className="flex items-center justify-between gap-3">
-                  <span>{SUBSCRIPTION_FEATURE_LABELS[feature]}</span>
-                  <span>{formatUsageSummary(feature)}</span>
-                </div>
-              ))}
-            </div>
-            <p className="text-[11px] text-muted-foreground">
-              {STRIPE_BILLING_ENABLED
-                ? "Choose your plan. Changes take effect immediately."
-                : "Billing is not live yet. All users are currently on Free until Stripe is enabled."}
-            </p>
-            <div className="inline-flex rounded-full border border-border/70 bg-background/30 p-1">
-              <button
-                type="button"
-                onClick={() => setBillingCycle("monthly")}
-                className={`rounded-full px-3 py-1 text-xs transition-colors ${
-                  billingCycle === "monthly" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                Monthly
-              </button>
-              <button
-                type="button"
-                onClick={() => setBillingCycle("annual")}
-                className={`rounded-full px-3 py-1 text-xs transition-colors ${
-                  billingCycle === "annual" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                Annual
-              </button>
-            </div>
-            <div className="grid grid-cols-1 gap-2 pt-1">
-              {PLAN_CATALOG.map((item) => {
-                const selected = subscriptionSnapshot?.plan === item.plan;
-                const cyclePrice =
-                  billingCycle === "monthly" ? item.pricing.monthlyGbp : item.pricing.annualGbp;
-                const cycleSuffix = billingCycle === "monthly" ? "/month" : "/year";
-                return (
-                  <div
-                    key={item.plan}
-                    className={`rounded-lg border px-3 py-3 ${selected ? "border-primary/60 bg-primary/10" : "border-border/60 bg-background/30"}`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="text-sm font-medium">{item.title}</div>
-                        <div className="mt-1 text-base font-semibold text-foreground">
-                          {formatGbp(cyclePrice)}
-                          <span className="ml-1 text-xs font-normal text-muted-foreground">{cycleSuffix}</span>
-                        </div>
-                        <p className="text-[11px] text-muted-foreground mt-0.5">{item.blurb}</p>
-                      </div>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant={selected ? "secondary" : "outline"}
-                        disabled={planUpdateBusy || selected || !subscriptionSnapshot || !STRIPE_BILLING_ENABLED}
-                        onClick={() => void changePlan(item.plan)}
-                      >
-                        {selected
-                          ? "Current"
-                          : !STRIPE_BILLING_ENABLED
-                            ? "Coming with Stripe"
-                            : planUpdateBusy
-                              ? "Updating..."
-                              : item.plan === "free"
-                                ? "Downgrade"
-                                : "Choose"}
-                      </Button>
-                    </div>
-                    <div className="mt-2 space-y-1.5">
-                      {item.features.map((feature) => (
-                        <div key={feature} className="text-[11px] text-muted-foreground">
-                          • {feature}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-border bg-surface/60 p-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <Label className="text-sm font-semibold text-foreground cursor-pointer">
-                  Weekly insight email
-                </Label>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Send your latest weekly insight summary to your email address. Uses Gmail when connected, otherwise standard email delivery.
-                </p>
-              </div>
-              <Switch checked={weeklyEmailEnabled} onCheckedChange={toggleWeeklyEmail} />
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-border bg-surface/60 p-5 space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <Label className="text-sm font-semibold text-foreground cursor-pointer">
-                  Schedule reminder emails
-                </Label>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Send a reminder email shortly before each upcoming schedule item.
-                </p>
-              </div>
-              <Switch checked={scheduleEmailRemindersEnabled} onCheckedChange={toggleScheduleEmailReminders} />
-            </div>
-
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-xs text-muted-foreground">Reminder timing</p>
-              <select
-                value={String(scheduleReminderMinutes)}
-                onChange={(e) => void changeScheduleReminderMinutes(e.target.value)}
-                className="rounded-md border border-border bg-background/60 px-2.5 py-1.5 text-xs text-foreground"
-                disabled={!scheduleEmailRemindersEnabled}
-              >
-                <option value="5">5 minutes before</option>
-                <option value="10">10 minutes before</option>
-                <option value="15">15 minutes before</option>
-                <option value="30">30 minutes before</option>
-                <option value="45">45 minutes before</option>
-                <option value="60">60 minutes before</option>
-                <option value="120">2 hours before</option>
-                <option value="180">3 hours before</option>
-              </select>
-            </div>
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-xs text-muted-foreground">Use Gmail for reminders</p>
-                <p className="text-[11px] text-muted-foreground mt-1">
-                  Turn off to send with normal email provider instead of Gmail.
-                </p>
-              </div>
-              <Switch
-                checked={scheduleReminderUseGmail}
-                onCheckedChange={toggleScheduleReminderChannel}
-                disabled={!scheduleEmailRemindersEnabled}
-              />
-            </div>
-            <p className="text-[11px] text-muted-foreground">
-              Gmail mode uses your connected Google account. Normal email mode uses the platform provider.
-            </p>
-          </div>
-
-          <div className="rounded-xl border border-border bg-surface/60 p-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <Label className="text-sm font-semibold text-foreground cursor-pointer">
-                  Auto-save plans as PDF
-                </Label>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Automatically save plans as PDF files when you click "Save as Plan"
-                </p>
-              </div>
-              <Switch checked={autoPdfEnabled} onCheckedChange={toggleAutoPdf} />
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-border bg-surface/60 p-5 space-y-2">
-            <Label className="text-sm font-semibold text-foreground cursor-pointer">
-              Privacy & account data
-            </Label>
-            <p className="text-xs text-muted-foreground">
-              Review policy details, export your data, or request account deletion.
-            </p>
-            <div className="flex flex-wrap gap-3 text-sm">
-              <Link to="/privacy" className="text-primary hover:underline">Privacy Policy</Link>
-              <Link to="/terms" className="text-primary hover:underline">Terms</Link>
-              <Link to="/account-data" className="text-primary hover:underline">Account & data export</Link>
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-5 space-y-3">
-            <div>
-              <Label className="text-sm font-semibold text-foreground cursor-pointer">
-                Delete account
-              </Label>
-              <p className="text-xs text-muted-foreground mt-1">
-                Permanently delete your account, chats, plans, insights, and related data. This cannot be undone.
-              </p>
-            </div>
-
-            <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-              <AlertDialogTrigger asChild>
-                <Button variant="destructive" size="sm">Delete account</Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Delete your account?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    This permanently removes your account and associated data. Type DELETE to confirm.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-
-                <Input
-                  value={deleteConfirmText}
-                  onChange={(e) => setDeleteConfirmText(e.target.value)}
-                  placeholder="Type DELETE"
-                />
-
-                <AlertDialogFooter>
-                  <AlertDialogCancel disabled={deletingAccount}>Cancel</AlertDialogCancel>
-                  <Button variant="destructive" onClick={() => void deleteAccount()} disabled={deletingAccount}>
-                    {deletingAccount ? "Deleting..." : "Permanently delete"}
-                  </Button>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          </div>
         </div>
       )}
 
