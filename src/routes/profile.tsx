@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 import { toast } from "sonner";
-import { Brain, Check, ChevronDown, Download, Pencil, X } from "lucide-react";
+import { Brain, CalendarDays, Check, ChevronDown, Download, Pencil, X } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -100,6 +100,16 @@ type Insight = {
 
 type EditablePlanDraft = { title: string; content: string };
 type MemoryProfile = { preference_notes: string | null; comfort_boundaries: string[] | null };
+type ScheduleItem = {
+  id: string;
+  title: string;
+  notes: string;
+  starts_at: string;
+  ends_at: string | null;
+  is_completed: boolean;
+  created_at: string;
+  updated_at: string;
+};
 
 const getUtcWeekStart = (): string => {
   const now = new Date();
@@ -118,6 +128,14 @@ const planPreviewText = (content: string, maxChars = 140): string => {
 
   if (cleaned.length <= maxChars) return cleaned;
   return `${cleaned.slice(0, maxChars).trimEnd()}…`;
+};
+
+const toLocalInputDateTime = (iso?: string | null): string => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
 
 function ProfilePage() {
@@ -144,6 +162,14 @@ function ProfilePage() {
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const [memoryProfile, setMemoryProfile] = useState<MemoryProfile | null>(null);
   const [brainOpen, setBrainOpen] = useState(false);
+  const [quickCalendarOpen, setQuickCalendarOpen] = useState(false);
+  const [schedules, setSchedules] = useState<ScheduleItem[]>([]);
+  const [scheduleEditingId, setScheduleEditingId] = useState<string | null>(null);
+  const [scheduleTitle, setScheduleTitle] = useState("");
+  const [scheduleNotes, setScheduleNotes] = useState("");
+  const [scheduleStartsAt, setScheduleStartsAt] = useState("");
+  const [scheduleEndsAt, setScheduleEndsAt] = useState("");
+  const [scheduleSaving, setScheduleSaving] = useState(false);
   const [autoPdfEnabled, setAutoPdfEnabled] = useState(() => {
     if (typeof window !== "undefined") {
       return localStorage.getItem("autoPdfSave") !== "false";
@@ -214,10 +240,20 @@ function ProfilePage() {
       if (data) setMemoryProfile(data as MemoryProfile);
     };
 
+    const loadSchedules = async () => {
+      const { data } = await supabase
+        .from("user_schedules")
+        .select("id,title,notes,starts_at,ends_at,is_completed,created_at,updated_at")
+        .eq("user_id", user.id)
+        .order("starts_at", { ascending: true });
+      setSchedules((data as ScheduleItem[] | null) ?? []);
+    };
+
     void loadPlans();
     void loadInsightSettings();
     void loadInsights();
     void loadMemoryProfile();
+    void loadSchedules();
 
     const channel = supabase
       .channel(`profile-sync-${user.id}`)
@@ -252,6 +288,23 @@ function ProfilePage() {
         (payload) => {
           const row = payload.new as MemoryProfile | null;
           if (row) setMemoryProfile(row);
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "user_schedules",
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => {
+          void supabase
+            .from("user_schedules")
+            .select("id,title,notes,starts_at,ends_at,is_completed,created_at,updated_at")
+            .eq("user_id", user.id)
+            .order("starts_at", { ascending: true })
+            .then(({ data }) => setSchedules((data as ScheduleItem[] | null) ?? []));
         },
       )
       .subscribe();
@@ -548,6 +601,92 @@ function ProfilePage() {
     setEditingName(false);
   };
 
+  const resetScheduleForm = () => {
+    setScheduleEditingId(null);
+    setScheduleTitle("");
+    setScheduleNotes("");
+    setScheduleStartsAt("");
+    setScheduleEndsAt("");
+  };
+
+  const beginEditSchedule = (item: ScheduleItem) => {
+    setScheduleEditingId(item.id);
+    setScheduleTitle(item.title);
+    setScheduleNotes(item.notes || "");
+    setScheduleStartsAt(toLocalInputDateTime(item.starts_at));
+    setScheduleEndsAt(toLocalInputDateTime(item.ends_at));
+  };
+
+  const saveSchedule = async () => {
+    if (!user) return;
+    const title = scheduleTitle.trim();
+    if (!title) {
+      toast.error("Please add a title");
+      return;
+    }
+    if (!scheduleStartsAt) {
+      toast.error("Please choose start date/time");
+      return;
+    }
+
+    const startsAtIso = new Date(scheduleStartsAt).toISOString();
+    const endsAtIso = scheduleEndsAt ? new Date(scheduleEndsAt).toISOString() : null;
+    if (endsAtIso && new Date(endsAtIso).getTime() < new Date(startsAtIso).getTime()) {
+      toast.error("End time must be after start time");
+      return;
+    }
+
+    setScheduleSaving(true);
+    const payload = {
+      user_id: user.id,
+      title,
+      notes: scheduleNotes.trim(),
+      starts_at: startsAtIso,
+      ends_at: endsAtIso,
+      updated_at: new Date().toISOString(),
+    };
+
+    const req = scheduleEditingId
+      ? supabase.from("user_schedules").update(payload).eq("id", scheduleEditingId).eq("user_id", user.id)
+      : supabase.from("user_schedules").insert({ ...payload, is_completed: false });
+
+    const { error } = await req;
+    setScheduleSaving(false);
+
+    if (error) {
+      toast.error(error.message || "Failed to save schedule");
+      return;
+    }
+
+    toast.success(scheduleEditingId ? "Schedule updated" : "Schedule added");
+    resetScheduleForm();
+  };
+
+  const toggleScheduleCompleted = async (item: ScheduleItem) => {
+    if (!user) return;
+    const { error } = await supabase
+      .from("user_schedules")
+      .update({ is_completed: !item.is_completed, updated_at: new Date().toISOString() })
+      .eq("id", item.id)
+      .eq("user_id", user.id);
+    if (error) {
+      toast.error("Failed to update schedule");
+      return;
+    }
+    toast.success(item.is_completed ? "Marked as pending" : "Marked as completed");
+  };
+
+  const deleteSchedule = async (itemId: string) => {
+    if (!user) return;
+    const { error } = await supabase.from("user_schedules").delete().eq("id", itemId).eq("user_id", user.id);
+    if (error) {
+      toast.error("Failed to delete schedule");
+      return;
+    }
+    if (scheduleEditingId === itemId) resetScheduleForm();
+    toast.success("Schedule deleted");
+  };
+
   const deleteAccount = async () => {
     if (!user) return;
     if (deleteConfirmText.trim().toUpperCase() !== "DELETE") {
@@ -656,9 +795,44 @@ function ProfilePage() {
             <p className="text-sm text-muted-foreground mt-1">{user.email}</p>
           </div>
         </div>
-        <Button variant="ghost" size="sm" onClick={signOut} disabled={savingProfile}>
-          Sign out
-        </Button>
+
+        <div className="relative flex items-center gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => setQuickCalendarOpen((v) => !v)}
+            title="Open schedule"
+          >
+            <CalendarDays className="h-4 w-4" />
+          </Button>
+          <Button variant="ghost" size="sm" onClick={signOut} disabled={savingProfile}>
+            Sign out
+          </Button>
+
+          {quickCalendarOpen && (
+            <div className="absolute right-0 top-10 z-20 w-[320px] rounded-xl border border-border bg-background/95 shadow-xl p-3">
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-sm font-semibold">Your schedule</div>
+              </div>
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {schedules.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">No schedule yet.</p>
+                ) : (
+                  schedules.slice(0, 6).map((item) => (
+                    <div key={item.id} className="rounded-md border border-border/70 px-2.5 py-2">
+                      <div className="text-sm">{item.title}</div>
+                      <div className="text-[11px] text-muted-foreground mt-0.5">
+                        {new Date(item.starts_at).toLocaleString()}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="flex gap-1 border-b border-border mb-6 -mx-1">
@@ -718,8 +892,6 @@ function ProfilePage() {
           ))}
         </div>
       )}
-
-
       {tab === "insights" && (
         <div className="space-y-3">
           <div className="rounded-xl border border-border bg-surface/60 overflow-hidden">

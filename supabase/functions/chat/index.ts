@@ -101,6 +101,17 @@ const PRACTICAL_LOGIC_MODE = `\n\nThe user is asking a practical/logical questio
 - Keep tone warm but primarily analytical and solution-focused.
 - If research context is available, cite only those links under a short "Sources:" section.`;
 
+const SCHEDULE_ASSIST_MODE = `\n\nSchedule assistant mode:
+- If the user wants to add/create/schedule an event, DO NOT give generic options, app recommendations, or long explanations.
+- Collect missing details conversationally: what they want to do, date, and time. Ask at most one short question per reply.
+- Keep replies short (usually 1-2 sentences).
+- If the user already gave activity + date + time, do not ask extra planning questions (no buffer-time or optimization questions). Save it immediately.
+- Do not ask for end time unless the user explicitly requests an end time.
+- Once you have all required details, confirm briefly and append exactly one hidden action line at the end:
+  [SCHEDULE_SAVE:{"title":"<activity>","starts_at":"<ISO 8601 datetime>","notes":"<extra context or empty string>"}]
+- Only output that action line when title + date + time are all confirmed.
+- Never tell the user to open a tab or click UI controls.`;
+
 const BUSINESS_MARKETING_CONNOISSEUR_MODE = `\n\nBusiness/Marketing Connoisseur mode:
 - Act like a practical business strategist + marketing strategist.
 - For prompts like "I want to start a business" or "How do I market my business", do NOT start with questions.
@@ -153,6 +164,40 @@ const isPlanningRequest = (text: string): boolean => {
     "what should i do",
   ];
   return planningKeywords.some((k) => lower.includes(k));
+};
+
+const isScheduleRequest = (text: string): boolean => {
+  const lower = text.toLowerCase();
+  const scheduleKeywords = [
+    "schedule",
+    "calendar",
+    "reminder",
+    "appointment",
+    "meeting",
+    "book me",
+    "add this",
+    "set this up",
+    "put this in",
+    "plan my day",
+  ];
+  return scheduleKeywords.some((k) => lower.includes(k));
+};
+
+const isScheduleConversation = (messages: Array<{ role: string; content: string }>): boolean => {
+  const recent = (messages ?? []).slice(-8);
+  const combined = recent.map((m) => String(m?.content ?? "").toLowerCase()).join("\n");
+  const conversationMarkers = [
+    "schedule",
+    "calendar",
+    "appointment",
+    "reminder",
+    "[schedule_save:",
+    "what date",
+    "what time",
+    "today",
+    "tomorrow",
+  ];
+  return conversationMarkers.some((k) => combined.includes(k));
 };
 
 const isPracticalLogicRequest = (text: string): boolean => {
@@ -834,12 +879,13 @@ serve(async (req) => {
 
     const memoryInstruction = buildMemoryInstruction(memoryProfile);
   const emailRequested = isEmailRequest(lastUserMessage);
+  const scheduleRequested = isScheduleRequest(lastUserMessage) || isScheduleConversation(messages ?? []);
   const deepThinkingRequested = thinkDeeply || emailRequested;
-  const planningRequested = forcePlan || emailRequested || isPlanningRequest(lastUserMessage);
+  const planningRequested = !scheduleRequested && (forcePlan || emailRequested || isPlanningRequest(lastUserMessage));
     const ventMode = Boolean(forceVent) || isVentingRequest(lastUserMessage);
   const emotionalRequested = !emailRequested && (ventMode || isEmotionalRequest(lastUserMessage));
-  const practicalRequested = planningRequested || emailRequested || isPracticalLogicRequest(lastUserMessage);
-    const logicalExecutionRequested = isLogicalExecutionRequest(lastUserMessage);
+  const practicalRequested = !scheduleRequested && (planningRequested || emailRequested || isPracticalLogicRequest(lastUserMessage));
+    const logicalExecutionRequested = !scheduleRequested && isLogicalExecutionRequest(lastUserMessage);
     const businessMarketingRequested = isBusinessMarketingRequest(lastUserMessage);
   const thinkingTime = getThinkingTime(lastUserMessage, deepThinkingRequested);
     const ventReadTime = getVentReadTime(lastUserMessage, ventMode);
@@ -860,6 +906,7 @@ serve(async (req) => {
       (emailRequested
         ? "\n\nEmail mode: Treat email requests as strategic writing tasks, not emotional support. Think like a sharp editor and planner. Optimize for clarity, tone, structure, persuasion, and outcome. When reviewing an email, identify weaknesses directly and propose stronger wording."
         : "") +
+      (scheduleRequested ? SCHEDULE_ASSIST_MODE : "") +
       ((practicalRequested || logicalExecutionRequested) && !emotionalRequested ? PRACTICAL_LOGIC_MODE : "") +
       (businessMarketingRequested && !emotionalRequested ? BUSINESS_MARKETING_CONNOISSEUR_MODE : "") +
       (logicalExecutionRequested && !emotionalRequested ? `\n\nExecution-focused response: Options first, no questions. Provide 2-4 actionable options with pros/cons immediately. Then recommend one and give a clear starter plan. Ask at most one optional follow-up question. Include sources when available.` : "") +

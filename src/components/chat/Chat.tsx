@@ -4,7 +4,7 @@ import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { Mic, ArrowUp, Bookmark, Trash2, ChevronDown, Plus, Pencil, Mail, RotateCcw } from "lucide-react";
+import { Mic, ArrowUp, Bookmark, Trash2, ChevronDown, Plus, Pencil, Mail, RotateCcw, CalendarDays } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
@@ -20,9 +20,23 @@ type Msg = {
   features?: string[];
   retryable?: boolean;
   retryText?: string;
+  scheduleCandidate?: {
+    title: string;
+    starts_at: string;
+    notes: string;
+  };
+  scheduleSaved?: boolean;
 };
 type VentAdviceMode = "none" | "advice";
 type EmailTone = "professional" | "formal" | "casual" | "fun";
+type ScheduleItem = {
+  id: string;
+  title: string;
+  notes: string;
+  starts_at: string;
+  ends_at: string | null;
+  is_completed: boolean;
+};
 
 const EMAIL_TONE_LABELS: Record<EmailTone, string> = {
   professional: "Professional",
@@ -55,6 +69,13 @@ export function Chat() {
   const [ventAdviceMode, setVentAdviceMode] = useState<VentAdviceMode>("none");
   const [showFeatureMenu, setShowFeatureMenu] = useState(false);
   const [showEmailPanel, setShowEmailPanel] = useState(false);
+  const [showSchedulePanel, setShowSchedulePanel] = useState(false);
+  const [scheduleItems, setScheduleItems] = useState<ScheduleItem[]>([]);
+  const [scheduleTitle, setScheduleTitle] = useState("");
+  const [scheduleStartsAt, setScheduleStartsAt] = useState("");
+  const [scheduleNotes, setScheduleNotes] = useState("");
+  const [scheduleBusy, setScheduleBusy] = useState(false);
+  const [scheduleMessageBusyId, setScheduleMessageBusyId] = useState<string | null>(null);
   const [emailTo, setEmailTo] = useState("");
   const [emailSubject, setEmailSubject] = useState("");
   const [emailPrompt, setEmailPrompt] = useState("");
@@ -170,6 +191,134 @@ export function Chat() {
     el.style.height = "auto";
     el.style.height = Math.min(el.scrollHeight, 180) + "px";
   }, [input]);
+
+  const toLocalInputDateTime = (iso?: string | null): string => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
+  const isScheduleIntent = (text: string): boolean => {
+    const lower = text.toLowerCase();
+    const keys = [
+      "schedule",
+      "calendar",
+      "today",
+      "tomorrow",
+      "this week",
+      "my week",
+      "time block",
+      "appointment",
+      "meeting",
+      "reminder",
+      "plan my day",
+    ];
+    return keys.some((k) => lower.includes(k));
+  };
+
+  useEffect(() => {
+    if (!user) {
+      setScheduleItems([]);
+      return;
+    }
+
+    const loadSchedules = async () => {
+      const { data } = await supabase
+        .from("user_schedules")
+        .select("id,title,notes,starts_at,ends_at,is_completed")
+        .eq("user_id", user.id)
+        .order("starts_at", { ascending: true })
+        .limit(12);
+      setScheduleItems((data as ScheduleItem[] | null) ?? []);
+    };
+
+    void loadSchedules();
+
+    const channel = supabase
+      .channel(`chat-schedules-${user.id}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "user_schedules", filter: `user_id=eq.${user.id}` },
+        () => void loadSchedules(),
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user]);
+
+  const addScheduleFromChat = async () => {
+    if (!user) return;
+    const title = scheduleTitle.trim();
+    if (!title) {
+      toast.error("Please add a schedule title");
+      return;
+    }
+    if (!scheduleStartsAt) {
+      toast.error("Please choose a date and time");
+      return;
+    }
+
+    const startsAtIso = new Date(scheduleStartsAt).toISOString();
+
+    setScheduleBusy(true);
+    const { error } = await supabase.from("user_schedules").insert({
+      user_id: user.id,
+      title,
+      notes: scheduleNotes.trim(),
+      starts_at: startsAtIso,
+      ends_at: null,
+      is_completed: false,
+      updated_at: new Date().toISOString(),
+    });
+    setScheduleBusy(false);
+
+    if (error) {
+      toast.error(error.message || "Failed to save schedule");
+      return;
+    }
+
+    setScheduleTitle("");
+    setScheduleStartsAt("");
+    setScheduleNotes("");
+    toast.success("Scheduled and saved to your profile");
+  };
+
+  const addScheduleCandidateToProfile = async (messageIndex: number) => {
+    if (!user) return;
+    const message = messages[messageIndex];
+    const candidate = message?.scheduleCandidate;
+    if (!candidate || message.scheduleSaved) return;
+
+    setScheduleMessageBusyId(message.id ?? `msg-${messageIndex}`);
+    const { error } = await supabase.from("user_schedules").insert({
+      user_id: user.id,
+      title: candidate.title.trim(),
+      notes: candidate.notes.trim(),
+      starts_at: new Date(candidate.starts_at).toISOString(),
+      ends_at: null,
+      is_completed: false,
+      updated_at: new Date().toISOString(),
+    });
+    setScheduleMessageBusyId(null);
+
+    if (error) {
+      toast.error(error.message || "Failed to save schedule");
+      return;
+    }
+
+    setMessages((prev) => {
+      const copy = [...prev];
+      if (copy[messageIndex]) {
+        copy[messageIndex] = { ...copy[messageIndex], scheduleSaved: true };
+      }
+      return copy;
+    });
+    toast.success("Added to your schedule");
+  };
 
   const ensureConversation = async (firstUserMsg: string): Promise<string> => {
     if (convId) return convId;
@@ -532,8 +681,9 @@ export function Chat() {
     return;
   }
 
+    const scheduleRequested = isScheduleIntent(text);
     const thinkingRequested = forceThinking || shouldUseThinkingMode(text);
-    const planningRequested = forcePlan || userAskedForPlan(text);
+    const planningRequested = !scheduleRequested && (forcePlan || userAskedForPlan(text));
     const ventDetectedFromText = shouldUseVentMode(text);
     const ventRequested = forceVent || ventDetectedFromText || !!overrideVentAdviceMode;
     const activeVentAdviceMode = overrideVentAdviceMode ?? ventAdviceMode;
@@ -608,8 +758,9 @@ export function Chat() {
       "Execution/startup mode: The user is asking how to start, launch, build, or execute something. Options first—no clarifying questions. Immediately provide 2-4 practical options with pros/cons, effort/cost, and who each suits. Then recommend one and provide a clear starter plan. Ask at most one optional follow-up. Include Sources when available.";
     const outboundMessages = currentMessages.map((m, idx, arr) => {
       const isLatestUser = idx === arr.length - 1 && m.role === "user";
-      const isLogicalExecution = isLogicalExecutionPrompt(m.content);
-      if (!isLatestUser || (!thinkingRequested && !planningRequested && !isBusinessMarketingPrompt(m.content) && !isLogicalExecution)) {
+      const isBusinessPrompt = !scheduleRequested && isBusinessMarketingPrompt(m.content);
+      const isLogicalExecution = !scheduleRequested && isLogicalExecutionPrompt(m.content);
+      if (!isLatestUser || (!thinkingRequested && !planningRequested && !isBusinessPrompt && !isLogicalExecution)) {
         return { role: m.role, content: m.content };
       }
 
@@ -618,7 +769,7 @@ export function Chat() {
         injectedInstruction = thinkingFirstInstruction;
       } else if (planningRequested) {
         injectedInstruction = planFirstInstruction;
-      } else if (isBusinessMarketingPrompt(m.content)) {
+      } else if (isBusinessPrompt) {
         injectedInstruction = businessFirstInstruction;
       } else if (isLogicalExecution) {
         injectedInstruction = logicalExecutionInstruction;
@@ -629,6 +780,40 @@ export function Chat() {
         content: injectedInstruction ? `${injectedInstruction}\n\nUser request: ${m.content}` : m.content,
       };
     });
+
+    const upcomingSchedule = scheduleItems
+      .filter((item) => !item.is_completed)
+      .slice(0, 6)
+      .map((item) => {
+        const when = new Date(item.starts_at).toLocaleString();
+        return `- ${item.title} @ ${when}${item.notes ? ` (${item.notes})` : ""}`;
+      })
+      .join("\n");
+
+    const scheduleSystemMsg = scheduleRequested
+      ? {
+          role: "system" as const,
+          content:
+            `You are helping the user manage their personal schedule inside RealTalk. Today's date and time is: ${new Date().toLocaleString()}.\n\n` +
+            `IF the user wants to ADD or SCHEDULE something new:\n` +
+            `- If you don't yet have all three pieces of information (what to schedule, what date, what time), ask for the missing ones naturally in one short conversational message. Do NOT ask for them all at once — gather them one at a time if needed.\n` +
+            `- Once you have the title/activity, date, AND time, do TWO things in your reply:\n` +
+            `  1. Confirm it warmly in one sentence (e.g. "Got it, I've added that to your schedule!").\n` +
+            `  2. Append EXACTLY this on its own line at the very end of your response, replacing the placeholders:\n` +
+            `     [SCHEDULE_SAVE:{"title":"<activity>","starts_at":"<ISO 8601 datetime>","notes":"<extra context or empty string>"}]\n` +
+            `- IMPORTANT: Only output [SCHEDULE_SAVE:...] when you have a confirmed title, date, AND time. Never output it without all three.\n` +
+            `- Never tell the user to open a tab, click a button, or do anything manually — you handle scheduling entirely.\n\n` +
+            `IF the user is asking about their existing schedule:\n` +
+            (upcomingSchedule
+              ? `Here are their upcoming items:\n${upcomingSchedule}`
+              : `They have no upcoming schedule items saved yet.`) +
+            `\n- Reference these naturally in conversation.`,
+        }
+      : null;
+
+    const requestMessages = scheduleSystemMsg
+      ? [scheduleSystemMsg, ...outboundMessages]
+      : outboundMessages;
 
     const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
     const chatAbort = new AbortController();
@@ -642,7 +827,7 @@ export function Chat() {
           Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
         },
         body: JSON.stringify({
-          messages: outboundMessages,
+          messages: requestMessages,
           beReal,
           thinkDeeply: thinkingRequested && !shouldOfferVentChoice,
           forcePlan: planningRequested,
@@ -766,14 +951,54 @@ export function Chat() {
       }
     }
 
-    if (assistant) {
+    // Parse any [SCHEDULE_SAVE:{...}] marker the AI outputs and attach a schedule candidate to the message
+    const scheduleSaveMatch = assistant.match(/\[SCHEDULE_SAVE:(\{[\s\S]+?\})\]/);
+    let cleanAssistant = assistant;
+    let scheduleCandidate: Msg["scheduleCandidate"];
+    if (scheduleSaveMatch) {
+      try {
+        const schedulePayload = JSON.parse(scheduleSaveMatch[1]) as {
+          title?: string;
+          starts_at?: string;
+          notes?: string;
+        };
+        if (schedulePayload.title && schedulePayload.starts_at) {
+          scheduleCandidate = {
+            title: schedulePayload.title.trim(),
+            starts_at: new Date(schedulePayload.starts_at).toISOString(),
+            notes: (schedulePayload.notes ?? "").trim(),
+          };
+        }
+      } catch {
+        // Silently ignore malformed marker
+      }
+    }
+    // Strip the hidden marker from what gets displayed and stored
+    cleanAssistant = assistant.replace(/\[SCHEDULE_SAVE:\{[\s\S]+?\}\]/g, "").trimEnd();
+    setMessages((prev) => {
+      const copy = [...prev];
+      for (let i = copy.length - 1; i >= 0; i--) {
+        if (copy[i].role === "assistant") {
+          copy[i] = {
+            ...copy[i],
+            content: cleanAssistant,
+            scheduleCandidate,
+            scheduleSaved: false,
+          };
+          break;
+        }
+      }
+      return copy;
+    });
+
+    if (cleanAssistant) {
       const { data: saved } = await supabase
         .from("messages")
         .insert({
           conversation_id: cid,
           user_id: user.id,
           role: "assistant",
-          content: assistant,
+          content: cleanAssistant,
         })
         .select("id")
         .single();
@@ -792,7 +1017,7 @@ export function Chat() {
       // Fire-and-forget: learn user preferences from conversation (does not block UI)
       void (async () => {
         try {
-          const recentMessages = [...messages, userMsg, { role: "assistant", content: assistant }]
+          const recentMessages = [...messages, userMsg, { role: "assistant", content: cleanAssistant }]
             .slice(-8)
             .map((m) => ({ role: m.role, content: m.content }));
           await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/profile-learn`, {
@@ -1457,6 +1682,27 @@ export function Chat() {
                             </Button>
                           </div>
                         )}
+                        {m.scheduleCandidate && (
+                          <div className="mt-3 flex items-center gap-2">
+                            <Button
+                              variant={m.scheduleSaved ? "secondary" : "ghost"}
+                              size="sm"
+                              onClick={() => void addScheduleCandidateToProfile(i)}
+                              disabled={m.scheduleSaved || scheduleMessageBusyId === (m.id ?? `msg-${i}`)}
+                              className="text-xs h-8 px-2.5 gap-1.5"
+                            >
+                              <CalendarDays className="h-3.5 w-3.5" />
+                              {m.scheduleSaved
+                                ? "Added to schedule"
+                                : scheduleMessageBusyId === (m.id ?? `msg-${i}`)
+                                  ? "Adding..."
+                                  : "Add to schedule"}
+                            </Button>
+                            <span className="text-xs text-muted-foreground">
+                              {new Date(m.scheduleCandidate.starts_at).toLocaleString()}
+                            </span>
+                          </div>
+                        )}
                         {m.ventChoicePending && (
                           <div className="mt-3">
                             {!m.content && (
@@ -1534,6 +1780,19 @@ export function Chat() {
               <Label htmlFor="real" className="text-xs text-muted-foreground cursor-pointer">
                 Be real with me
               </Label>
+              <button
+                type="button"
+                onClick={() => setShowSchedulePanel((v) => !v)}
+                className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs transition-colors ${
+                  showSchedulePanel
+                    ? "bg-primary/20 text-primary"
+                    : "text-muted-foreground hover:text-foreground hover:bg-surface-elevated"
+                }`}
+                title="Open schedule"
+              >
+                <CalendarDays className="h-3.5 w-3.5" />
+                Schedule
+              </button>
             </div>
             {convId && (
               <div className="flex items-center gap-2">
@@ -1556,7 +1815,7 @@ export function Chat() {
           </div>
 
           <div className="rounded-2xl border border-border bg-surface focus-within:border-primary/60 transition-colors">
-            {(forceThinking || forcePlan || forceVent || showEmailPanel) && (
+            {(forceThinking || forcePlan || forceVent || showEmailPanel || showSchedulePanel) && (
               <div className="px-4 pt-2 flex flex-wrap gap-2">
                 {forceThinking && (
                   <button
@@ -1588,6 +1847,15 @@ export function Chat() {
                     <span className="text-lg leading-none">×</span>
                   </button>
                 )}
+                {showSchedulePanel && (
+                  <button
+                    onClick={() => setShowSchedulePanel(false)}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-primary/20 text-primary text-xs rounded-full hover:bg-primary/30 transition-colors"
+                  >
+                    📅 Schedule
+                    <span className="text-lg leading-none">×</span>
+                  </button>
+                )}
                 {showEmailPanel && (
                   <button
                     onClick={() => setShowEmailPanel(false)}
@@ -1597,6 +1865,42 @@ export function Chat() {
                     <span className="text-lg leading-none">×</span>
                   </button>
                 )}
+              </div>
+            )}
+            {showSchedulePanel && (
+              <div className="px-4 pt-3 pb-2 border-b border-border/60 space-y-2">
+                <div className="text-xs text-muted-foreground">
+                  Add to your RealTalk schedule. Saved items appear in your Profile schedule tab.
+                </div>
+                <input
+                  value={scheduleTitle}
+                  onChange={(e) => setScheduleTitle(e.target.value)}
+                  placeholder="What do you need to do?"
+                  className="w-full rounded-md border border-border bg-background/60 px-3 py-2 text-sm outline-none focus:border-primary/60"
+                />
+                <input
+                  type="datetime-local"
+                  value={scheduleStartsAt}
+                  onChange={(e) => setScheduleStartsAt(e.target.value)}
+                  className="w-full rounded-md border border-border bg-background/60 px-3 py-2 text-sm outline-none focus:border-primary/60"
+                />
+                <textarea
+                  value={scheduleNotes}
+                  onChange={(e) => setScheduleNotes(e.target.value)}
+                  placeholder="Optional notes"
+                  rows={2}
+                  className="w-full rounded-md border border-border bg-background/60 px-3 py-2 text-sm outline-none focus:border-primary/60 resize-y"
+                />
+                <div className="flex items-center justify-between gap-3">
+                  <Button type="button" size="sm" onClick={() => void addScheduleFromChat()} disabled={scheduleBusy}>
+                    {scheduleBusy ? "Saving..." : "Save schedule"}
+                  </Button>
+                  <div className="text-[11px] text-muted-foreground truncate">
+                    {scheduleItems.length > 0
+                      ? `Next: ${scheduleItems[0]?.title} • ${toLocalInputDateTime(scheduleItems[0]?.starts_at).replace("T", " ")}`
+                      : "No upcoming schedules yet"}
+                  </div>
+                </div>
               </div>
             )}
             {showEmailPanel && (
