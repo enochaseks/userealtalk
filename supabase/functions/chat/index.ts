@@ -1,6 +1,5 @@
 // @ts-nocheck
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -47,7 +46,13 @@ Relationship memory and comfort boundaries:
 - Build trust over time by adapting to recurring user needs and preferences.
 - If the user sounds uncomfortable or asks you to stop/slow down/change tone, pull back immediately.
 - Respect known comfort boundaries in future responses.
-- Keep support warm and steady, never clingy or coercive.`;
+- Keep support warm and steady, never clingy or coercive.
+
+CRITICAL: Maintaining conversation context:
+- Pay careful attention to the conversation history. When the user mentions a person, situation, or topic they've already discussed, remember and reference the earlier context accurately.
+- If a user refers back to something from earlier in the conversation, DO NOT make assumptions or reinterpret what they meant. Instead, use the conversation history to understand their intent correctly.
+- For example, if a user is discussing relationship concerns, pay attention to who they're talking about and what they've already said about that situation. Don't confuse different people or topics.
+- If the context from earlier in the conversation is needed to give a good response, explicitly reference it to show you remember.`;
 
 const REAL_MODE = `\n\nBe Real Mode - BRUTAL HONESTY:
 - No sugar-coating, no cushioning, no softening language.
@@ -591,10 +596,64 @@ const mergeBoundaryItems = (
   return [...current, { note: newNote, created_at: new Date().toISOString() }].slice(-12);
 };
 
-const buildMemoryInstruction = (memoryProfile: any): string => {
-  if (!memoryProfile) return "";
+const extractConversationContext = (messages: Array<{ role: string; content: string }>): string | null => {
+  if (!messages || messages.length < 6) return null;
 
+  // Get recent user messages to identify conversation topics
+  const userMessages = messages
+    .filter((m) => m.role === "user")
+    .slice(-8)
+    .map((m) => String(m?.content ?? "").toLowerCase());
+
+  const contextKeywords: Record<string, string> = {
+    relationship: "user is discussing relationships or romantic situations",
+    girlfriend: "user is discussing their girlfriend or a female partner",
+    boyfriend: "user is discussing their boyfriend or a male partner",
+    family: "user is discussing family dynamics or relationships",
+    career: "user is discussing career or job-related matters",
+    business: "user is considering starting or growing a business",
+    anxiety: "user is dealing with anxiety or stress",
+    depression: "user is dealing with depression or low mood",
+    work: "user is dealing with work-related challenges",
+    dating: "user is discussing dating or dating concerns",
+    lgbtq: "user is discussing LGBTQ+ topics or sexual orientation",
+    sexuality: "user is discussing sexuality or sexual orientation",
+    lesbian: "user is discussing lesbian identity or concerns",
+    gay: "user is discussing gay identity or concerns",
+    friendship: "user is discussing friendships or friend relationships",
+    breakup: "user is dealing with a breakup or relationship ending",
+    mental_health: "user is discussing mental health concerns",
+    decision: "user is making an important life decision",
+    money: "user is discussing money or financial concerns",
+  };
+
+  const identifiedTopics: string[] = [];
+  for (const [keyword, description] of Object.entries(contextKeywords)) {
+    if (userMessages.some((msg) => msg.includes(keyword))) {
+      identifiedTopics.push(description);
+    }
+  }
+
+  // Remove duplicates and return as context
+  const uniqueTopics = [...new Set(identifiedTopics)];
+  if (uniqueTopics.length === 0) return null;
+
+  return `Current conversation context: The user is discussing the following topic(s): ${uniqueTopics.join("; ")}. Keep this context in mind when responding—avoid misinterpreting references to earlier parts of this conversation.`;
+};
+
+const buildMemoryInstruction = (memoryProfile: any, recentMessages?: Array<{ role: string; content: string }>): string => {
   const lines: string[] = [];
+
+  // Add conversation context first
+  if (recentMessages) {
+    const conversationContext = extractConversationContext(recentMessages);
+    if (conversationContext) {
+      lines.push(conversationContext);
+    }
+  }
+
+  if (!memoryProfile) return lines.join("\n");
+
   const notes = String(memoryProfile.preference_notes ?? "").trim();
   if (notes) lines.push(`Known user preferences: ${notes}`);
 
@@ -826,11 +885,12 @@ const runWorkersFallback = async (
   }
 };
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { messages, beReal, thinkDeeply, forcePlan, forceVent, ventAdviceMode, userId } = await req.json();
+    const { messages, beReal, thinkDeeply, forcePlan, forceVent, ventAdviceMode, userId, userPlan, totalMessageCount, memoryLimit } = await req.json();
+    const plan = userPlan ?? "free";
     const MISTRAL_API_KEY = Deno.env.get("MISTRAL_API_KEY");
     const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
     const ENABLE_GEMINI_FALLBACK = Deno.env.get("ENABLE_GEMINI_FALLBACK") === "true";
@@ -878,7 +938,7 @@ serve(async (req) => {
       }
     }
 
-    const memoryInstruction = buildMemoryInstruction(memoryProfile);
+    const memoryInstruction = buildMemoryInstruction(memoryProfile, messages ?? []);
   const emailRequested = isEmailRequest(lastUserMessage);
   const scheduleRequested = isScheduleRequest(lastUserMessage) || isScheduleConversation(messages ?? []);
   const deepThinkingRequested = thinkDeeply || emailRequested;
@@ -916,6 +976,17 @@ serve(async (req) => {
       (beReal && ventMode ? `\n\nVent mode + Be Real: Listen and validate briefly, but prioritize honest feedback over endless sympathy. Be empathetic but not coddling.` : ventAdviceInstruction) +
       (memoryInstruction ? `\n\nUser memory context:\n${memoryInstruction}` : "");
 
+    // Add memory limit warning if user is approaching limit
+    const memoryWarningInstruction = (() => {
+      if (!memoryLimit || !totalMessageCount) return "";
+      const warningThreshold = Math.floor(memoryLimit * 0.85);
+      if (totalMessageCount >= warningThreshold) {
+        const percentUsed = Math.round((totalMessageCount / memoryLimit) * 100);
+        return `\n\nMemory Usage Alert (${percentUsed}% of ${memoryLimit} messages): The user is approaching their conversation memory limit. If they want unlimited conversation memory, recommend upgrading to Platinum tier. Do NOT let this affect your response quality—continue giving full, thoughtful answers. Just mention the memory usage naturally if it's relevant.`;
+      }
+      return "";
+    })();
+
     const shouldUseResearch = (deepThinkingRequested || practicalRequested || logicalExecutionRequested) && !emotionalRequested;
     const researchQuery = shouldUseResearch ? buildSearchQuery(lastUserMessage) : "";
     const researchContext = shouldUseResearch ? await getResearchContext(researchQuery) : "";
@@ -924,7 +995,7 @@ serve(async (req) => {
       {
         role: "system",
         content:
-          system + REFERENCES_GUARDRAIL_MODE + (planningRequested ? DETAILED_PLAN_OUTPUT_MODE : "") + (deepThinkingRequested ? DEEP_THINKING_DETAILED_MODE : ""),
+          system + REFERENCES_GUARDRAIL_MODE + (planningRequested ? DETAILED_PLAN_OUTPUT_MODE : "") + (deepThinkingRequested ? DEEP_THINKING_DETAILED_MODE : "") + memoryWarningInstruction,
       },
     ];
     if (researchContext) {

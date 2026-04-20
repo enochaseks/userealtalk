@@ -21,7 +21,7 @@ const HELP_TOPICS = [
   "Dealing with Money Issues",
   "Dealing with Stress",
   "Difficult Landlords",
-  "Mental Health",
+  "Mental Health Guidance",
   "A Place to Vent",
 ] as const;
 
@@ -422,8 +422,8 @@ export function Landing() {
           <h2 className="text-base md:text-lg font-semibold tracking-tight">About RealTalk</h2>
           <p className="mt-2 text-sm text-muted-foreground leading-relaxed">
             RealTalk is a calm AI companion for people who feel stuck, overwhelmed, or caught in overthinking.
-            It helps you turn messy thoughts into clear next steps through guided reflection, practical planning,
-            and supportive conversations.
+            It provides guidance and advice through reflection, planning, and supportive conversations—but it can't replace
+            professional mental health treatment for complex issues.
           </p>
 
           <div className="mt-3 grid gap-2 text-sm text-foreground/90">
@@ -528,7 +528,7 @@ export function Landing() {
                   </div>
                   <div className="mt-2 text-[11px] text-muted-foreground">{item.blurb}</div>
                   <div className="mt-2 space-y-1">
-                    {item.features.slice(0, 4).map((feature) => (
+                    {item.features.map((feature) => (
                       <p key={feature} className="text-[11px] text-muted-foreground">
                         • {feature}
                       </p>

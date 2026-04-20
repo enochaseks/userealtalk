@@ -40,6 +40,7 @@ export const PLAN_CATALOG: PlanCatalogItem[] = [
       "Plan Mode: 3 per month",
       "Gmail send: 5 per month",
       "Schedule: not included",
+      "Conversation Memory: up to 100 messages",
     ],
   },
   {
@@ -56,6 +57,7 @@ export const PLAN_CATALOG: PlanCatalogItem[] = [
       "Deep Thinking: 50 per day",
       "Plan Mode: 25 per month",
       "Gmail send: 50 per month",
+      "Conversation Memory: up to 300 messages",
     ],
   },
   {
@@ -72,6 +74,7 @@ export const PLAN_CATALOG: PlanCatalogItem[] = [
       "Plan Mode: unlimited",
       "Gmail send: unlimited",
       "Schedule included",
+      "Conversation Memory: unlimited messages",
     ],
   },
 ];
@@ -254,4 +257,28 @@ export const setSubscriptionPlan = async (userId: string, plan: SubscriptionPlan
   if (error) throw error;
 
   return loadSubscriptionSnapshot(userId);
+};
+
+// Conversation memory limits based on subscription tier
+// These determine how many messages are retrieved from database for context
+export const getConversationMemoryLimit = (plan: SubscriptionPlan): number | null => {
+  const limits: Record<SubscriptionPlan, number | null> = {
+    free: 100, // Free tier: up to 100 messages
+    pro: 300, // Pro tier: up to 300 messages
+    platinum: null, // Platinum: unlimited (null = no limit)
+  };
+  return limits[plan];
+};
+
+// Warning threshold - when to alert user about approaching memory limit
+export const getConversationMemoryWarningThreshold = (plan: SubscriptionPlan): number | null => {
+  const limits = getConversationMemoryLimit(plan);
+  if (limits === null) return null; // No warning for unlimited
+  return Math.floor(limits * 0.85); // Warn at 85% of limit
+};
+
+// Helper to get memory limit for a user
+export const getConversationMemoryForUser = async (userId: string): Promise<number | null> => {
+  const snapshot = await loadSubscriptionSnapshot(userId);
+  return getConversationMemoryLimit(snapshot.plan);
 };

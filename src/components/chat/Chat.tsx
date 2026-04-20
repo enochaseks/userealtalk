@@ -14,6 +14,8 @@ import {
   getUsageWindowLabel,
   hasFeatureAccess,
   loadSubscriptionSnapshot,
+  getConversationMemoryLimit,
+  getConversationMemoryWarningThreshold,
   type MeteredFeature,
   type SubscriptionSnapshot,
 } from "@/lib/subscriptions";
@@ -950,9 +952,33 @@ export function Chat() {
       return;
     }
 
-    // Keep request payload bounded so responses are faster and less likely to fail.
-    const MAX_CONTEXT_MESSAGES = 16;
-    const currentMessages = [...messages, userMsg].slice(-MAX_CONTEXT_MESSAGES);
+    // Fetch all messages from database for this conversation, apply memory limit based on plan
+    const memoryLimit = getConversationMemoryLimit(subscriptionSnapshot?.plan ?? "free");
+    const warningThreshold = getConversationMemoryWarningThreshold(subscriptionSnapshot?.plan ?? "free");
+    
+    const { data: allDbMessages } = await supabase
+      .from("messages")
+      .select("id,role,content")
+      .eq("conversation_id", conversationId)
+      .order("created_at", { ascending: true });
+
+    // Apply memory limit: take last N messages based on plan
+    let currentMessages = (allDbMessages as Msg[] | null) ?? [];
+    const totalMessageCount = currentMessages.length;
+    
+    if (memoryLimit !== null && currentMessages.length > memoryLimit) {
+      currentMessages = currentMessages.slice(-memoryLimit);
+      
+      // Show warning if approaching limit
+      if (warningThreshold !== null && totalMessageCount >= warningThreshold) {
+        toast.warning(`You're approaching your conversation memory limit (${totalMessageCount}/${memoryLimit} messages). Upgrade to Pro or Platinum for more memory.`, {
+          duration: 5000,
+        });
+      }
+    }
+
+    // Add the new user message to the context
+    currentMessages = [...currentMessages, userMsg];
 
     const thinkingFirstInstruction =
       "Deep thinking mode is active. Give a thoughtful, structured answer with multiple angles, trade-offs, assumptions, and a clear recommendation. If sources are available, end with 'Key References:' and list them.";
@@ -1041,6 +1067,9 @@ export function Chat() {
           forceVent: activeVent,
           ventAdviceMode: activeVentAdviceMode,
           userId: user.id,
+          userPlan: subscriptionSnapshot?.plan ?? "free",
+          totalMessageCount,
+          memoryLimit,
         }),
         signal: chatAbort.signal,
       });
@@ -2495,6 +2524,13 @@ export function Chat() {
               </Button>
             </div>
           </div>
+        </div>
+
+        {/* Disclaimer */}
+        <div className="px-4 py-2 text-center border-t border-border bg-surface/50">
+          <p className="text-xs text-muted-foreground">
+            RealTalk is not a therapist and can't solve mental health issues. In crisis? Call <strong>988</strong>
+          </p>
         </div>
       </div>
 
