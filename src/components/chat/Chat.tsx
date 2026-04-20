@@ -97,6 +97,8 @@ const EMAIL_TONE_INSTRUCTIONS: Record<EmailTone, string> = {
   fun: "Use a fun tone that is warm, lively, and light without sounding unprofessional.",
 };
 
+const MAX_CODING_MESSAGES_PER_CONVERSATION = 3;
+
 const FEATURE_LABELS: Record<MeteredFeature, string> = {
   deep_thinking: "Deep Thinking",
   plan: "Plan Mode",
@@ -466,16 +468,66 @@ export function Chat() {
   };
 
   const isCodingRelated = (text: string): boolean => {
-    const codingKeywords = [
-      "code", "coding", "debug", "debugging", "function", "class", "variable",
-      "syntax", "algorithm", "python", "javascript", "java", "c\\+\\+", "html",
-      "css", "react", "node", "programming", "bug", "error", "fix code", "write code",
-      "script", "loop", "if statement", "array", "object", "database", "sql",
-      "api", "endpoint", "backend", "frontend", "library", "framework", "npm",
-      "git", "github", "deploy", "server", "localhost", "terminal", "command",
-    ];
     const lowerText = text.toLowerCase();
-    return codingKeywords.some(keyword => lowerText.includes(keyword));
+    const codingPhrases = [
+      "fix code",
+      "write code",
+      "if statement",
+      "debug this",
+      "compile error",
+      "runtime error",
+      "stack trace",
+      "pull request",
+    ];
+
+    if (codingPhrases.some((phrase) => lowerText.includes(phrase))) {
+      return true;
+    }
+
+    const codingWordRegexes = [
+      /\bcode\b/,
+      /\bcoding\b/,
+      /\bdebug\b/,
+      /\bdebugging\b/,
+      /\bfunction\b/,
+      /\bclass\b/,
+      /\bvariable\b/,
+      /\bsyntax\b/,
+      /\balgorithm\b/,
+      /\bpython\b/,
+      /\bjavascript\b/,
+      /\bjava\b/,
+      /\bc\+\+\b/,
+      /\bhtml\b/,
+      /\bcss\b/,
+      /\breact\b/,
+      /\bnode\b/,
+      /\bprogramming\b/,
+      /\bbug\b/,
+      /\berror\b/,
+      /\bscript\b/,
+      /\bloop\b/,
+      /\barray\b/,
+      /\bobject\b/,
+      /\bdatabase\b/,
+      /\bsql\b/,
+      /\bapi\b/,
+      /\bendpoint\b/,
+      /\bbackend\b/,
+      /\bfrontend\b/,
+      /\blibrary\b/,
+      /\bframework\b/,
+      /\bnpm\b/,
+      /\bgit\b/,
+      /\bgithub\b/,
+      /\bdeploy\b/,
+      /\bserver\b/,
+      /\blocalhost\b/,
+      /\bterminal\b/,
+      /\bcommand\b/,
+    ];
+
+    return codingWordRegexes.some((regex) => regex.test(lowerText));
   };
 
   const userAskedForPlan = (text: string): boolean => {
@@ -901,11 +953,16 @@ export function Chat() {
       activeVent ? "Vent" : "",
     ].filter(Boolean);
 
-  if (isCodingRelated(text)) {
-    toast.error("RealTalk is designed to help you think clearly, plan, and gain clarity—not for coding. Try asking about your goals, decisions, or challenges instead.");
-    setInput("");
-    return;
-  }
+    const isCodingPrompt = isCodingRelated(text);
+    if (isCodingPrompt) {
+      const codingPromptCount = messages.filter((m) => m.role === "user" && isCodingRelated(m.content)).length;
+      if (codingPromptCount >= MAX_CODING_MESSAGES_PER_CONVERSATION) {
+        toast.error(`Coding chats are limited to ${MAX_CODING_MESSAGES_PER_CONVERSATION} messages per conversation. Start a new chat for more coding questions.`);
+        return;
+      }
+
+      toast("Coding mode is limited here. For full coding support, use a dedicated coding tool.");
+    }
 
     isSendingRef.current = true;
 
