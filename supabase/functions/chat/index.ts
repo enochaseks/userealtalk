@@ -150,6 +150,12 @@ const VENT_MODE_BASE = `\n\nThe user is venting. Your first job is to understand
 const VENT_NO_ADVICE = `\n\nThe user asked for NO advice. Only listen, validate, and reflect back what you heard. End with a gentle check-in question.`;
 const VENT_REFLECT = `\n\nThe user wants reflection, not direct advice. Summarize core issues and patterns clearly. You may ask one clarifying question.`;
 const VENT_ADVICE = `\n\nThe user is open to advice. After validating feelings, give practical and realistic advice with 2-4 clear next steps.`;
+const REFERENCES_REQUEST_MODE = `\n\nThe user asked for links/references.
+- Provide a concise answer, then include a final "Sources:" section.
+- In Sources, list only full URLs (https://...) from the provided research context.
+- Include at least 3 links when available.
+- Never say you cannot provide links directly when links are available in context.
+- If no research links are available, say Google references were unavailable right now and suggest trying again.`;
 
 const isPlanningRequest = (text: string): boolean => {
   const lower = text.toLowerCase();
@@ -375,6 +381,24 @@ const isEmailRequest = (text: string): boolean => {
     "follow up email",
     "cold email",
     "send this email",
+  ];
+  return keys.some((k) => lower.includes(k));
+};
+
+const isReferencesRequest = (text: string): boolean => {
+  const lower = text.toLowerCase();
+  const keys = [
+    "source",
+    "sources",
+    "reference",
+    "references",
+    "citation",
+    "citations",
+    "link",
+    "links",
+    "where did you get",
+    "proof",
+    "evidence",
   ];
   return keys.some((k) => lower.includes(k));
 };
@@ -676,9 +700,26 @@ const buildSearchQuery = (text: string): string => {
     .slice(0, 180);
 };
 
+const extractUrlsFromResults = (results: string[]): string[] => {
+  const urls = results
+    .map((entry) => {
+      const match = entry.match(/https?:\/\/\S+/i);
+      return match ? match[0].replace(/[),.;]+$/, "") : "";
+    })
+    .filter(Boolean);
+
+  return [...new Set(urls)].slice(0, 8);
+};
+
 const fetchGoogleCseResults = async (query: string): Promise<string[]> => {
-  const GOOGLE_API_KEY = Deno.env.get("GOOGLE_API_KEY");
-  const GOOGLE_CSE_ID = Deno.env.get("GOOGLE_CSE_ID");
+  const GOOGLE_API_KEY =
+    Deno.env.get("GOOGLE_API_KEY") ??
+    Deno.env.get("GOOGLE_SEARCH_API_KEY") ??
+    Deno.env.get("GOOGLE_CUSTOM_SEARCH_API_KEY");
+  const GOOGLE_CSE_ID =
+    Deno.env.get("GOOGLE_CSE_ID") ??
+    Deno.env.get("GOOGLE_SEARCH_ENGINE_ID") ??
+    Deno.env.get("GOOGLE_CUSTOM_SEARCH_ENGINE_ID");
   if (!GOOGLE_API_KEY || !GOOGLE_CSE_ID) return [];
 
   const url = `https://www.googleapis.com/customsearch/v1?key=${encodeURIComponent(GOOGLE_API_KEY)}&cx=${encodeURIComponent(GOOGLE_CSE_ID)}&q=${encodeURIComponent(query)}&num=8`;
@@ -738,18 +779,26 @@ const fetchDuckDuckGoResults = async (query: string): Promise<string[]> => {
   return out;
 };
 
-const getResearchContext = async (query: string): Promise<string> => {
+const getResearchContext = async (query: string, requireGoogle = false): Promise<string> => {
   if (!query) return "";
 
   const googleResults = await fetchGoogleCseResults(query);
-  const results = googleResults.length > 0 ? googleResults : await fetchDuckDuckGoResults(query);
+  const results = requireGoogle
+    ? googleResults
+    : (googleResults.length > 0 ? googleResults : await fetchDuckDuckGoResults(query));
   if (results.length === 0) return "";
 
+  const links = extractUrlsFromResults(results);
+  const linksBlock = links.length > 0
+    ? ["Verified links:", ...links.map((url, idx) => `${idx + 1}. ${url}`)].join("\n")
+    : "";
+
   return [
-    "Web research notes for this request:",
+    requireGoogle ? "Google research notes for this request:" : "Web research notes for this request:",
     ...results,
+    linksBlock,
     "Use these as supporting context, not absolute truth. If data is uncertain or location-specific, say that briefly.",
-    "If you produce a practical plan or analysis, include a short Sources section using only links listed above.",
+    "If you produce a practical plan or analysis, include a short Sources section using only full URLs listed above.",
   ].join("\n\n");
 };
 
@@ -940,6 +989,7 @@ Deno.serve(async (req) => {
 
     const memoryInstruction = buildMemoryInstruction(memoryProfile, messages ?? []);
   const emailRequested = isEmailRequest(lastUserMessage);
+  const referencesRequested = isReferencesRequest(lastUserMessage);
   const scheduleRequested = isScheduleRequest(lastUserMessage) || isScheduleConversation(messages ?? []);
   const deepThinkingRequested = thinkDeeply || emailRequested;
   const planningRequested = !scheduleRequested && (forcePlan || emailRequested || isPlanningRequest(lastUserMessage));
@@ -974,6 +1024,7 @@ Deno.serve(async (req) => {
       (emotionalRequested && !beReal ? EMOTIONAL_SUPPORT_MODE : "") +
       (ventMode && !beReal ? VENT_MODE_BASE : "") +
       (beReal && ventMode ? `\n\nVent mode + Be Real: Listen and validate briefly, but prioritize honest feedback over endless sympathy. Be empathetic but not coddling.` : ventAdviceInstruction) +
+      (referencesRequested ? REFERENCES_REQUEST_MODE : "") +
       (memoryInstruction ? `\n\nUser memory context:\n${memoryInstruction}` : "");
 
     // Add memory limit warning if user is approaching limit
@@ -987,9 +1038,11 @@ Deno.serve(async (req) => {
       return "";
     })();
 
-    const shouldUseResearch = (deepThinkingRequested || practicalRequested || logicalExecutionRequested) && !emotionalRequested;
+    const shouldUseResearch = referencesRequested || ((deepThinkingRequested || practicalRequested || logicalExecutionRequested) && !emotionalRequested);
     const researchQuery = shouldUseResearch ? buildSearchQuery(lastUserMessage) : "";
-    const researchContext = shouldUseResearch ? await getResearchContext(researchQuery) : "";
+    const researchContext = shouldUseResearch
+      ? await getResearchContext(researchQuery, referencesRequested)
+      : "";
 
     const systemMessages = [
       {

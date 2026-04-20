@@ -6,6 +6,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Mic, ArrowUp, Bookmark, Trash2, ChevronDown, Plus, Pencil, Mail, RotateCcw, CalendarDays } from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import { useSearch, useNavigate } from "@tanstack/react-router";
@@ -2067,7 +2068,16 @@ export function Chat() {
                         )}
                         {(visibleContent || (busy && i === messages.length - 1 && !m.ventChoicePending)) && (
                           <div className="prose-realtalk">
-                            <ReactMarkdown>{visibleContent || " "}</ReactMarkdown>
+                            <ReactMarkdown
+                              remarkPlugins={[remarkGfm]}
+                              components={{
+                                a: ({ node, ...props }) => (
+                                  <a {...props} target="_blank" rel="noopener noreferrer" />
+                                ),
+                              }}
+                            >
+                              {visibleContent || " "}
+                            </ReactMarkdown>
                             {busy && i === messages.length - 1 && !visibleContent && !m.ventChoicePending && (
                               <span className="caret text-muted-foreground" />
                             )}
