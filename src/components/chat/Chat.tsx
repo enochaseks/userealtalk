@@ -798,6 +798,55 @@ export function Chat() {
     return directPatterns.some(pattern => lower.includes(pattern));
   };
 
+  const buildQuickBypassResponse = (
+    rawText: string,
+    opts: {
+      thinkingRequested: boolean;
+      planningRequested: boolean;
+      activeVent: boolean;
+      activeVentAdviceMode: VentAdviceMode;
+    },
+  ): string => {
+    if (opts.activeVent && opts.activeVentAdviceMode === "none") {
+      return "I am here with you. Keep venting and I will listen. When you are ready, tap Give advice and I will switch to practical help.";
+    }
+
+    if (opts.activeVent && opts.activeVentAdviceMode === "advice") {
+      return [
+        "Quick practical reset:",
+        "1. Name the main issue in one sentence.",
+        "2. Write the one outcome you want in the next 24 hours.",
+        "3. Take one small action now that moves you toward that outcome.",
+        "4. If you want, send me that one-sentence issue and I will break it into a simple action plan.",
+      ].join("\n");
+    }
+
+    if (opts.planningRequested) {
+      return [
+        "Quick starter plan:",
+        "1. Define the exact goal and deadline.",
+        "2. List 3 options and pick one based on effort vs impact.",
+        "3. Break the chosen option into the first 5 concrete steps.",
+        "4. Set one success metric for this week.",
+        "5. Block time for step 1 today and start immediately.",
+      ].join("\n");
+    }
+
+    if (opts.thinkingRequested) {
+      return [
+        "Quick structured thinking:",
+        "- Best case",
+        "- Most likely case",
+        "- Worst case",
+        "- Biggest risk and how to reduce it",
+        "- Best next step right now",
+      ].join("\n");
+    }
+
+    const trimmed = rawText.length > 200 ? `${rawText.slice(0, 200)}...` : rawText;
+    return `The AI response was delayed. I can still help quickly: summarize your main goal in one line and your biggest blocker in one line, and I will give you a focused next step.\n\nCurrent topic: ${trimmed}`;
+  };
+
  const send = async (overrideText?: string, overrideVentAdviceMode?: VentAdviceMode) => {
   const text = (overrideText ?? input).trim();
   if (!text || busy || !user) return;
@@ -841,6 +890,9 @@ export function Chat() {
       if (forcePlan) setForcePlan(false);
     }
 
+    // Keep manual toggles sticky, but do not auto-lock modes from text detection.
+    // Auto-locking can unintentionally keep heavy modes active and slow future replies.
+
     const activeFeatures: string[] = [
       thinkingRequested ? "Deep Thinking" : "",
       planningRequested ? "Plan Mode" : "",
@@ -872,8 +924,11 @@ export function Chat() {
     },
   ]);
 
+  let conversationId: string | null = null;
+
   try {
     const cid = await ensureConversation(text);
+    conversationId = cid;
 
     await supabase.from("messages").insert({
       conversation_id: cid,
@@ -895,16 +950,18 @@ export function Chat() {
       return;
     }
 
-    // ✅ FIX 2: rebuild messages safely (NO newMsgs bug)
-    const currentMessages = [...messages, userMsg];
+    // Keep request payload bounded so responses are faster and less likely to fail.
+    const MAX_CONTEXT_MESSAGES = 16;
+    const currentMessages = [...messages, userMsg].slice(-MAX_CONTEXT_MESSAGES);
+
     const thinkingFirstInstruction =
-      "Deep thinking mode is active. Provide a thorough, well-reasoned response that shows your thinking process. Include: (1) multiple perspectives or approaches to the question, (2) key pros/cons or trade-offs, (3) underlying assumptions, (4) clear reasoning for your conclusion. Make it feel deeply considered and nuanced. When research context is available, end with 'Key References:' and list the supporting links/articles. Show intellectual depth.";
+      "Deep thinking mode is active. Give a thoughtful, structured answer with multiple angles, trade-offs, assumptions, and a clear recommendation. If sources are available, end with 'Key References:' and list them.";
     const planFirstInstruction =
-      "Plan mode is active. Return a highly detailed first-version plan immediately (10-16 actionable steps with timeline, assumptions, trade-offs, budget/effort ranges, risks, mitigations, and KPIs). Include 2-4 options with pros/cons and recommend one option with rationale. Do not lead with clarifying questions. Ask at most one follow-up question only after presenting the full plan. When research context is available, end with a Sources section containing supporting links/articles.";
+      "Plan mode is active. Provide a complete first-pass plan now: 10-16 actionable steps, timeline, risks/mitigations, effort or cost ranges, and KPIs. Include 2-4 options with pros/cons, recommend one, and ask at most one follow-up question at the end.";
     const businessFirstInstruction =
-      "Business/Marketing mode is active. Do not start with clarifying questions. First provide at least 3 practical options with pros/cons, cost/effort, and who each option suits. Then recommend one option and provide a clear starter execution plan. Ask at most one optional follow-up question at the end. Include Sources when research context is available.";
+      "Business/Marketing mode is active. Do not begin with clarifying questions. Start with at least 3 practical options, include pros/cons and effort or cost, recommend one option, then provide a starter execution plan. Ask at most one optional follow-up question at the end.";
     const logicalExecutionInstruction =
-      "Execution/startup mode: The user is asking how to start, launch, build, or execute something. Options first—no clarifying questions. Immediately provide 2-4 practical options with pros/cons, effort/cost, and who each suits. Then recommend one and provide a clear starter plan. Ask at most one optional follow-up. Include Sources when available.";
+      "Execution/startup mode is active. Options first, no upfront clarifying questions. Provide 2-4 practical options with pros/cons and effort/cost, recommend one, then provide a concrete starter plan. Ask at most one optional follow-up.";
     const outboundMessages = currentMessages.map((m, idx, arr) => {
       const isLatestUser = idx === arr.length - 1 && m.role === "user";
       const isBusinessPrompt = !scheduleRequested && isBusinessMarketingPrompt(m.content);
@@ -966,7 +1023,8 @@ export function Chat() {
 
     const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
     const chatAbort = new AbortController();
-    const chatTimeout = setTimeout(() => chatAbort.abort(), 30000);
+    const requestTimeoutMs = thinkingRequested || planningRequested || scheduleRequested || activeVent ? 45000 : 30000;
+    const chatTimeout = setTimeout(() => chatAbort.abort(), requestTimeoutMs);
     let resp: Response;
     try {
       resp = await fetch(url, {
@@ -1006,8 +1064,28 @@ export function Chat() {
     let buf = "";
     let done = false;
 
+    const STREAM_IDLE_TIMEOUT_MS = 15000;
+    const STREAM_HARD_TIMEOUT_MS = 60000;
+    const streamStartedAt = Date.now();
+
     while (!done) {
-      const { done: d, value } = await reader.read();
+      if (Date.now() - streamStartedAt > STREAM_HARD_TIMEOUT_MS) {
+        chatAbort.abort();
+        throw new Error("RealTalk took too long to complete the response.");
+      }
+
+      let idleTimeoutId: ReturnType<typeof setTimeout> | null = null;
+      const readPromise = reader.read();
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        idleTimeoutId = setTimeout(() => {
+          chatAbort.abort();
+          reject(new Error("RealTalk stream stalled."));
+        }, STREAM_IDLE_TIMEOUT_MS);
+      });
+
+      const { done: d, value } = await Promise.race([readPromise, timeoutPromise]);
+      if (idleTimeoutId) clearTimeout(idleTimeoutId);
+
       if (d) break;
 
       buf += decoder.decode(value, { stream: true });
@@ -1172,6 +1250,57 @@ export function Chat() {
     window.dispatchEvent(new Event("conversationCreated"));
 
   } catch (e: any) {
+    const errorMessage = String(e?.message || "");
+    const shouldUseQuickBypass = /too long|stream stalled|abort|timeout/i.test(errorMessage);
+
+    if (shouldUseQuickBypass) {
+      const quickBypass = buildQuickBypassResponse(text, {
+        thinkingRequested,
+        planningRequested,
+        activeVent,
+        activeVentAdviceMode,
+      });
+
+      setMessages((prev) => {
+        const copy = [...prev];
+        for (let i = copy.length - 1; i >= 0; i--) {
+          if (copy[i].role === "assistant") {
+            copy[i] = {
+              ...copy[i],
+              content: quickBypass,
+              thinking: undefined,
+              ventChoicePending: false,
+              retryable: true,
+              retryText: text,
+            };
+            return copy;
+          }
+        }
+        return [
+          ...copy,
+          {
+            role: "assistant",
+            content: quickBypass,
+            retryable: true,
+            retryText: text,
+          },
+        ];
+      });
+
+      if (conversationId) {
+        await supabase.from("messages").insert({
+          conversation_id: conversationId,
+          user_id: user.id,
+          role: "assistant",
+          content: quickBypass,
+        });
+      }
+
+      toast.error("AI took too long. Switched to quick response mode.");
+      window.dispatchEvent(new Event("conversationCreated"));
+      return;
+    }
+
     toast.error(e.message || "Something went wrong");
 
     // Keep the assistant bubble and offer an inline retry action
