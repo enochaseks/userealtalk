@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/privacy")({
   component: PrivacyPage,
@@ -18,130 +18,197 @@ function PrivacyPage() {
       </button>
       <h1 className="font-serif text-3xl tracking-tight">Privacy Policy</h1>
       <p className="mt-3 text-sm text-muted-foreground">
-        Last updated: April 19, 2026
+        Last updated: April 2026
       </p>
 
       <div className="mt-6 space-y-6 text-sm leading-relaxed text-foreground/90">
-
         <section>
-          <h2 className="font-semibold text-base">What we collect</h2>
+          <h2 className="font-semibold text-base">1. Overview</h2>
           <p className="mt-2 text-muted-foreground">
-            We store account details (email address), your chat conversations, saved plans, comfort boundary
-            settings, profile preference notes extracted from your chats, optional weekly insight data, and
-            any profile information you choose to provide (such as a display name or avatar). If schedule
-            reminder emails are enabled, we also store reminder preference settings and reminder delivery logs
-            (for example: which schedule item reminder was sent and when).
+            RealTalk is an AI-powered platform designed to help users reflect, gain clarity, and make better decisions through conversation.
+          </p>
+          <p className="mt-2 text-muted-foreground">
+            This policy explains what data we collect, how it is used, and the control you have over it.
           </p>
         </section>
 
         <section>
-          <h2 className="font-semibold text-base">RealTime Neurons — brain growth card</h2>
+          <h2 className="font-semibold text-base">2. What We Collect</h2>
+          <p className="mt-2 text-muted-foreground">We may collect and store the following:</p>
+          <ul className="mt-2 list-disc pl-5 text-muted-foreground space-y-1">
+            <li>Account information (e.g. email address)</li>
+            <li>Chat conversations and generated responses</li>
+            <li>Saved plans and profile preferences</li>
+            <li>Comfort boundary settings</li>
+            <li>Preference signals extracted from conversations (e.g. communication style, emotional patterns)</li>
+            <li>Weekly insight data (if enabled)</li>
+            <li>Optional profile details (e.g. display name, avatar)</li>
+            <li>Reminder settings and delivery logs (if enabled)</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2 className="font-semibold text-base">3. AI Processing &amp; Profile Learning</h2>
           <p className="mt-2 text-muted-foreground">
-            RealTalk includes a visual feature called <strong>RealTime Neurons</strong> — an animated brain card
-            on your profile's Insights tab. This card reflects how well RealTalk has learned about you across
-            eight dimensions: interests, communication style, life context, emotional patterns, positive
-            response signals, comfort boundaries, weekly insight depth, and plan engagement.
+            RealTalk automatically processes conversations to identify patterns and improve responses.
           </p>
+          <p className="mt-2 text-muted-foreground">This includes extracting signals such as:</p>
+          <ul className="mt-2 list-disc pl-5 text-muted-foreground space-y-1">
+            <li>interests</li>
+            <li>communication style</li>
+            <li>life context</li>
+            <li>emotional patterns</li>
+            <li>positive response signals</li>
+            <li>comfort boundaries</li>
+          </ul>
           <p className="mt-2 text-muted-foreground">
-            Brain growth progress is stored in your browser's <strong>localStorage</strong> under the key
-            <code className="mx-1 px-1 rounded bg-muted text-xs font-mono">brain_growth_v3_&#123;userId&#125;</code>.
-            This data stays on your device — it is not synced to our servers. Clearing your browser data or
-            switching browsers will reset the displayed growth level. The underlying profile data that drives
-            the neurons (interests, style, etc.) is always stored server-side in your account.
+            This processing occurs after conversations and is used solely to personalise your experience.
           </p>
         </section>
 
         <section>
-          <h2 className="font-semibold text-base">Profile learning (automatic)</h2>
+          <h2 className="font-semibold text-base">4. RealTime Neurons (Brain Growth Feature)</h2>
           <p className="mt-2 text-muted-foreground">
-            After each conversation, RealTalk automatically extracts preference signals from your recent
-            messages using an AI model. This runs silently in the background and updates stored fields
-            including: interests, communication style, life context, emotional tone, positive response
-            signals, and comfort boundaries. This data is used solely to personalise future conversations
-            and is linked to your account in our database.
+            RealTalk includes a visual feature called <strong>RealTime Neurons</strong>, which reflects how the system has learned about you across multiple dimensions.
           </p>
+          <ul className="mt-2 list-disc pl-5 text-muted-foreground space-y-1">
+            <li>Brain growth progress is stored locally in your browser (localStorage)</li>
+            <li>This data is not synced to our servers</li>
+            <li>Clearing your browser data will reset this visual progress</li>
+          </ul>
           <p className="mt-2 text-muted-foreground">
-            You can review and delete your stored profile data at any time via the account data page.
-          </p>
-        </section>
-
-        <section>
-          <h2 className="font-semibold text-base">Weekly insights</h2>
-          <p className="mt-2 text-muted-foreground">
-            If weekly insights are enabled in your profile settings, RealTalk generates a structured
-            summary of emotional trends, thought patterns, and interaction quality across your recent
-            chats each week. These insights are stored in your account and can optionally be emailed
-            to your Gmail address. You can disable this feature at any time in your profile settings.
+            The underlying profile data used to generate this feature is stored securely in your account.
           </p>
         </section>
 
         <section>
-          <h2 className="font-semibold text-base">AI providers</h2>
+          <h2 className="font-semibold text-base">5. Weekly Insights</h2>
           <p className="mt-2 text-muted-foreground">
-            RealTalk uses a cascade of AI providers to power chat responses, profile learning, and weekly
-            insights. The primary provider is <strong>Mistral AI</strong>. If Mistral is unavailable,
-            requests fall back to <strong>Cloudflare Workers AI (Llama 3.1 8B)</strong>. Optional
-            Gemini fallback may be enabled during maintenance windows. Your messages are sent to whichever provider handles your request.
-            All providers process data under their own privacy policies. We do not share your identity
-            with these providers — only the text content of the current request is transmitted.
+            If enabled, RealTalk generates weekly summaries based on your conversations, including:
+          </p>
+          <ul className="mt-2 list-disc pl-5 text-muted-foreground space-y-1">
+            <li>emotional trends</li>
+            <li>thought patterns</li>
+            <li>interaction quality</li>
+          </ul>
+          <p className="mt-2 text-muted-foreground">
+            These insights are stored in your account and may be emailed to you if you opt in.
+          </p>
+          <p className="mt-2 text-muted-foreground">You can disable this feature at any time.</p>
+        </section>
+
+        <section>
+          <h2 className="font-semibold text-base">6. Third-Party AI Providers</h2>
+          <p className="mt-2 text-muted-foreground">
+            RealTalk uses third-party AI providers to generate responses and process data, including:
+          </p>
+          <ul className="mt-2 list-disc pl-5 text-muted-foreground space-y-1">
+            <li>Mistral AI</li>
+            <li>Cloudflare</li>
+            <li>Google (optional fallback)</li>
+          </ul>
+          <p className="mt-2 text-muted-foreground">Your messages may be processed by these providers to generate responses.</p>
+          <ul className="mt-2 list-disc pl-5 text-muted-foreground space-y-1">
+            <li>Only the content necessary for each request is shared</li>
+            <li>We do not share identifying account information</li>
+            <li>Data is used strictly for request processing</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2 className="font-semibold text-base">7. Gmail Integration (Optional)</h2>
+          <p className="mt-2 text-muted-foreground">If you connect your Google account:</p>
+          <ul className="mt-2 list-disc pl-5 text-muted-foreground space-y-1">
+            <li>RealTalk requests permission only to send emails on your behalf</li>
+            <li>This is used for features such as scheduled reminders or weekly insights (if enabled)</li>
+            <li>RealTalk does not read, store, or analyse your Gmail messages</li>
+          </ul>
+          <p className="mt-2 text-muted-foreground">
+            Gmail integration is optional and not required for core features.
           </p>
         </section>
 
         <section>
-          <h2 className="font-semibold text-base">How Gmail access works</h2>
+          <h2 className="font-semibold text-base">8. How We Use Your Data</h2>
+          <p className="mt-2 text-muted-foreground">Your data is used to:</p>
+          <ul className="mt-2 list-disc pl-5 text-muted-foreground space-y-1">
+            <li>generate AI responses</li>
+            <li>personalise your experience</li>
+            <li>improve conversation quality</li>
+            <li>generate insights and plans</li>
+            <li>display features such as RealTime Neurons</li>
+            <li>send optional emails (if enabled)</li>
+          </ul>
           <p className="mt-2 text-muted-foreground">
-            Gmail access is entirely optional. If you choose to connect Google, RealTalk requests the Gmail
-            send scope only — used to send emails you explicitly initiate from within the app and optional
-            weekly insight emails if you opt in. RealTalk does not read,
-            index, or store your Gmail messages. Gmail connection is not required for any core feature.
-            For users without Gmail connection, schedule reminder emails are sent via our platform email provider.
+            We do not sell your data or use it for advertising.
           </p>
         </section>
 
         <section>
-          <h2 className="font-semibold text-base">How we use your data</h2>
+          <h2 className="font-semibold text-base">9. Data Retention</h2>
           <p className="mt-2 text-muted-foreground">
-            Your data is used to: provide and improve the chat experience; personalise responses using
-            learned preferences; generate plans and weekly insight summaries; display your RealTime Neurons
-            brain growth card; and send optional weekly insight emails. We do not sell your data or use
-            it for advertising.
+            Your data is retained for as long as your account exists.
+          </p>
+          <p className="mt-2 text-muted-foreground">You can:</p>
+          <ul className="mt-2 list-disc pl-5 text-muted-foreground space-y-1">
+            <li>export your data</li>
+            <li>delete your account at any time</li>
+          </ul>
+          <p className="mt-2 text-muted-foreground">
+            On deletion, all server-side data (including conversations, insights, and preferences) is permanently removed.
+          </p>
+          <p className="mt-2 text-muted-foreground">Local browser data must be cleared manually.</p>
+        </section>
+
+        <section>
+          <h2 className="font-semibold text-base">10. Your Control</h2>
+          <p className="mt-2 text-muted-foreground">You can:</p>
+          <ul className="mt-2 list-disc pl-5 text-muted-foreground space-y-1">
+            <li>view your stored data</li>
+            <li>export your data</li>
+            <li>delete your account</li>
+            <li>enable or disable insights and email features</li>
+          </ul>
+          <p className="mt-2 text-muted-foreground">All controls are available via the account data page.</p>
+        </section>
+
+        <section>
+          <h2 className="font-semibold text-base">11. Sensitive Information</h2>
+          <p className="mt-2 text-muted-foreground">
+            We recognise that conversations may include personal or sensitive thoughts.
+          </p>
+          <p className="mt-2 text-muted-foreground">
+            RealTalk is designed to handle this responsibly, but users should avoid sharing highly sensitive personal, medical, or confidential information.
           </p>
         </section>
 
         <section>
-          <h2 className="font-semibold text-base">Data retention</h2>
+          <h2 className="font-semibold text-base">12. Security</h2>
           <p className="mt-2 text-muted-foreground">
-            Your data is retained for as long as your account exists. You may export or delete your data
-            at any time. On account deletion, all server-side data (chats, plans, insights, profile
-            preferences) is permanently removed. Browser localStorage data (such as brain growth progress)
-            must be cleared manually from your browser settings.
+            We implement appropriate safeguards to protect your data from unauthorised access or misuse.
           </p>
         </section>
 
         <section>
-          <h2 className="font-semibold text-base">Your choices</h2>
+          <h2 className="font-semibold text-base">13. Changes to This Policy</h2>
           <p className="mt-2 text-muted-foreground">
-            You can export your data, review what is stored, and permanently delete your account from
-            the account data page. You can disable weekly insights, weekly insight email delivery, and
-            schedule reminder emails at any time in your profile settings.
+            We may update this policy as RealTalk evolves. Updates will be reflected by the "Last updated" date.
           </p>
-          <div className="mt-2">
-            <Link to="/account-data" className="text-primary hover:underline">
-              Go to account &amp; data export
-            </Link>
-          </div>
         </section>
 
         <section>
-          <h2 className="font-semibold text-base">Contact</h2>
+          <h2 className="font-semibold text-base">14. Contact</h2>
+          <p className="mt-2 text-muted-foreground">For privacy-related questions:</p>
           <p className="mt-2 text-muted-foreground">
-            For privacy questions or data requests, message us on Instagram{" "}
-            <a href="https://instagram.com/userealtalk" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
-              @userealtalk
-            </a>.
+            <strong>Email:</strong>{" "}
+            <a
+              href="mailto:support@userealtalk.co.uk"
+              className="text-primary hover:underline"
+            >
+              support@userealtalk.co.uk
+            </a>
           </p>
         </section>
-
       </div>
     </div>
   );

@@ -821,9 +821,9 @@ export function Chat() {
     const ventRequested = forceVent || ventDetectedFromText || !!overrideVentAdviceMode;
     const activeVentAdviceMode = overrideVentAdviceMode ?? ventAdviceMode;
     const activeVent = ventRequested;
-    // Show manual vent choice only when vent was explicitly forced by toggle.
-    // If vent is auto-detected from text, respond immediately in vent mode.
-    const shouldOfferVentChoice = forceVent && !overrideVentAdviceMode && activeVentAdviceMode === "none";
+    // Offer the vent choice whenever vent is active and no explicit advice mode was picked.
+    // This covers both manual Vent toggle and auto-detected vent language.
+    const shouldOfferVentChoice = activeVent && !overrideVentAdviceMode && activeVentAdviceMode === "none";
 
     const featureSnapshot = await refreshSubscription();
     if (scheduleRequested && featureSnapshot && !hasFeatureAccess(featureSnapshot.plan, "schedule")) {
