@@ -12,6 +12,8 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SafetyAdminRouteImport } from './routes/safety-admin'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
+import { Route as RecoverRouteImport } from './routes/recover'
 import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as AuthRouteImport } from './routes/auth'
@@ -31,6 +33,16 @@ const SettingsRoute = SettingsRouteImport.update({
 const SafetyAdminRoute = SafetyAdminRouteImport.update({
   id: '/safety-admin',
   path: '/safety-admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RecoverRoute = RecoverRouteImport.update({
+  id: '/recover',
+  path: '/recover',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProfileRoute = ProfileRouteImport.update({
@@ -65,6 +77,8 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/privacy': typeof PrivacyRoute
   '/profile': typeof ProfileRoute
+  '/recover': typeof RecoverRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/safety-admin': typeof SafetyAdminRoute
   '/settings': typeof SettingsRoute
   '/terms': typeof TermsRoute
@@ -75,6 +89,8 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/privacy': typeof PrivacyRoute
   '/profile': typeof ProfileRoute
+  '/recover': typeof RecoverRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/safety-admin': typeof SafetyAdminRoute
   '/settings': typeof SettingsRoute
   '/terms': typeof TermsRoute
@@ -86,6 +102,8 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/privacy': typeof PrivacyRoute
   '/profile': typeof ProfileRoute
+  '/recover': typeof RecoverRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/safety-admin': typeof SafetyAdminRoute
   '/settings': typeof SettingsRoute
   '/terms': typeof TermsRoute
@@ -98,6 +116,8 @@ export interface FileRouteTypes {
     | '/auth'
     | '/privacy'
     | '/profile'
+    | '/recover'
+    | '/reset-password'
     | '/safety-admin'
     | '/settings'
     | '/terms'
@@ -108,6 +128,8 @@ export interface FileRouteTypes {
     | '/auth'
     | '/privacy'
     | '/profile'
+    | '/recover'
+    | '/reset-password'
     | '/safety-admin'
     | '/settings'
     | '/terms'
@@ -118,6 +140,8 @@ export interface FileRouteTypes {
     | '/auth'
     | '/privacy'
     | '/profile'
+    | '/recover'
+    | '/reset-password'
     | '/safety-admin'
     | '/settings'
     | '/terms'
@@ -129,6 +153,8 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRoute
   PrivacyRoute: typeof PrivacyRoute
   ProfileRoute: typeof ProfileRoute
+  RecoverRoute: typeof RecoverRoute
+  ResetPasswordRoute: typeof ResetPasswordRoute
   SafetyAdminRoute: typeof SafetyAdminRoute
   SettingsRoute: typeof SettingsRoute
   TermsRoute: typeof TermsRoute
@@ -155,6 +181,20 @@ declare module '@tanstack/react-router' {
       path: '/safety-admin'
       fullPath: '/safety-admin'
       preLoaderRoute: typeof SafetyAdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/recover': {
+      id: '/recover'
+      path: '/recover'
+      fullPath: '/recover'
+      preLoaderRoute: typeof RecoverRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/profile': {
@@ -201,6 +241,8 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRoute,
   PrivacyRoute: PrivacyRoute,
   ProfileRoute: ProfileRoute,
+  RecoverRoute: RecoverRoute,
+  ResetPasswordRoute: ResetPasswordRoute,
   SafetyAdminRoute: SafetyAdminRoute,
   SettingsRoute: SettingsRoute,
   TermsRoute: TermsRoute,

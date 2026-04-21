@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -13,19 +14,22 @@ import logo from "../assets/logo.png";
 const SIGNUP_COOLDOWN_MS = 60_000;
 const SIGNUP_LAST_ATTEMPT_KEY = "realtalk_signup_last_attempt";
 
+const normalizeEmail = (value: string) => value.trim().toLowerCase();
+
 export const Route = createFileRoute("/auth")({
   component: AuthPage,
   head: () => ({ meta: [{ title: "Sign in — RealTalk" }] }),
 });
 
 function AuthPage() {
-  const { signIn, signUp, signInWithGoogle, user } = useAuth();
+  const { signIn, signUp, requestPasswordReset, signInWithGoogle, user } = useAuth();
   const navigate = useNavigate();
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [keep, setKeep] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -76,6 +80,29 @@ function AuthPage() {
     // On success, Supabase redirects automatically.
   };
 
+  const handlePasswordReset = async () => {
+    const normalized = normalizeEmail(email);
+    if (!normalized) {
+      toast.error("Enter your email first, then request a password reset.");
+      return;
+    }
+
+    setBusy(true);
+    const { error, status } = await requestPasswordReset(normalized);
+    setBusy(false);
+
+    if (error) {
+      if (status === 429) {
+        toast.error("Reset email is being rate-limited by Supabase right now. Wait and retry, or increase Auth email rate limits in Supabase dashboard.");
+        return;
+      }
+      toast.error(error);
+      return;
+    }
+
+    toast.success("We sent your RealTalk password reset link. Check your inbox to keep going.");
+  };
+
   return (
     <div className="flex-1 realtalk-ambient flex items-center justify-center px-5 py-12">
       <motion.div
@@ -113,13 +140,37 @@ function AuthPage() {
               <Label htmlFor="password">Password</Label>
               <Input
                 id="password"
-                type="password"
+                type={showPassword ? "text" : "password"}
                 required
                 minLength={6}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
             </div>
+
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="show-password"
+                checked={showPassword}
+                onCheckedChange={(checked) => setShowPassword(checked === true)}
+              />
+              <Label htmlFor="show-password" className="text-sm text-muted-foreground cursor-pointer select-none">
+                Show password
+              </Label>
+            </div>
+
+            {mode === "signin" ? (
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={handlePasswordReset}
+                  disabled={busy}
+                  className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Forgot password?
+                </button>
+              </div>
+            ) : null}
 
             {/* Keep me logged in */}
             <div className="flex items-center justify-between py-1">

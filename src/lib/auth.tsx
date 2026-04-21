@@ -21,7 +21,7 @@ function mapAuthError(error?: { message?: string; code?: string; status?: number
     message.includes("too many requests") ||
     message.includes("rate limit")
   ) {
-    return "Too many attempts. Please wait about 60 seconds, then try again.";
+    return "Too many reset requests right now. Please wait a few minutes and try again.";
   }
 
   if (error.code === "invalid_credentials") {
@@ -33,6 +33,19 @@ function mapAuthError(error?: { message?: string; code?: string; status?: number
   }
 
   return error.message || "Authentication failed";
+}
+
+function extractRetryAfterSeconds(message?: string) {
+  if (!message) return undefined;
+  const lower = message.toLowerCase();
+
+  const secondsMatch = lower.match(/(\d+)\s*(seconds|second|secs|sec|s)\b/);
+  if (secondsMatch) return Number(secondsMatch[1]);
+
+  const minutesMatch = lower.match(/(\d+)\s*(minutes|minute|mins|min|m)\b/);
+  if (minutesMatch) return Number(minutesMatch[1]) * 60;
+
+  return undefined;
 }
 
 function getGoogleAuthOptions() {
@@ -52,6 +65,7 @@ type AuthCtx = {
   loading: boolean;
   signIn: (email: string, password: string, keep?: boolean) => Promise<{ error?: string }>;
   signUp: (email: string, password: string, keep?: boolean) => Promise<{ error?: string }>;
+  requestPasswordReset: (email: string) => Promise<{ error?: string; retryAfterSeconds?: number; status?: number }>;
   signInWithGoogle: (keep?: boolean) => Promise<{ error?: string }>;
   connectGoogleForGmail: () => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
@@ -186,6 +200,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         options: { emailRedirectTo: window.location.origin },
       });
       return { error: mapAuthError(error) };
+    },
+    requestPasswordReset: async (email) => {
+      const { error } = await supabase.auth.resetPasswordForEmail(normalizeEmail(email), {
+        redirectTo: `${window.location.origin}/recover`,
+      });
+      return {
+        error: mapAuthError(error),
+        retryAfterSeconds: extractRetryAfterSeconds(error?.message),
+        status: error?.status,
+      };
     },
     signInWithGoogle: async (keep = true) => {
       localStorage.setItem(KEEP_KEY, String(keep));
