@@ -114,17 +114,13 @@ function RootShell({ children }: { children: React.ReactNode }) {
   const chunkRecoveryScript = `
     (() => {
       if (typeof window === "undefined") return;
-      const key = "realtalk_chunk_reloaded_once";
-      const reloadOnce = () => {
+      const key = "realtalk_chunk_error_seen";
+      const markChunkIssue = () => {
         try {
           if (sessionStorage.getItem(key)) return;
           sessionStorage.setItem(key, "1");
-          const next = new URL(window.location.href);
-          next.searchParams.set("_cb", Date.now().toString());
-          window.location.replace(next.toString());
-        } catch {
-          window.location.reload();
-        }
+          console.warn("RealTalk chunk load issue detected. Auto-reload is disabled to protect in-progress chat input.");
+        } catch {}
       };
 
       const shouldRecover = (value) => {
@@ -133,12 +129,12 @@ function RootShell({ children }: { children: React.ReactNode }) {
       };
 
       window.addEventListener("error", (event) => {
-        if (shouldRecover(event?.message)) reloadOnce();
+        if (shouldRecover(event?.message)) markChunkIssue();
       });
 
       window.addEventListener("unhandledrejection", (event) => {
         const reason = event?.reason;
-        if (shouldRecover(reason?.message || reason)) reloadOnce();
+        if (shouldRecover(reason?.message || reason)) markChunkIssue();
       });
     })();
   `;
