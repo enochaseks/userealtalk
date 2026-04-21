@@ -881,6 +881,38 @@ const getVentReadTime = (text: string, ventMode: boolean): number => {
   return Math.min(computed, 7000);
 };
 
+type SafetyViolation = {
+  category: "violent_threat" | "abusive_harassment";
+  severity: "high" | "medium";
+};
+
+const detectSafetyViolation = (text: string): SafetyViolation | null => {
+  const lower = String(text ?? "").toLowerCase();
+  if (!lower.trim()) return null;
+
+  const firstPersonIntent = /(i\s*(will|am going to|gonna)|let me|should i|i want to)/.test(lower);
+  const targetMarkers = /(him|her|them|that person|my ex|my boss|my neighbor|people|someone)/.test(lower);
+
+  const violentAction = /(kill|stab|shoot|beat up|assault|attack|hurt|harm|poison|burn|bomb)/.test(lower);
+  if (violentAction && firstPersonIntent && targetMarkers) {
+    return { category: "violent_threat", severity: "high" };
+  }
+
+  const abusiveHarassment = /(i\s*(will|am going to|gonna)\s*(destroy|ruin|terrorize|harass|intimidate))/.test(lower);
+  if (abusiveHarassment && targetMarkers) {
+    return { category: "abusive_harassment", severity: "medium" };
+  }
+
+  return null;
+};
+
+const buildImmediateSseResponse = (content: string): Response => {
+  const payload = `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n` + "data: [DONE]\n\n";
+  return new Response(payload, {
+    headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
+  });
+};
+
 const buildWorkersPrompt = (systemText: string, messages: Array<{ role: string; content: string }>): string => {
   const convo = messages
     .filter((m) => m?.content)
@@ -997,6 +1029,62 @@ Deno.serve(async (req) => {
       SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY
         ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
         : null;
+
+    if (admin && userId) {
+      const { data: enforcement } = await admin
+        .from("user_safety_enforcement")
+        .select("strike_count, restricted_until")
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      const restrictedUntil = enforcement?.restricted_until ? new Date(enforcement.restricted_until) : null;
+      const now = new Date();
+
+      if (restrictedUntil && restrictedUntil.getTime() > now.getTime()) {
+        return buildImmediateSseResponse(
+          "Your account is temporarily restricted due to violent or abusive threat language that could endanger others. Please wait 24 hours before sending new messages. If this was a mistake, contact support.",
+        );
+      }
+
+      const violation = detectSafetyViolation(lastUserMessage);
+      if (violation) {
+        const nextStrike = Number(enforcement?.strike_count ?? 0) + 1;
+        const restrictNow = nextStrike >= 3;
+        const nextRestrictedUntil = restrictNow ? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() : null;
+
+        await admin.from("user_safety_enforcement").upsert({
+          user_id: userId,
+          strike_count: nextStrike,
+          restricted_until: nextRestrictedUntil,
+          last_violation_at: now.toISOString(),
+          updated_at: now.toISOString(),
+        });
+
+        await admin.from("user_safety_events").insert({
+          user_id: userId,
+          category: violation.category,
+          severity: violation.severity,
+          action: restrictNow ? "temporary_lock_24h" : "strike",
+          message_excerpt: String(lastUserMessage ?? "").slice(0, 500),
+        });
+
+        if (restrictNow) {
+          return buildImmediateSseResponse(
+            "Safety lock activated: this is strike 3 for violent/abusive threat language that could lead to real harm. Your chat access is paused for 24 hours.",
+          );
+        }
+
+        if (nextStrike === 2) {
+          return buildImmediateSseResponse(
+            "Final warning: strike 2 recorded for violent/abusive threat language toward others. One more strike triggers a 24-hour chat lock.",
+          );
+        }
+
+        return buildImmediateSseResponse(
+          "Warning: strike 1 recorded. Violent or abusive threat language toward others is not allowed. Continue safely or your account may be restricted.",
+        );
+      }
+    }
 
     let memoryProfile: any = null;
     if (admin && userId) {

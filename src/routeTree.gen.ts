@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as SafetyAdminRouteImport } from './routes/safety-admin'
 import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as AuthRouteImport } from './routes/auth'
@@ -25,6 +26,11 @@ const TermsRoute = TermsRouteImport.update({
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SafetyAdminRoute = SafetyAdminRouteImport.update({
+  id: '/safety-admin',
+  path: '/safety-admin',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProfileRoute = ProfileRouteImport.update({
@@ -59,6 +65,7 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/privacy': typeof PrivacyRoute
   '/profile': typeof ProfileRoute
+  '/safety-admin': typeof SafetyAdminRoute
   '/settings': typeof SettingsRoute
   '/terms': typeof TermsRoute
 }
@@ -68,6 +75,7 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/privacy': typeof PrivacyRoute
   '/profile': typeof ProfileRoute
+  '/safety-admin': typeof SafetyAdminRoute
   '/settings': typeof SettingsRoute
   '/terms': typeof TermsRoute
 }
@@ -78,6 +86,7 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/privacy': typeof PrivacyRoute
   '/profile': typeof ProfileRoute
+  '/safety-admin': typeof SafetyAdminRoute
   '/settings': typeof SettingsRoute
   '/terms': typeof TermsRoute
 }
@@ -89,6 +98,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/privacy'
     | '/profile'
+    | '/safety-admin'
     | '/settings'
     | '/terms'
   fileRoutesByTo: FileRoutesByTo
@@ -98,6 +108,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/privacy'
     | '/profile'
+    | '/safety-admin'
     | '/settings'
     | '/terms'
   id:
@@ -107,6 +118,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/privacy'
     | '/profile'
+    | '/safety-admin'
     | '/settings'
     | '/terms'
   fileRoutesById: FileRoutesById
@@ -117,6 +129,7 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRoute
   PrivacyRoute: typeof PrivacyRoute
   ProfileRoute: typeof ProfileRoute
+  SafetyAdminRoute: typeof SafetyAdminRoute
   SettingsRoute: typeof SettingsRoute
   TermsRoute: typeof TermsRoute
 }
@@ -135,6 +148,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/safety-admin': {
+      id: '/safety-admin'
+      path: '/safety-admin'
+      fullPath: '/safety-admin'
+      preLoaderRoute: typeof SafetyAdminRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/profile': {
@@ -181,6 +201,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRoute,
   PrivacyRoute: PrivacyRoute,
   ProfileRoute: ProfileRoute,
+  SafetyAdminRoute: SafetyAdminRoute,
   SettingsRoute: SettingsRoute,
   TermsRoute: TermsRoute,
 }
