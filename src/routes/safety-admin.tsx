@@ -235,9 +235,6 @@ function SafetyAdminPage() {
         </Button>
         <h1 className="font-serif text-3xl tracking-tight">App Policy</h1>
         <p className="text-sm text-muted-foreground">Loading policy information...</p>
-        <div className="rounded-xl border border-border bg-surface/60 p-4 text-sm text-muted-foreground">
-          Please wait while we verify account access.
-        </div>
       </div>
     );
   }
