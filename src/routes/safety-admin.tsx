@@ -34,8 +34,42 @@ function SafetyAdminPage() {
   const [rows, setRows] = useState<SafetyRow[]>([]);
   const [busy, setBusy] = useState(false);
   const [actionUserId, setActionUserId] = useState<string | null>(null);
+  const [isAuthorizedAdmin, setIsAuthorizedAdmin] = useState(false);
+  const [authCheckComplete, setAuthCheckComplete] = useState(false);
 
   const isSignedIn = Boolean(user?.id);
+  const handleBack = () => {
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      window.history.back();
+      return;
+    }
+    window.location.assign("/");
+  };
+
+  const isUnauthorizedError = async (error: any): Promise<boolean> => {
+    const status = Number(error?.context?.status ?? error?.status ?? 0);
+    if (status === 401 || status === 403) return true;
+
+    const message = String(error?.message ?? "").toLowerCase();
+    if (message.includes("401") || message.includes("403") || message.includes("unauthorized") || message.includes("forbidden")) {
+      return true;
+    }
+
+    try {
+      const response = error?.context;
+      if (response && typeof response.clone === "function") {
+        const body = await response.clone().json().catch(() => null);
+        const bodyText = JSON.stringify(body ?? {}).toLowerCase();
+        if (bodyText.includes("unauthorized") || bodyText.includes("forbidden") || bodyText.includes("401") || bodyText.includes("403")) {
+          return true;
+        }
+      }
+    } catch {
+      // Ignore parse failures and fall back to standard error handling.
+    }
+
+    return false;
+  };
 
   const loadRows = async () => {
     if (!isSignedIn) return;
@@ -54,17 +88,35 @@ function SafetyAdminPage() {
       });
       if (error) throw error;
       setRows((data?.rows ?? []) as SafetyRow[]);
+      setIsAuthorizedAdmin(true);
+      setAuthCheckComplete(true);
     } catch (e: any) {
-      toast.error(e?.message || "Failed to load safety data. You may not have admin access.");
+      const unauthorized = await isUnauthorizedError(e);
+      if (unauthorized) {
+        setIsAuthorizedAdmin(false);
+        setAuthCheckComplete(true);
+        setRows([]);
+        return;
+      }
+
+      toast.error(e?.message || "Failed to load safety data. Please try again.");
       setRows([]);
+      setAuthCheckComplete(true);
     } finally {
       setBusy(false);
     }
   };
 
   useEffect(() => {
-    void loadRows();
-  }, [isSignedIn]);
+    setRows([]);
+    setActionUserId(null);
+    setIsAuthorizedAdmin(false);
+    setAuthCheckComplete(false);
+
+    if (user?.id) {
+      void loadRows();
+    }
+  }, [user?.id]);
 
   const activeRestrictions = useMemo(
     () => rows.filter((r) => r.restricted_until && new Date(r.restricted_until).getTime() > Date.now()).length,
@@ -97,9 +149,46 @@ function SafetyAdminPage() {
 
   if (!isSignedIn) {
     return (
-      <div className="flex-1 max-w-4xl w-full mx-auto px-5 py-10">
-        <h1 className="font-serif text-3xl tracking-tight">Safety Admin</h1>
-        <p className="mt-3 text-sm text-muted-foreground">Sign in with an approved admin account to access moderation tools.</p>
+      <div className="flex-1 max-w-4xl w-full mx-auto px-5 py-10 space-y-4">
+        <Button variant="outline" size="sm" onClick={handleBack} className="w-fit">
+          Back
+        </Button>
+        <h1 className="font-serif text-3xl tracking-tight">App Policy</h1>
+        <p className="mt-3 text-sm text-muted-foreground">Sign in to view your account policy and platform guidelines.</p>
+      </div>
+    );
+  }
+
+  if (!authCheckComplete) {
+    return (
+      <div className="flex-1 max-w-4xl w-full mx-auto px-5 py-10 space-y-4">
+        <Button variant="outline" size="sm" onClick={handleBack} className="w-fit">
+          Back
+        </Button>
+        <h1 className="font-serif text-3xl tracking-tight">App Policy</h1>
+        <p className="text-sm text-muted-foreground">Loading policy information...</p>
+        <div className="rounded-xl border border-border bg-surface/60 p-4 text-sm text-muted-foreground">
+          Please wait while we verify account access.
+        </div>
+      </div>
+    );
+  }
+
+  if (authCheckComplete && !isAuthorizedAdmin) {
+    return (
+      <div className="flex-1 max-w-4xl w-full mx-auto px-5 py-10 space-y-4">
+        <Button variant="outline" size="sm" onClick={handleBack} className="w-fit">
+          Back
+        </Button>
+        <h1 className="font-serif text-3xl tracking-tight">App Policy</h1>
+        <p className="text-sm text-muted-foreground">
+          RealTalk applies automated and manual safeguards to help protect users and maintain a safe platform.
+        </p>
+        <div className="rounded-xl border border-border bg-surface/60 p-4 text-sm text-muted-foreground space-y-2">
+          <p>We monitor policy-sensitive activity signals to prevent harm, abuse, and misuse.</p>
+          <p>Enforcement actions may include warnings, temporary restrictions, and account review where necessary.</p>
+          <p>Policy operations interfaces are restricted and not available on standard user accounts.</p>
+        </div>
       </div>
     );
   }

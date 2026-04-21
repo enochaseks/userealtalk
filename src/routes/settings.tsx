@@ -511,7 +511,7 @@ function SettingsPage() {
             <Link to="/privacy" className="text-primary hover:underline">Privacy Policy</Link>
             <Link to="/terms" className="text-primary hover:underline">Terms</Link>
             <Link to="/account-data" className="text-primary hover:underline">Account & data export</Link>
-            <Link to="/safety-admin" className="text-primary hover:underline">Safety admin</Link>
+            <Link to="/safety-admin" className="text-primary hover:underline">App policy</Link>
           </div>
         </div>
 

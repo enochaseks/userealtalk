@@ -48,15 +48,26 @@ Deno.serve(async (req) => {
     const { data: authData, error: authErr } = await admin.auth.getUser(token);
 
     if (authErr || !authData?.user?.email) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      console.error("Auth error:", authErr);
+      console.error("Auth data:", authData);
+      return new Response(JSON.stringify({ 
+        error: "Unauthorized",
+        debug: `Token validation failed. Error: ${authErr?.message || "unknown"}`,
+      }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     const requesterEmail = String(authData.user.email).toLowerCase();
+    console.log("Requester email:", requesterEmail);
+    console.log("Allowed emails:", Array.from(adminEmails));
+    
     if (!adminEmails.has(requesterEmail)) {
-      return new Response(JSON.stringify({ error: "Forbidden" }), {
+      return new Response(JSON.stringify({ 
+        error: "Forbidden",
+        debug: `Email ${requesterEmail} not in admin list. Allowed: ${Array.from(adminEmails).join(", ")}`,
+      }), {
         status: 403,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
