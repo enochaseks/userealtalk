@@ -8,6 +8,7 @@ import { Mic, ArrowUp, Bookmark, Trash2, ChevronDown, Plus, Pencil, Mail, Rotate
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { motion, AnimatePresence } from "framer-motion";
+import { Document, Packer, Paragraph, TextRun } from "docx";
 import { jsPDF } from "jspdf";
 import { toast } from "sonner";
 import { useSearch, useNavigate } from "@tanstack/react-router";
@@ -1668,24 +1669,34 @@ export function Chat() {
     }
   };
 
-  const downloadPlanAsWord = (title: string, content: string) => {
+  const downloadPlanAsWord = async (title: string, content: string) => {
     try {
-      const escapedTitle = (title || "Plan")
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
-      const escapedBody = (content || "")
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/\n/g, "<br>");
+      const paragraphs: Paragraph[] = [
+        new Paragraph({
+          children: [new TextRun({ text: title || "Plan", bold: true, size: 32 })],
+          spacing: { after: 240 },
+        }),
+      ];
 
-      const wordHtml = `<!doctype html><html><head><meta charset="utf-8"></head><body><h1>${escapedTitle}</h1><p>${escapedBody}</p></body></html>`;
-      const blob = new Blob([wordHtml], { type: "application/msword;charset=utf-8" });
+      const lines = (content || "").split(/\r?\n/);
+      for (const line of lines) {
+        paragraphs.push(
+          new Paragraph({
+            children: [new TextRun({ text: line || " " })],
+            spacing: { after: 120 },
+          }),
+        );
+      }
+
+      const doc = new Document({
+        sections: [{ children: paragraphs }],
+      });
+
+      const blob = await Packer.toBlob(doc);
       const url = URL.createObjectURL(blob);
       const element = document.createElement("a");
       element.setAttribute("href", url);
-      element.setAttribute("download", `${toSafeFilename(title)}.doc`);
+      element.setAttribute("download", `${toSafeFilename(title)}.docx`);
       element.style.display = "none";
       document.body.appendChild(element);
       element.click();

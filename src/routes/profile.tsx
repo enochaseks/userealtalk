@@ -5,6 +5,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import ReactMarkdown from "react-markdown";
+import { Document, Packer, Paragraph, TextRun } from "docx";
+import { jsPDF } from "jspdf";
 import { toast } from "sonner";
 import { Brain, CalendarDays, Check, ChevronDown, Download, Pencil, X } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
@@ -146,6 +148,13 @@ const toLocalInputDateTime = (iso?: string | null): string => {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
+
+const toSafeFilename = (value: string) =>
+  value
+    .replace(/[\\/:*?"<>|]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80) || "plan";
 
 function ProfilePage() {
   const { user, session, loading, signOut, connectGoogleForGmail } = useAuth();
@@ -497,16 +506,75 @@ function ProfilePage() {
     setIsEditingPlan(false);
   };
 
-  const downloadPlanAsText = (plan: Plan) => {
-    const content = `${plan.title}\n\n${plan.content}`;
-    const element = document.createElement("a");
-    element.setAttribute("href", "data:text/plain;charset=utf-8," + encodeURIComponent(content));
-    element.setAttribute("download", `${plan.title}.txt`);
-    element.style.display = "none";
-    document.body.appendChild(element);
-    element.click();
-    document.body.removeChild(element);
-    toast.success("Plan downloaded as text");
+  const downloadPlanAsPdf = (plan: Plan) => {
+    try {
+      const doc = new jsPDF({ unit: "pt", format: "a4" });
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 48;
+      const maxTextWidth = pageWidth - margin * 2;
+      let cursorY = margin;
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(16);
+      const titleLines = doc.splitTextToSize(plan.title || "Plan", maxTextWidth);
+      doc.text(titleLines, margin, cursorY);
+      cursorY += titleLines.length * 20;
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(11);
+      const bodyLines = doc.splitTextToSize(plan.content || "", maxTextWidth);
+
+      for (const line of bodyLines) {
+        if (cursorY > pageHeight - margin) {
+          doc.addPage();
+          cursorY = margin;
+        }
+        doc.text(line, margin, cursorY);
+        cursorY += 16;
+      }
+
+      doc.save(`${toSafeFilename(plan.title)}.pdf`);
+      toast.success("Plan downloaded as PDF");
+    } catch {
+      toast.error("Could not generate PDF");
+    }
+  };
+
+  const downloadPlanAsWord = async (plan: Plan) => {
+    try {
+      const paragraphs: Paragraph[] = [
+        new Paragraph({
+          children: [new TextRun({ text: plan.title || "Plan", bold: true, size: 32 })],
+          spacing: { after: 240 },
+        }),
+      ];
+
+      const lines = (plan.content || "").split(/\r?\n/);
+      for (const line of lines) {
+        paragraphs.push(
+          new Paragraph({
+            children: [new TextRun({ text: line || " " })],
+            spacing: { after: 120 },
+          }),
+        );
+      }
+
+      const doc = new Document({ sections: [{ children: paragraphs }] });
+      const blob = await Packer.toBlob(doc);
+      const url = URL.createObjectURL(blob);
+      const element = document.createElement("a");
+      element.setAttribute("href", url);
+      element.setAttribute("download", `${toSafeFilename(plan.title)}.docx`);
+      element.style.display = "none";
+      document.body.appendChild(element);
+      element.click();
+      document.body.removeChild(element);
+      URL.revokeObjectURL(url);
+      toast.success("Plan downloaded as Word document");
+    } catch {
+      toast.error("Could not generate Word document");
+    }
   };
 
   const savePlanEdits = async () => {
@@ -1237,11 +1305,20 @@ function ProfilePage() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => downloadPlanAsText(isEditingPlan && planDraft ? { ...openPlan, ...planDraft } : openPlan)}
+                  onClick={() => downloadPlanAsPdf(isEditingPlan && planDraft ? { ...openPlan, ...planDraft } : openPlan)}
                   className="gap-1.5"
                 >
                   <Download className="h-3.5 w-3.5" />
-                  Download
+                  Export PDF
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => void downloadPlanAsWord(isEditingPlan && planDraft ? { ...openPlan, ...planDraft } : openPlan)}
+                  className="gap-1.5"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Export Word
                 </Button>
               </div>
               <Button variant="secondary" size="sm" onClick={closePlanModal}>
