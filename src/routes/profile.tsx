@@ -131,6 +131,8 @@ const getUtcWeekStart = (): string => {
   return now.toISOString().slice(0, 10);
 };
 
+const isWednesdayUtc = (): boolean => new Date().getUTCDay() === 3;
+
 const planPreviewText = (content: string, maxChars = 140): string => {
   const cleaned = content
     .replace(/[#*_`>]/g, "")
@@ -194,6 +196,12 @@ function ProfilePage() {
   const [subscriptionSnapshot, setSubscriptionSnapshot] = useState<SubscriptionSnapshot | null>(null);
   const [planUpdateBusy, setPlanUpdateBusy] = useState(false);
   const [billingCycle, setBillingCycle] = useState<BillingCycle>("monthly");
+  const [earlyInsight, setEarlyInsight] = useState<Partial<Insight> | null>(null);
+  const [earlyInsightBusy, setEarlyInsightBusy] = useState(false);
+  const alreadyGeneratedEarlyInsight =
+    typeof window !== "undefined"
+      ? localStorage.getItem(`early_insight_${typeof user !== "undefined" ? (user as any)?.id : ""}_${getUtcWeekStart()}`) === "1"
+      : false;
   const [autoPdfEnabled, setAutoPdfEnabled] = useState(() => {
     if (typeof window !== "undefined") {
       return localStorage.getItem("autoPdfSave") !== "false";
@@ -486,6 +494,44 @@ function ProfilePage() {
   }, [user, session, weeklyEmailEnabled, insights]);
 
   if (!user) return null;
+
+  const generateEarlyInsight = async () => {
+    if (!user || !session) return;
+    setEarlyInsightBusy(true);
+    try {
+      const resp = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/insights`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ userId: user.id, force: true }),
+        },
+      );
+      if (!resp.ok) throw new Error("Failed to generate early insight");
+
+      // Fetch the freshly generated row
+      const { data } = await supabase
+        .from("user_weekly_insights")
+        .select("emotion_trend,thought_patterns,calm_progress")
+        .eq("user_id", user.id)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (data) setEarlyInsight(data);
+      if (typeof window !== "undefined") {
+        localStorage.setItem(`early_insight_${user.id}_${getUtcWeekStart()}`, "1");
+      }
+      toast.success("Early insight generated");
+    } catch {
+      toast.error("Could not generate early insight. Try again later.");
+    } finally {
+      setEarlyInsightBusy(false);
+    }
+  };
 
   const deletePlan = async (id: string) => {
     await supabase.from("plans").delete().eq("id", id);
@@ -1200,6 +1246,44 @@ function ProfilePage() {
               </div>
             )}
           </div>
+
+          {/* Early insight preview - Wednesdays only */}
+          {insightMonitoringEnabled && (
+            <div className="rounded-xl border border-border bg-surface/60 p-5">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div>
+                  <div className="text-sm font-semibold">Early insight preview</div>
+                  <div className="text-xs text-muted-foreground mt-0.5">
+                    {isWednesdayUtc()
+                      ? alreadyGeneratedEarlyInsight
+                        ? "Already generated this week"
+                        : "Available every Wednesday — partial snapshot"
+                      : "Available on Wednesdays only"}
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={!isWednesdayUtc() || alreadyGeneratedEarlyInsight || earlyInsightBusy}
+                  onClick={generateEarlyInsight}
+                  className="shrink-0"
+                >
+                  {earlyInsightBusy ? "Generating…" : "Get early insight"}
+                </Button>
+              </div>
+              {earlyInsight && (
+                <div className="mt-4 space-y-3 text-sm border-t border-border/50 pt-4">
+                  <div className="text-xs text-muted-foreground mb-2">
+                    Partial snapshot — full breakdown arrives Friday
+                  </div>
+                  <InsightRow title="Emotion trend" value={String(earlyInsight.emotion_trend ?? "")} />
+                  <InsightRow title="Thought patterns" value={String(earlyInsight.thought_patterns ?? "")} />
+                  <InsightRow title="Calm progress" value={String(earlyInsight.calm_progress ?? "")} />
+                </div>
+              )}
+            </div>
+          )}
+
           {insights.length === 0 && (
             <EmptyState text="No weekly insights yet. Insights are generated every Friday based on this week’s chats." />
           )}
