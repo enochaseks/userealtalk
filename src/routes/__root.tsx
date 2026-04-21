@@ -81,20 +81,15 @@ function RootShell({ children }: { children: React.ReactNode }) {
       if (typeof window === "undefined") return;
       const version = ${JSON.stringify(ASSET_VERSION)};
       const versionKey = "realtalk_asset_version";
-      const reloadKey = "realtalk_asset_reloaded_once";
+      const updateAvailableKey = "realtalk_update_available";
 
       const previous = localStorage.getItem(versionKey);
       const changed = previous && previous !== version;
 
       localStorage.setItem(versionKey, version);
 
-      if (!changed) {
-        sessionStorage.removeItem(reloadKey);
-        return;
-      }
-
-      if (sessionStorage.getItem(reloadKey)) return;
-      sessionStorage.setItem(reloadKey, "1");
+      if (!changed) return;
+      sessionStorage.setItem(updateAvailableKey, "1");
 
       try {
         if ("serviceWorker" in navigator) {
@@ -112,9 +107,7 @@ function RootShell({ children }: { children: React.ReactNode }) {
         }
       } catch {}
 
-      const next = new URL(window.location.href);
-      next.searchParams.set("_v", Date.now().toString());
-      window.location.replace(next.toString());
+      console.info("RealTalk update detected. New assets will apply on next refresh.");
     })();
   `;
 
@@ -204,6 +197,15 @@ function AppFrame() {
   const path = useRouterState({ select: (s) => s.location.pathname });
   const showNav = user && path !== "/auth";
   const showLoadingState = loading;
+
+  useEffect(() => {
+    const updateAvailable = sessionStorage.getItem("realtalk_update_available") === "1";
+    const noticeShown = sessionStorage.getItem("realtalk_update_notice_shown") === "1";
+    if (!updateAvailable || noticeShown) return;
+
+    sessionStorage.setItem("realtalk_update_notice_shown", "1");
+    toast("A new version is ready. Refresh when convenient to update.");
+  }, []);
 
   useEffect(() => {
     if (!user || !session?.access_token || !user.email) return;
