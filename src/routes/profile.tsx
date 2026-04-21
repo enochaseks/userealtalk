@@ -71,15 +71,6 @@ const fileToOptimizedBlob = (file: File, maxSize = 512): Promise<Blob> => {
   });
 };
 
-const blobToDataUrl = (blob: Blob): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result ?? ""));
-    reader.onerror = () => reject(new Error("Could not process selected image"));
-    reader.readAsDataURL(blob);
-  });
-};
-
 type ProfileTab = "plans" | "insights";
 
 export const Route = createFileRoute("/profile")({
@@ -707,10 +698,28 @@ function ProfilePage() {
         avatar_data_url: null,
       },
     });
-    setSavingProfile(false);
 
     if (error) {
+      setSavingProfile(false);
       toast.error(error.message || "Failed to update profile");
+      return;
+    }
+
+    await supabase.auth.refreshSession();
+    const { data: verifiedUserData } = await supabase.auth.getUser();
+    const verifiedUser = verifiedUserData.user;
+    const verifiedName =
+      (verifiedUser?.user_metadata?.full_name as string | undefined) ||
+      (verifiedUser?.user_metadata?.name as string | undefined) ||
+      "";
+    const verifiedAvatar = (verifiedUser?.user_metadata?.avatar_url as string | undefined) || "";
+
+    const namePersisted = verifiedName.trim() === cleanName;
+    const avatarPersisted = (verifiedAvatar || "") === (sanitizedAvatar || "");
+    setSavingProfile(false);
+
+    if (!namePersisted || !avatarPersisted) {
+      toast.error("Profile save could not be confirmed on backend. Please try again.");
       return;
     }
 
@@ -746,20 +755,7 @@ function ProfilePage() {
       setAvatarDataUrl(nextAvatarUrl);
       await saveProfileIdentity(displayName, nextAvatarUrl);
     } catch (e: any) {
-      try {
-        const avatarBlob = await fileToOptimizedBlob(file);
-        const localDataUrl = await blobToDataUrl(avatarBlob);
-        localStorage.setItem(`avatar_local_${user.id}`, localDataUrl);
-        setAvatarDataUrl(localDataUrl);
-        window.dispatchEvent(
-          new CustomEvent("profileUpdated", {
-            detail: { name: pendingName || displayName || "Profile", avatarUrl: localDataUrl },
-          }),
-        );
-        toast.success("Profile photo saved on this device.");
-      } catch {
-        toast.error(e?.message || "Could not upload selected image");
-      }
+      toast.error(e?.message || "Could not upload selected image. Profile photo was not saved to backend.");
     }
   };
 

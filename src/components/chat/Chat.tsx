@@ -8,6 +8,7 @@ import { Mic, ArrowUp, Bookmark, Trash2, ChevronDown, Plus, Pencil, Mail, Rotate
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { motion, AnimatePresence } from "framer-motion";
+import { jsPDF } from "jspdf";
 import { toast } from "sonner";
 import { useSearch, useNavigate } from "@tanstack/react-router";
 import {
@@ -1625,20 +1626,74 @@ export function Chat() {
     }
   };
 
+  const toSafeFilename = (value: string) =>
+    value
+      .replace(/[\\/:*?"<>|]/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 80) || "plan";
+
   const downloadPlanAsPdf = (title: string, content: string) => {
     try {
-      // Create a simple text-based PDF by creating a blob
-      const pdfContent = `${title}\n\n${content}`;
+      const doc = new jsPDF({ unit: "pt", format: "a4" });
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 48;
+      const maxTextWidth = pageWidth - margin * 2;
+      let cursorY = margin;
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(16);
+      const titleLines = doc.splitTextToSize(title || "Plan", maxTextWidth);
+      doc.text(titleLines, margin, cursorY);
+      cursorY += titleLines.length * 20;
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(11);
+      const bodyLines = doc.splitTextToSize(content || "", maxTextWidth);
+
+      for (const line of bodyLines) {
+        if (cursorY > pageHeight - margin) {
+          doc.addPage();
+          cursorY = margin;
+        }
+        doc.text(line, margin, cursorY);
+        cursorY += 16;
+      }
+
+      doc.save(`${toSafeFilename(title)}.pdf`);
+      toast.success("Plan downloaded as PDF");
+    } catch {
+      toast.error("Could not generate PDF");
+    }
+  };
+
+  const downloadPlanAsWord = (title: string, content: string) => {
+    try {
+      const escapedTitle = (title || "Plan")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+      const escapedBody = (content || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\n/g, "<br>");
+
+      const wordHtml = `<!doctype html><html><head><meta charset="utf-8"></head><body><h1>${escapedTitle}</h1><p>${escapedBody}</p></body></html>`;
+      const blob = new Blob([wordHtml], { type: "application/msword;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
       const element = document.createElement("a");
-      element.setAttribute("href", "data:text/plain;charset=utf-8," + encodeURIComponent(pdfContent));
-      element.setAttribute("download", `${title}.txt`);
+      element.setAttribute("href", url);
+      element.setAttribute("download", `${toSafeFilename(title)}.doc`);
       element.style.display = "none";
       document.body.appendChild(element);
       element.click();
       document.body.removeChild(element);
-      toast.success("Plan also downloaded as file");
-    } catch (e) {
-      // Silently fail - plan was still saved
+      URL.revokeObjectURL(url);
+      toast.success("Plan downloaded as Word document");
+    } catch {
+      toast.error("Could not generate Word document");
     }
   };
 
@@ -2106,6 +2161,22 @@ export function Chat() {
                             >
                               <Pencil className="h-3.5 w-3.5" />
                               Edit Plan
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => downloadPlanAsPdf("Plan", m.content)}
+                              className="text-xs text-muted-foreground hover:text-foreground h-8 px-2.5"
+                            >
+                              Export PDF
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => downloadPlanAsWord("Plan", m.content)}
+                              className="text-xs text-muted-foreground hover:text-foreground h-8 px-2.5"
+                            >
+                              Export Word
                             </Button>
                           </div>
                         )}
