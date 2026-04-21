@@ -86,13 +86,14 @@ function AccountDataPage() {
         <div className="rounded-xl border border-border bg-surface/60 p-5">
           <h2 className="text-base font-semibold">Export your data</h2>
           <p className="mt-2 text-sm text-muted-foreground">
-            Download your account data as a JSON file.
+            Download your account data as a JSON file before deleting your account.
           </p>
           <p className="mt-3 text-sm text-muted-foreground">This includes:</p>
           <ul className="mt-2 list-disc pl-5 text-sm text-muted-foreground space-y-1">
             <li>conversations and messages</li>
             <li>saved plans</li>
             <li>insights and summaries</li>
+            <li>venting privacy settings (including whether you opted in to sharing vent chats)</li>
             <li>learned profile preferences (such as communication style and behavioural patterns)</li>
           </ul>
           <div className="mt-3">
@@ -130,6 +131,9 @@ function AccountDataPage() {
           <p className="mt-2 text-sm text-muted-foreground">
             RealTalk uses your conversations to generate insights and personalise responses.
             Your data is used only to improve your experience and is never sold.
+          </p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Vent mode is private by default. Vent chats are not saved unless you explicitly enable vent sharing in Settings.
           </p>
         </div>
 

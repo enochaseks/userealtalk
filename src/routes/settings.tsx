@@ -52,6 +52,7 @@ function SettingsPage() {
   const [scheduleEmailRemindersEnabled, setScheduleEmailRemindersEnabled] = useState(false);
   const [scheduleReminderMinutes, setScheduleReminderMinutes] = useState(30);
   const [scheduleReminderUseGmail, setScheduleReminderUseGmail] = useState(false);
+  const [shareVentingWithDatabase, setShareVentingWithDatabase] = useState(false);
   const [autoPdfEnabled, setAutoPdfEnabled] = useState(() => {
     if (typeof window !== "undefined") {
       return localStorage.getItem("autoPdfSave") !== "false";
@@ -77,7 +78,7 @@ function SettingsPage() {
         loadSubscriptionSnapshot(user.id),
         supabase
           .from("user_insight_settings")
-          .select("weekly_email_enabled, schedule_email_reminders_enabled, schedule_email_reminder_minutes, schedule_email_use_gmail")
+          .select("weekly_email_enabled, schedule_email_reminders_enabled, schedule_email_reminder_minutes, schedule_email_use_gmail, share_venting_with_database")
           .eq("user_id", user.id)
           .maybeSingle(),
       ]);
@@ -89,6 +90,7 @@ function SettingsPage() {
       setScheduleEmailRemindersEnabled(Boolean(data?.schedule_email_reminders_enabled));
       setScheduleReminderMinutes(Number(data?.schedule_email_reminder_minutes ?? 30));
       setScheduleReminderUseGmail(Boolean(data?.schedule_email_use_gmail));
+      setShareVentingWithDatabase(Boolean(data?.share_venting_with_database));
     };
 
     void load();
@@ -131,6 +133,7 @@ function SettingsPage() {
     schedule_email_reminders_enabled: boolean;
     schedule_email_reminder_minutes: number;
     schedule_email_use_gmail: boolean;
+    share_venting_with_database: boolean;
   }) => {
     const { error } = await supabase.from("user_insight_settings").upsert({
       user_id: user.id,
@@ -149,6 +152,7 @@ function SettingsPage() {
       schedule_email_reminders_enabled: scheduleEmailRemindersEnabled,
       schedule_email_reminder_minutes: scheduleReminderMinutes,
       schedule_email_use_gmail: scheduleReminderUseGmail,
+      share_venting_with_database: shareVentingWithDatabase,
     });
     if (error) {
       setWeeklyEmailEnabled(previous);
@@ -166,6 +170,7 @@ function SettingsPage() {
       schedule_email_reminders_enabled: enabled,
       schedule_email_reminder_minutes: scheduleReminderMinutes,
       schedule_email_use_gmail: scheduleReminderUseGmail,
+      share_venting_with_database: shareVentingWithDatabase,
     });
     if (error) {
       setScheduleEmailRemindersEnabled(previous);
@@ -186,6 +191,7 @@ function SettingsPage() {
       schedule_email_reminders_enabled: scheduleEmailRemindersEnabled,
       schedule_email_reminder_minutes: minutes,
       schedule_email_use_gmail: scheduleReminderUseGmail,
+      share_venting_with_database: shareVentingWithDatabase,
     });
     if (error) {
       setScheduleReminderMinutes(previous);
@@ -214,6 +220,7 @@ function SettingsPage() {
       schedule_email_reminders_enabled: scheduleEmailRemindersEnabled,
       schedule_email_reminder_minutes: scheduleReminderMinutes,
       schedule_email_use_gmail: useGmail,
+      share_venting_with_database: shareVentingWithDatabase,
     });
     if (error) {
       setScheduleReminderUseGmail(previous);
@@ -227,6 +234,29 @@ function SettingsPage() {
     setAutoPdfEnabled(enabled);
     localStorage.setItem("autoPdfSave", enabled ? "true" : "false");
     toast.success(enabled ? "PDF auto-save enabled" : "PDF auto-save disabled");
+  };
+
+  const toggleShareVenting = async (enabled: boolean) => {
+    const previous = shareVentingWithDatabase;
+    setShareVentingWithDatabase(enabled);
+    const error = await saveInsightSettings({
+      weekly_email_enabled: weeklyEmailEnabled,
+      schedule_email_reminders_enabled: scheduleEmailRemindersEnabled,
+      schedule_email_reminder_minutes: scheduleReminderMinutes,
+      schedule_email_use_gmail: scheduleReminderUseGmail,
+      share_venting_with_database: enabled,
+    });
+    if (error) {
+      setShareVentingWithDatabase(previous);
+      toast.error("Failed to update venting privacy setting");
+      return;
+    }
+
+    toast.success(
+      enabled
+        ? "Venting share enabled. Vent conversations can be saved to your account."
+        : "Private venting enabled by default. Vent conversations will stay out of your saved chat history.",
+    );
   };
 
   const deleteAccount = async () => {
@@ -453,6 +483,20 @@ function SettingsPage() {
               </p>
             </div>
             <Switch checked={autoPdfEnabled} onCheckedChange={toggleAutoPdf} />
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-border bg-surface/60 p-5">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <Label className="text-sm font-semibold text-foreground cursor-pointer">
+                Share vent chats with your database
+              </Label>
+              <p className="text-xs text-muted-foreground mt-1">
+                Off by default for private venting. Turn on only if you want vent-mode messages saved in your account history.
+              </p>
+            </div>
+            <Switch checked={shareVentingWithDatabase} onCheckedChange={toggleShareVenting} />
           </div>
         </div>
 

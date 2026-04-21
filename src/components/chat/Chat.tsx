@@ -142,6 +142,7 @@ export function Chat() {
   const [gmailConnectBusy, setGmailConnectBusy] = useState(false);
   const emailUseGmail = true;
   const [subscriptionSnapshot, setSubscriptionSnapshot] = useState<SubscriptionSnapshot | null>(null);
+  const [shareVentingWithDatabase, setShareVentingWithDatabase] = useState(false);
   const [editingPlanIndex, setEditingPlanIndex] = useState<number | null>(null);
   const [editedPlanText, setEditedPlanText] = useState("");
   const [isRegeneratingPlan, setIsRegeneratingPlan] = useState(false);
@@ -208,10 +209,19 @@ export function Chat() {
   useEffect(() => {
     if (!user) {
       setSubscriptionSnapshot(null);
+      setShareVentingWithDatabase(false);
       return;
     }
 
-    void refreshSubscription();
+    void (async () => {
+      await refreshSubscription();
+      const { data } = await supabase
+        .from("user_insight_settings")
+        .select("share_venting_with_database")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      setShareVentingWithDatabase(Boolean(data?.share_venting_with_database));
+    })();
   }, [user]);
 
    // load + live-sync current conversation messages
@@ -927,6 +937,7 @@ export function Chat() {
     const ventRequested = forceVent || ventDetectedFromText || !!overrideVentAdviceMode;
     const activeVentAdviceMode = overrideVentAdviceMode ?? ventAdviceMode;
     const activeVent = ventRequested;
+    const isPrivateVenting = activeVent && !shareVentingWithDatabase;
     // Offer the vent choice whenever vent is active and no explicit advice mode was picked.
     // This covers both manual Vent toggle and auto-detected vent language.
     const shouldOfferVentChoice = activeVent && !overrideVentAdviceMode && activeVentAdviceMode === "none";
@@ -986,25 +997,27 @@ export function Chat() {
     },
   ]);
 
-  let conversationId: string | null = null;
+  let conversationId = "";
 
   try {
-    const cid = await ensureConversation(text);
-    conversationId = cid;
+    if (!isPrivateVenting) {
+      const cid = await ensureConversation(text);
+      conversationId = cid;
 
-    await supabase.from("messages").insert({
-      conversation_id: cid,
-      user_id: user.id,
-      role: "user",
-      content: text,
-    });
+      await supabase.from("messages").insert({
+        conversation_id: cid,
+        user_id: user.id,
+        role: "user",
+        content: text,
+      });
 
-    await supabase
-      .from("conversations")
-      .update({ updated_at: new Date().toISOString() })
-      .eq("id", cid);
+      await supabase
+        .from("conversations")
+        .update({ updated_at: new Date().toISOString() })
+        .eq("id", cid);
 
-    window.dispatchEvent(new Event("conversationUpdated"));
+      window.dispatchEvent(new Event("conversationUpdated"));
+    }
 
     // Vent mode (no advice selected): store user message only and wait for explicit advice request
     if (shouldOfferVentChoice) {
@@ -1012,28 +1025,34 @@ export function Chat() {
       return;
     }
 
-    // Fetch all messages from database for this conversation, apply memory limit based on plan
+    // Fetch all messages from database for this conversation, apply memory limit based on plan.
+    // Vent mode is private and does not read/write persisted conversation messages.
     const memoryLimit = getConversationMemoryLimit(subscriptionSnapshot?.plan ?? "free");
     const warningThreshold = getConversationMemoryWarningThreshold(subscriptionSnapshot?.plan ?? "free");
-    
-    const { data: allDbMessages } = await supabase
-      .from("messages")
-      .select("id,role,content")
-      .eq("conversation_id", conversationId)
-      .order("created_at", { ascending: true });
+    let totalMessageCount = 0;
+    let currentMessages: Msg[] = [];
 
-    // Apply memory limit: take last N messages based on plan
-    let currentMessages = (allDbMessages as Msg[] | null) ?? [];
-    const totalMessageCount = currentMessages.length;
-    
-    if (memoryLimit !== null && currentMessages.length > memoryLimit) {
-      currentMessages = currentMessages.slice(-memoryLimit);
-      
-      // Show warning if approaching limit
-      if (warningThreshold !== null && totalMessageCount >= warningThreshold) {
-        toast.warning(`You're approaching your conversation memory limit (${totalMessageCount}/${memoryLimit} messages). Upgrade to Pro or Platinum for more memory.`, {
-          duration: 5000,
-        });
+    if (isPrivateVenting) {
+      currentMessages = messages.filter((m) => m.role === "user" || m.role === "assistant");
+      totalMessageCount = currentMessages.length;
+    } else {
+      const { data: allDbMessages } = await supabase
+        .from("messages")
+        .select("id,role,content")
+        .eq("conversation_id", conversationId)
+        .order("created_at", { ascending: true });
+
+      currentMessages = (allDbMessages as Msg[] | null) ?? [];
+      totalMessageCount = currentMessages.length;
+
+      if (memoryLimit !== null && currentMessages.length > memoryLimit) {
+        currentMessages = currentMessages.slice(-memoryLimit);
+
+        if (warningThreshold !== null && totalMessageCount >= warningThreshold) {
+          toast.warning(`You're approaching your conversation memory limit (${totalMessageCount}/${memoryLimit} messages). Upgrade to Pro or Platinum for more memory.`, {
+            duration: 5000,
+          });
+        }
       }
     }
 
@@ -1290,43 +1309,45 @@ export function Chat() {
     });
 
     if (cleanAssistant) {
-      const { data: saved } = await supabase
-        .from("messages")
-        .insert({
-          conversation_id: cid,
-          user_id: user.id,
-          role: "assistant",
-          content: cleanAssistant,
-        })
-        .select("id")
-        .single();
+      if (!isPrivateVenting && conversationId) {
+        const { data: saved } = await supabase
+          .from("messages")
+          .insert({
+            conversation_id: conversationId,
+            user_id: user.id,
+            role: "assistant",
+            content: cleanAssistant,
+          })
+          .select("id")
+          .single();
 
-      if (saved) {
-        setMessages((prev) => {
-          const copy = [...prev];
-          copy[copy.length - 1] = {
-            ...copy[copy.length - 1],
-            id: saved.id,
-          };
-          return copy;
-        });
-      }
-
-      // Fire-and-forget: learn user preferences from conversation (does not block UI)
-      void (async () => {
-        try {
-          const recentMessages = [...messages, userMsg, { role: "assistant", content: cleanAssistant }]
-            .slice(-8)
-            .map((m) => ({ role: m.role, content: m.content }));
-          await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/profile-learn`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ userId: user.id, recentMessages }),
+        if (saved) {
+          setMessages((prev) => {
+            const copy = [...prev];
+            copy[copy.length - 1] = {
+              ...copy[copy.length - 1],
+              id: saved.id,
+            };
+            return copy;
           });
-        } catch {
-          // Silent — never block the chat experience
         }
-      })();
+
+        // Fire-and-forget: learn user preferences from conversation (does not block UI)
+        void (async () => {
+          try {
+            const recentMessages = [...messages, userMsg, { role: "assistant", content: cleanAssistant }]
+              .slice(-8)
+              .map((m) => ({ role: m.role, content: m.content }));
+            await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/profile-learn`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ userId: user.id, recentMessages }),
+            });
+          } catch {
+            // Silent — never block the chat experience
+          }
+        })();
+      }
 
       if (thinkingRequested) {
         await recordFeatureUsage("deep_thinking");
@@ -1376,7 +1397,7 @@ export function Chat() {
         ];
       });
 
-      if (conversationId) {
+      if (conversationId && !isPrivateVenting) {
         await supabase.from("messages").insert({
           conversation_id: conversationId,
           user_id: user.id,
@@ -2369,6 +2390,13 @@ export function Chat() {
                     🫶 Vent
                     <span className="text-lg leading-none">×</span>
                   </button>
+                )}
+                {forceVent && (
+                  <span className="inline-flex items-center px-2 py-1 text-[11px] text-muted-foreground">
+                    {shareVentingWithDatabase
+                      ? "Vent sharing is ON: vent chats can be saved."
+                      : "Private venting is ON by default: vent chats are not saved."}
+                  </span>
                 )}
                 {showSchedulePanel && (
                   <button

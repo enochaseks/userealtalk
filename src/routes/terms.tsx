@@ -78,7 +78,20 @@ function TermsPage() {
         </section>
 
         <section>
-          <h2 className="font-semibold text-base">5. Weekly Insights</h2>
+          <h2 className="font-semibold text-base">5. Vent Mode Privacy</h2>
+          <p className="mt-2 text-muted-foreground">
+            Vent mode is private by default. Private vent-mode messages are not stored in your database chat history.
+          </p>
+          <p className="mt-2 text-muted-foreground">
+            You may opt in to sharing vent chats in Settings. When enabled, vent-mode messages may be stored and processed like other chats.
+          </p>
+          <p className="mt-2 text-muted-foreground">
+            If RealTalk cannot determine your vent sharing setting, private venting remains the default fallback.
+          </p>
+        </section>
+
+        <section>
+          <h2 className="font-semibold text-base">6. Weekly Insights</h2>
           <p className="mt-2 text-muted-foreground">
             If enabled, RealTalk generates periodic summaries based on your conversations, including:
           </p>
@@ -94,7 +107,7 @@ function TermsPage() {
         </section>
 
         <section>
-          <h2 className="font-semibold text-base">6. AI Providers &amp; Service Availability</h2>
+          <h2 className="font-semibold text-base">7. AI Providers &amp; Service Availability</h2>
           <p className="mt-2 text-muted-foreground">RealTalk uses third-party AI providers to generate responses, including:</p>
           <ul className="mt-2 list-disc pl-5 text-muted-foreground space-y-1">
             <li>Mistral AI (primary)</li>
@@ -111,7 +124,7 @@ function TermsPage() {
         </section>
 
         <section>
-          <h2 className="font-semibold text-base">7. Acceptable Use</h2>
+          <h2 className="font-semibold text-base">8. Acceptable Use</h2>
           <p className="mt-2 text-muted-foreground">You agree not to:</p>
           <ul className="mt-2 list-disc pl-5 text-muted-foreground space-y-1">
             <li>misuse the platform</li>
@@ -123,7 +136,7 @@ function TermsPage() {
         </section>
 
         <section>
-          <h2 className="font-semibold text-base">8. Gmail Integration (Optional)</h2>
+          <h2 className="font-semibold text-base">9. Gmail Integration (Optional)</h2>
           <p className="mt-2 text-muted-foreground">If you connect Google:</p>
           <ul className="mt-2 list-disc pl-5 text-muted-foreground space-y-1">
             <li>you authorise RealTalk to send emails on your behalf when explicitly triggered or when optional features (such as weekly insights) are enabled</li>
@@ -135,7 +148,7 @@ function TermsPage() {
         </section>
 
         <section>
-          <h2 className="font-semibold text-base">9. Schedule Reminders</h2>
+          <h2 className="font-semibold text-base">10. Schedule Reminders</h2>
           <p className="mt-2 text-muted-foreground">If enabled, RealTalk may send reminder emails based on your configured schedule.</p>
           <ul className="mt-2 list-disc pl-5 text-muted-foreground space-y-1">
             <li>timing is controlled by user settings</li>
@@ -145,7 +158,7 @@ function TermsPage() {
         </section>
 
         <section>
-          <h2 className="font-semibold text-base">10. Intellectual Property</h2>
+          <h2 className="font-semibold text-base">11. Intellectual Property</h2>
           <p className="mt-2 text-muted-foreground">All platform content, branding, design, and features (including RealTime Neurons) are owned by RealTalk LTD.</p>
           <p className="mt-2 text-muted-foreground">You retain ownership of the content you submit.</p>
           <p className="mt-2 text-muted-foreground">
@@ -154,18 +167,19 @@ function TermsPage() {
         </section>
 
         <section>
-          <h2 className="font-semibold text-base">11. Data Rights</h2>
+          <h2 className="font-semibold text-base">12. Data Rights</h2>
           <p className="mt-2 text-muted-foreground">You may:</p>
           <ul className="mt-2 list-disc pl-5 text-muted-foreground space-y-1">
             <li>export your data</li>
             <li>review stored data</li>
             <li>permanently delete your account</li>
+            <li>toggle vent chat sharing at any time</li>
           </ul>
           <p className="mt-2 text-muted-foreground">These options are available via the account data page.</p>
         </section>
 
         <section>
-          <h2 className="font-semibold text-base">12. Limitation of Liability</h2>
+          <h2 className="font-semibold text-base">13. Limitation of Liability</h2>
           <p className="mt-2 text-muted-foreground">RealTalk is provided "as is".</p>
           <p className="mt-2 text-muted-foreground">To the fullest extent permitted by law, we are not liable for:</p>
           <ul className="mt-2 list-disc pl-5 text-muted-foreground space-y-1">
@@ -178,7 +192,7 @@ function TermsPage() {
         </section>
 
         <section>
-          <h2 className="font-semibold text-base">13. Changes to These Terms</h2>
+          <h2 className="font-semibold text-base">14. Changes to These Terms</h2>
           <p className="mt-2 text-muted-foreground">
             We may update these Terms as the platform evolves.
           </p>
@@ -188,7 +202,7 @@ function TermsPage() {
         </section>
 
         <section>
-          <h2 className="font-semibold text-base">14. Contact</h2>
+          <h2 className="font-semibold text-base">15. Contact</h2>
           <p className="mt-2 text-muted-foreground">For questions about these Terms:</p>
           <p className="mt-2 text-muted-foreground">
             <strong>Email:</strong>{" "}

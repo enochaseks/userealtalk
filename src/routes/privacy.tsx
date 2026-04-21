@@ -38,6 +38,7 @@ function PrivacyPage() {
           <ul className="mt-2 list-disc pl-5 text-muted-foreground space-y-1">
             <li>Account information (e.g. email address)</li>
             <li>Chat conversations and generated responses</li>
+            <li>Venting preference settings (private by default, optional share)</li>
             <li>Saved plans and profile preferences</li>
             <li>Comfort boundary settings</li>
             <li>Preference signals extracted from conversations (e.g. communication style, emotional patterns)</li>
@@ -129,7 +130,20 @@ function PrivacyPage() {
         </section>
 
         <section>
-          <h2 className="font-semibold text-base">8. How We Use Your Data</h2>
+          <h2 className="font-semibold text-base">8. Vent Mode Privacy</h2>
+          <p className="mt-2 text-muted-foreground">
+            Vent mode is private by default. When private venting is active, vent-mode messages are not saved to your database chat history.
+          </p>
+          <p className="mt-2 text-muted-foreground">
+            You may opt in to sharing vent chats from Settings. If you do, vent-mode messages can be stored like normal chats to support continuity and insights.
+          </p>
+          <p className="mt-2 text-muted-foreground">
+            Fallback behavior: if your vent sharing preference cannot be read, RealTalk defaults to private venting.
+          </p>
+        </section>
+
+        <section>
+          <h2 className="font-semibold text-base">9. How We Use Your Data</h2>
           <p className="mt-2 text-muted-foreground">Your data is used to:</p>
           <ul className="mt-2 list-disc pl-5 text-muted-foreground space-y-1">
             <li>generate AI responses</li>
@@ -145,7 +159,7 @@ function PrivacyPage() {
         </section>
 
         <section>
-          <h2 className="font-semibold text-base">9. Data Retention</h2>
+          <h2 className="font-semibold text-base">10. Data Retention</h2>
           <p className="mt-2 text-muted-foreground">
             Your data is retained for as long as your account exists.
           </p>
@@ -161,19 +175,20 @@ function PrivacyPage() {
         </section>
 
         <section>
-          <h2 className="font-semibold text-base">10. Your Control</h2>
+          <h2 className="font-semibold text-base">11. Your Control</h2>
           <p className="mt-2 text-muted-foreground">You can:</p>
           <ul className="mt-2 list-disc pl-5 text-muted-foreground space-y-1">
             <li>view your stored data</li>
             <li>export your data</li>
             <li>delete your account</li>
             <li>enable or disable insights and email features</li>
+            <li>enable or disable vent chat sharing</li>
           </ul>
           <p className="mt-2 text-muted-foreground">All controls are available via the account data page.</p>
         </section>
 
         <section>
-          <h2 className="font-semibold text-base">11. Sensitive Information</h2>
+          <h2 className="font-semibold text-base">12. Sensitive Information</h2>
           <p className="mt-2 text-muted-foreground">
             We recognise that conversations may include personal or sensitive thoughts.
           </p>
@@ -183,21 +198,21 @@ function PrivacyPage() {
         </section>
 
         <section>
-          <h2 className="font-semibold text-base">12. Security</h2>
+          <h2 className="font-semibold text-base">13. Security</h2>
           <p className="mt-2 text-muted-foreground">
             We implement appropriate safeguards to protect your data from unauthorised access or misuse.
           </p>
         </section>
 
         <section>
-          <h2 className="font-semibold text-base">13. Changes to This Policy</h2>
+          <h2 className="font-semibold text-base">14. Changes to This Policy</h2>
           <p className="mt-2 text-muted-foreground">
             We may update this policy as RealTalk evolves. Updates will be reflected by the "Last updated" date.
           </p>
         </section>
 
         <section>
-          <h2 className="font-semibold text-base">14. Contact</h2>
+          <h2 className="font-semibold text-base">15. Contact</h2>
           <p className="mt-2 text-muted-foreground">For privacy-related questions:</p>
           <p className="mt-2 text-muted-foreground">
             <strong>Email:</strong>{" "}

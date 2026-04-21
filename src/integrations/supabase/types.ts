@@ -153,6 +153,7 @@ export type Database = {
       user_insight_settings: {
         Row: {
           monitor_enabled: boolean
+          share_venting_with_database: boolean
           schedule_email_reminder_minutes: number
           schedule_email_reminders_enabled: boolean
           schedule_email_use_gmail: boolean
@@ -162,6 +163,7 @@ export type Database = {
         }
         Insert: {
           monitor_enabled?: boolean
+          share_venting_with_database?: boolean
           schedule_email_reminder_minutes?: number
           schedule_email_reminders_enabled?: boolean
           schedule_email_use_gmail?: boolean
@@ -171,6 +173,7 @@ export type Database = {
         }
         Update: {
           monitor_enabled?: boolean
+          share_venting_with_database?: boolean
           schedule_email_reminder_minutes?: number
           schedule_email_reminders_enabled?: boolean
           schedule_email_use_gmail?: boolean
