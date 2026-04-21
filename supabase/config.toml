@@ -5,3 +5,6 @@ verify_jwt = false
 
 [functions.gmail-send]
 verify_jwt = false
+
+[functions.safety-admin]
+verify_jwt = false

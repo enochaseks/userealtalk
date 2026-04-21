@@ -38,7 +38,10 @@ Deno.serve(async (req) => {
 
     const token = req.headers.get("Authorization")?.replace("Bearer ", "").trim();
     if (!token) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      return new Response(JSON.stringify({
+        error: "Unauthorized",
+        debug: "Missing Authorization bearer token on request.",
+      }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -50,7 +53,7 @@ Deno.serve(async (req) => {
     if (authErr || !authData?.user?.email) {
       console.error("Auth error:", authErr);
       console.error("Auth data:", authData);
-      return new Response(JSON.stringify({ 
+      return new Response(JSON.stringify({
         error: "Unauthorized",
         debug: `Token validation failed. Error: ${authErr?.message || "unknown"}`,
       }), {

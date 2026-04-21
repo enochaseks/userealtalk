@@ -30,12 +30,13 @@ type SafetyRow = {
 };
 
 function SafetyAdminPage() {
-  const { user } = useAuth();
+  const { user, session, loading } = useAuth();
   const [rows, setRows] = useState<SafetyRow[]>([]);
   const [busy, setBusy] = useState(false);
   const [actionUserId, setActionUserId] = useState<string | null>(null);
   const [isAuthorizedAdmin, setIsAuthorizedAdmin] = useState(false);
   const [authCheckComplete, setAuthCheckComplete] = useState(false);
+  const [authFailureReason, setAuthFailureReason] = useState<string>("");
 
   const isSignedIn = Boolean(user?.id);
   const handleBack = () => {
@@ -71,37 +72,91 @@ function SafetyAdminPage() {
     return false;
   };
 
+  const getInvokeErrorDetails = async (error: any): Promise<string> => {
+    const message = String(error?.message ?? "").trim();
+    try {
+      const response = error?.context;
+      if (response && typeof response.clone === "function") {
+        const body = await response.clone().json().catch(() => null);
+        const backendError = String(body?.error ?? "").trim();
+        const backendDebug = String(body?.debug ?? "").trim();
+        if (backendError || backendDebug) {
+          return [backendError, backendDebug].filter(Boolean).join(" - ");
+        }
+      }
+    } catch {
+      // Ignore parse failures and fall back to generic message.
+    }
+
+    return message || "Could not verify policy access right now.";
+  };
+
+  const getAccessToken = async (): Promise<string | null> => {
+    if (session?.access_token) return session.access_token;
+
+    try {
+      const { data } = await supabase.auth.refreshSession();
+      if (data.session?.access_token) return data.session.access_token;
+    } catch {
+      // Ignore refresh failures and fall back to existing session lookup.
+    }
+
+    const { data } = await supabase.auth.getSession();
+    return data.session?.access_token ?? null;
+  };
+
   const loadRows = async () => {
-    if (!isSignedIn) return;
+    if (!isSignedIn || loading) return;
     setBusy(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) {
-        throw new Error("No valid session. Please log in again.");
+      const token = await getAccessToken();
+      if (!token) {
+        setIsAuthorizedAdmin(false);
+        setAuthCheckComplete(true);
+        setRows([]);
+        setAuthFailureReason("Unauthorized - Missing access token. Please sign out and sign in again.");
+        return;
       }
 
-      const { data, error } = await supabase.functions.invoke("safety-admin", {
+      let { data, error } = await supabase.functions.invoke("safety-admin", {
         body: { action: "list", limit: 100 },
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-        },
+        headers: { Authorization: `Bearer ${token}` },
       });
+
+      if (error) {
+        const unauthorized = await isUnauthorizedError(error);
+        if (unauthorized) {
+          const retryToken = await getAccessToken();
+          if (!retryToken) throw error;
+          const retry = await supabase.functions.invoke("safety-admin", {
+            body: { action: "list", limit: 100 },
+            headers: { Authorization: `Bearer ${retryToken}` },
+          });
+          data = retry.data;
+          error = retry.error;
+        }
+      }
+
       if (error) throw error;
       setRows((data?.rows ?? []) as SafetyRow[]);
       setIsAuthorizedAdmin(true);
       setAuthCheckComplete(true);
+      setAuthFailureReason("");
     } catch (e: any) {
+      const details = await getInvokeErrorDetails(e);
       const unauthorized = await isUnauthorizedError(e);
       if (unauthorized) {
         setIsAuthorizedAdmin(false);
         setAuthCheckComplete(true);
         setRows([]);
+        setAuthFailureReason(details);
         return;
       }
 
-      toast.error(e?.message || "Failed to load safety data. Please try again.");
+      toast.error(details || "Failed to load safety data. Please try again.");
       setRows([]);
       setAuthCheckComplete(true);
+      setAuthFailureReason(details);
     } finally {
       setBusy(false);
     }
@@ -112,11 +167,12 @@ function SafetyAdminPage() {
     setActionUserId(null);
     setIsAuthorizedAdmin(false);
     setAuthCheckComplete(false);
+    setAuthFailureReason("");
 
-    if (user?.id) {
+    if (user?.id && !loading) {
       void loadRows();
     }
-  }, [user?.id]);
+  }, [user?.id, session?.access_token, loading]);
 
   const activeRestrictions = useMemo(
     () => rows.filter((r) => r.restricted_until && new Date(r.restricted_until).getTime() > Date.now()).length,
@@ -126,17 +182,29 @@ function SafetyAdminPage() {
   const runAction = async (action: "unlock" | "reset_strikes", userId: string) => {
     setActionUserId(userId);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) {
-        throw new Error("Session expired. Please log in again.");
+      const token = await getAccessToken();
+      if (!token) {
+        throw new Error("Missing access token. Please sign in again.");
       }
 
-      const { error } = await supabase.functions.invoke("safety-admin", {
+      let { error } = await supabase.functions.invoke("safety-admin", {
         body: { action, userId },
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-        },
+        headers: { Authorization: `Bearer ${token}` },
       });
+
+      if (error) {
+        const unauthorized = await isUnauthorizedError(error);
+        if (unauthorized) {
+          const retryToken = await getAccessToken();
+          if (!retryToken) throw error;
+          const retry = await supabase.functions.invoke("safety-admin", {
+            body: { action, userId },
+            headers: { Authorization: `Bearer ${retryToken}` },
+          });
+          error = retry.error;
+        }
+      }
+
       if (error) throw error;
       toast.success(action === "unlock" ? "User unlocked" : "Strikes reset");
       await loadRows();
@@ -188,6 +256,7 @@ function SafetyAdminPage() {
           <p>We monitor policy-sensitive activity signals to prevent harm, abuse, and misuse.</p>
           <p>Enforcement actions may include warnings, temporary restrictions, and account review where necessary.</p>
           <p>Policy operations interfaces are restricted and not available on standard user accounts.</p>
+          {authFailureReason ? <p className="text-xs opacity-80">Access check: {authFailureReason}</p> : null}
         </div>
       </div>
     );
