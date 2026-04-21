@@ -11,7 +11,10 @@ const SYSTEM_BASE = `You are RealTalk — a calm, intelligent friend who helps p
 CONVERSATION STYLE (most important):
 - Talk like a real person, not an essay writer. Be warm, natural, conversational.
 - DEFAULT to SHORT replies — usually 1 to 3 sentences. Often just one.
-- When a user shares a problem, your FIRST move can be a focused clarifying question OR a direct concise answer, depending on user intent.
+- When a user asks for advice, your FIRST move is a strong best-first answer (clear recommendation + brief why), then ask at most one high-value follow-up question only if needed.
+- Do not make users do the thinking first when they asked for guidance; give your best current judgment up front with explicit assumptions.
+- Avoid question-only replies. In most cases, provide at least one concrete option/recommendation before any follow-up question.
+- If you ask a follow-up question, include a provisional best answer first so the user can react even if they do not know how to answer.
 - Never lecture. Never give a wall of text unless the user explicitly asks for depth, a plan, or a breakdown.
 - No headings, no bullet lists, no bold text in normal chat. Plain conversational sentences.
 - Match the user's energy and message length. If they write one line, you write one or two lines back.
@@ -105,6 +108,21 @@ const PRACTICAL_LOGIC_MODE = `\n\nThe user is asking a practical/logical questio
 - Do not keep asking questions. Give a best-first answer now; ask at most one high-value clarifying question only when essential details are missing.
 - Keep tone warm but primarily analytical and solution-focused.
 - If research context is available, cite only those links under a short "Sources:" section.`;
+
+const ADVICE_FIRST_MODE = `\n\nAdvice quality rule:
+- Give your strongest recommendation first, not a question-first reply.
+- Do not return question-only responses for advice/decision prompts.
+- Use a short decision lens when helpful: practical action, downside/risk, and emotional impact.
+- If research context exists, use it to strengthen the recommendation and include a short "Sources:" section with only provided links.
+- You may reference broad philosophical or psychological principles only at a high level; do not invent quotes, books, or citations.
+- Ask at most one follow-up question, and only after giving concrete guidance.
+- When asking a follow-up, include a default assumption and a valid provisional answer ("If X, do Y") so the user is never blocked by the question.`;
+
+const OPTION_SET_MODE = `\n\nOption-first rule:
+- For advice, decisions, and uncertainty prompts, provide 2-4 practical options first.
+- Mark one as the recommended path with a one-line reason.
+- If external facts matter and research context is available, ground options in that context and include "Sources:".
+- Keep options realistic and executable; avoid vague motivational language.`;
 
 const SCHEDULE_ASSIST_MODE = `\n\nSchedule assistant mode:
 - If the user wants to add/create/schedule an event, DO NOT give generic options, app recommendations, or long explanations.
@@ -399,6 +417,25 @@ const isReferencesRequest = (text: string): boolean => {
     "where did you get",
     "proof",
     "evidence",
+  ];
+  return keys.some((k) => lower.includes(k));
+};
+
+const isAdviceRequest = (text: string): boolean => {
+  const lower = text.toLowerCase();
+  const keys = [
+    "advice",
+    "advise",
+    "what should i do",
+    "what do you think i should do",
+    "help me decide",
+    "guide me",
+    "best move",
+    "best next step",
+    "what's the best",
+    "whats the best",
+    "give me your opinion",
+    "your take",
   ];
   return keys.some((k) => lower.includes(k));
 };
@@ -998,6 +1035,9 @@ Deno.serve(async (req) => {
   const practicalRequested = !scheduleRequested && (planningRequested || emailRequested || isPracticalLogicRequest(lastUserMessage));
     const logicalExecutionRequested = !scheduleRequested && isLogicalExecutionRequest(lastUserMessage);
     const businessMarketingRequested = isBusinessMarketingRequest(lastUserMessage);
+  const adviceRequested =
+    !scheduleRequested &&
+    (isAdviceRequest(lastUserMessage) || practicalRequested || logicalExecutionRequested || businessMarketingRequested || (ventMode && ventAdviceMode === "advice"));
   const thinkingTime = getThinkingTime(lastUserMessage, deepThinkingRequested);
     const ventReadTime = getVentReadTime(lastUserMessage, ventMode);
     const totalReadTime = Math.max(thinkingTime, ventReadTime);
@@ -1019,6 +1059,8 @@ Deno.serve(async (req) => {
         : "") +
       (scheduleRequested ? SCHEDULE_ASSIST_MODE : "") +
       ((practicalRequested || logicalExecutionRequested) && !emotionalRequested ? PRACTICAL_LOGIC_MODE : "") +
+      (adviceRequested ? ADVICE_FIRST_MODE : "") +
+      (adviceRequested ? OPTION_SET_MODE : "") +
       (businessMarketingRequested && !emotionalRequested ? BUSINESS_MARKETING_CONNOISSEUR_MODE : "") +
       (logicalExecutionRequested && !emotionalRequested ? `\n\nExecution-focused response: Options first, no questions. Provide 2-4 actionable options with pros/cons immediately. Then recommend one and give a clear starter plan. Ask at most one optional follow-up question. Include sources when available.` : "") +
       (emotionalRequested && !beReal ? EMOTIONAL_SUPPORT_MODE : "") +
@@ -1038,7 +1080,7 @@ Deno.serve(async (req) => {
       return "";
     })();
 
-    const shouldUseResearch = referencesRequested || ((deepThinkingRequested || practicalRequested || logicalExecutionRequested) && !emotionalRequested);
+    const shouldUseResearch = referencesRequested || (adviceRequested && !(ventMode && ventAdviceMode === "none")) || ((deepThinkingRequested || practicalRequested || logicalExecutionRequested) && !emotionalRequested);
     const researchQuery = shouldUseResearch ? buildSearchQuery(lastUserMessage) : "";
     const researchContext = shouldUseResearch
       ? await getResearchContext(researchQuery, referencesRequested)
