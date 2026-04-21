@@ -253,7 +253,6 @@ function SafetyAdminPage() {
           <p>We monitor policy-sensitive activity signals to prevent harm, abuse, and misuse.</p>
           <p>Enforcement actions may include warnings, temporary restrictions, and account review where necessary.</p>
           <p>Policy operations interfaces are restricted and not available on standard user accounts.</p>
-          {authFailureReason ? <p className="text-xs opacity-80">Access check: {authFailureReason}</p> : null}
         </div>
       </div>
     );
@@ -291,7 +290,7 @@ function SafetyAdminPage() {
       <div className="space-y-3">
         {rows.length === 0 ? (
           <div className="rounded-xl border border-border bg-surface/60 p-4 text-sm text-muted-foreground">
-            No safety records yet, or your account is not authorized for safety admin access.
+            No safety records yet.
           </div>
         ) : (
           rows.map((row) => {
