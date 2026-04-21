@@ -1425,6 +1425,10 @@ export function Chat() {
   const chooseVentResponse = async (mode: VentAdviceMode) => {
     if (busy || mode === "none") return;
 
+    // Keep Vent mode active after the user chooses how they want support.
+    setForceVent(true);
+    setVentAdviceMode(mode);
+
     setMessages((prev) => {
       const copy = [...prev];
       for (let i = copy.length - 1; i >= 0; i--) {
@@ -2146,6 +2150,8 @@ export function Chat() {
                               variant="ghost"
                               size="sm"
                               onClick={() => {
+                                setForceVent(true);
+                                setVentAdviceMode("none");
                                 setMessages((prev) => {
                                   const copy = [...prev];
                                   if (copy[i]) copy[i] = { ...copy[i], ventChoicePending: false };
