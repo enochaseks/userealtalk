@@ -187,12 +187,14 @@ export function Chat() {
   };
 
   const recordFeatureUsage = async (feature: MeteredFeature) => {
-    if (!user) return;
+    if (!user) return true;
     try {
       const result = await consumeMeteredFeature(user.id, feature);
       setSubscriptionSnapshot(result.snapshot);
+      return result.allowed;
     } catch {
-      // Do not break the user flow if usage tracking fails.
+      toast.error("Could not verify your usage limits. Please try again.");
+      return false;
     }
   };
 
@@ -932,7 +934,8 @@ export function Chat() {
 
     const scheduleRequested = isScheduleIntent(text);
     let thinkingRequested = forceThinking || shouldUseThinkingMode(text);
-    let planningRequested = !scheduleRequested && (forcePlan || userAskedForPlan(text));
+    const planIntentRequested = !scheduleRequested && (forcePlan || userAskedForPlan(text));
+    let planningRequested = planIntentRequested;
     const ventDetectedFromText = shouldUseVentMode(text);
     const ventRequested = forceVent || ventDetectedFromText || !!overrideVentAdviceMode;
     const activeVentAdviceMode = overrideVentAdviceMode ?? ventAdviceMode;
@@ -943,6 +946,7 @@ export function Chat() {
     const shouldOfferVentChoice = activeVent && !overrideVentAdviceMode && activeVentAdviceMode === "none";
 
     const featureSnapshot = await refreshSubscription();
+    const activePlan = featureSnapshot?.plan ?? subscriptionSnapshot?.plan ?? "free";
     if (scheduleRequested && featureSnapshot && !hasFeatureAccess(featureSnapshot.plan, "schedule")) {
       toast.error("Schedule is available on Pro and Platinum.");
       return;
@@ -956,6 +960,32 @@ export function Chat() {
       showFeatureLimitToast("plan", featureSnapshot);
       planningRequested = false;
       if (forcePlan) setForcePlan(false);
+      if (planIntentRequested) {
+        toast.error("Plan Mode is unavailable until your monthly limit resets or you upgrade.");
+        return;
+      }
+    }
+
+    // Consume metered usage before making the chat request so limits are enforced
+    // even when post-response tracking fails.
+    if (thinkingRequested) {
+      const allowed = await recordFeatureUsage("deep_thinking");
+      if (!allowed) {
+        thinkingRequested = false;
+        if (forceThinking) setForceThinking(false);
+      }
+    }
+
+    if (planningRequested) {
+      const allowed = await recordFeatureUsage("plan");
+      if (!allowed) {
+        planningRequested = false;
+        if (forcePlan) setForcePlan(false);
+        if (planIntentRequested) {
+          toast.error("Plan Mode is unavailable until your monthly limit resets or you upgrade.");
+          return;
+        }
+      }
     }
 
     // Keep manual toggles sticky, but do not auto-lock modes from text detection.
@@ -1027,8 +1057,8 @@ export function Chat() {
 
     // Fetch all messages from database for this conversation, apply memory limit based on plan.
     // Vent mode is private and does not read/write persisted conversation messages.
-    const memoryLimit = getConversationMemoryLimit(subscriptionSnapshot?.plan ?? "free");
-    const warningThreshold = getConversationMemoryWarningThreshold(subscriptionSnapshot?.plan ?? "free");
+    const memoryLimit = getConversationMemoryLimit(activePlan);
+    const warningThreshold = getConversationMemoryWarningThreshold(activePlan);
     let totalMessageCount = 0;
     let currentMessages: Msg[] = [];
 
@@ -1146,7 +1176,7 @@ export function Chat() {
           forceVent: activeVent,
           ventAdviceMode: activeVentAdviceMode,
           userId: user.id,
-          userPlan: subscriptionSnapshot?.plan ?? "free",
+          userPlan: activePlan,
           totalMessageCount,
           memoryLimit,
         }),
@@ -1349,12 +1379,7 @@ export function Chat() {
         })();
       }
 
-      if (thinkingRequested) {
-        await recordFeatureUsage("deep_thinking");
-      }
-      if (planningRequested) {
-        await recordFeatureUsage("plan");
-      }
+      // Usage for thinking/plan is consumed before the request for strict enforcement.
     }
 
     window.dispatchEvent(new Event("conversationCreated"));

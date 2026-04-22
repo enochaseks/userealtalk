@@ -134,13 +134,6 @@ const ensureSubscriptionRow = async (userId: string) => {
 
   if (existingError) throw existingError;
   if (existing) {
-    if (!STRIPE_BILLING_ENABLED && existing.plan !== "free") {
-      await supabase
-        .from("user_subscriptions")
-        .update({ plan: "free", updated_at: new Date().toISOString() })
-        .eq("user_id", userId);
-      return { ...existing, plan: "free" };
-    }
     return existing;
   }
 
@@ -156,9 +149,8 @@ const ensureSubscriptionRow = async (userId: string) => {
 
 export const loadSubscriptionSnapshot = async (userId: string): Promise<SubscriptionSnapshot> => {
   const subscription = await ensureSubscriptionRow(userId);
-  const plan = STRIPE_BILLING_ENABLED
-    ? (subscription.plan as SubscriptionPlan) || "free"
-    : "free";
+  const rawPlan = String(subscription.plan || "free");
+  const plan: SubscriptionPlan = rawPlan === "pro" || rawPlan === "platinum" ? rawPlan : "free";
 
   const usageQueries = (Object.keys(FEATURE_PERIOD) as MeteredFeature[]).map((feature) => ({
     feature,
