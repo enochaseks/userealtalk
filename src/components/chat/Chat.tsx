@@ -966,27 +966,9 @@ export function Chat() {
       }
     }
 
-    // Consume metered usage before making the chat request so limits are enforced
-    // even when post-response tracking fails.
-    if (thinkingRequested) {
-      const allowed = await recordFeatureUsage("deep_thinking");
-      if (!allowed) {
-        thinkingRequested = false;
-        if (forceThinking) setForceThinking(false);
-      }
-    }
-
-    if (planningRequested) {
-      const allowed = await recordFeatureUsage("plan");
-      if (!allowed) {
-        planningRequested = false;
-        if (forcePlan) setForcePlan(false);
-        if (planIntentRequested) {
-          toast.error("Plan Mode is unavailable until your monthly limit resets or you upgrade.");
-          return;
-        }
-      }
-    }
+    // Usage recording for deep_thinking and plan is handled server-side in the
+    // chat edge function — this prevents double-counting and ensures limits hold
+    // even if the client is bypassed.
 
     // Keep manual toggles sticky, but do not auto-lock modes from text detection.
     // Auto-locking can unintentionally keep heavy modes active and slow future replies.
@@ -1660,7 +1642,7 @@ export function Chat() {
         source_message_id: sourceMessageId,
       });
 
-      await recordFeatureUsage("plan");
+      // plan usage recorded server-side in the chat edge function
 
       window.dispatchEvent(new Event("conversationUpdated"));
       toast.success("Plan regenerated and saved");

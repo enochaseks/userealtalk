@@ -1086,6 +1086,85 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Server-side quota enforcement — reads the real plan from DB and
+    // records usage atomically so limits hold even if the frontend is bypassed.
+    if (admin && userId) {
+      const { data: subRow } = await admin
+        .from("user_subscriptions")
+        .select("plan")
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      const rawPlan = String(subRow?.plan || "free");
+      const verifiedPlan: "free" | "pro" | "platinum" =
+        rawPlan === "pro" || rawPlan === "platinum" ? rawPlan : "free";
+
+      const serverPlanLimits: Record<"free" | "pro" | "platinum", { deep_thinking: number | null; plan: number | null }> = {
+        free:     { deep_thinking: 5,    plan: 3    },
+        pro:      { deep_thinking: 50,   plan: 25   },
+        platinum: { deep_thinking: null, plan: null },
+      };
+      const limits = serverPlanLimits[verifiedPlan];
+
+      const now = new Date();
+      const yearMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+      const yearMonthDay = `${yearMonth}-${String(now.getUTCDate()).padStart(2, "0")}`;
+
+      // --- deep_thinking (daily) ---
+      if (thinkDeeply && limits.deep_thinking !== null) {
+        const { data: dtRow } = await admin
+          .from("user_feature_usage")
+          .select("id, used_count")
+          .eq("user_id", userId)
+          .eq("feature", "deep_thinking")
+          .eq("period_type", "day")
+          .eq("period_key", yearMonthDay)
+          .maybeSingle();
+
+        const dtUsed = Number(dtRow?.used_count ?? 0);
+        if (dtUsed >= limits.deep_thinking) {
+          return buildImmediateSseResponse(
+            `You've reached your daily Deep Thinking limit (${limits.deep_thinking}/day on the ${verifiedPlan} plan). Your limit resets tomorrow.`
+          );
+        }
+
+        if (dtRow) {
+          await admin.from("user_feature_usage").update({ used_count: dtUsed + 1 }).eq("id", dtRow.id);
+        } else {
+          await admin.from("user_feature_usage").insert({
+            user_id: userId, feature: "deep_thinking", period_type: "day", period_key: yearMonthDay, used_count: 1,
+          });
+        }
+      }
+
+      // --- plan mode (monthly) ---
+      if (forcePlan && limits.plan !== null) {
+        const { data: planRow } = await admin
+          .from("user_feature_usage")
+          .select("id, used_count")
+          .eq("user_id", userId)
+          .eq("feature", "plan")
+          .eq("period_type", "month")
+          .eq("period_key", yearMonth)
+          .maybeSingle();
+
+        const planUsed = Number(planRow?.used_count ?? 0);
+        if (planUsed >= limits.plan) {
+          return buildImmediateSseResponse(
+            `You've reached your monthly Plan Mode limit (${limits.plan}/month on the ${verifiedPlan} plan). Upgrade or wait until next month to unlock more.`
+          );
+        }
+
+        if (planRow) {
+          await admin.from("user_feature_usage").update({ used_count: planUsed + 1 }).eq("id", planRow.id);
+        } else {
+          await admin.from("user_feature_usage").insert({
+            user_id: userId, feature: "plan", period_type: "month", period_key: yearMonth, used_count: 1,
+          });
+        }
+      }
+    }
+
     let memoryProfile: any = null;
     if (admin && userId) {
       const { data } = await admin
