@@ -175,6 +175,15 @@ const REFERENCES_REQUEST_MODE = `\n\nThe user asked for links/references.
 - Never say you cannot provide links directly when links are available in context.
 - If no research links are available, say Google references were unavailable right now and suggest trying again.`;
 
+const INTERNET_SEARCH_MODE = `\n\nInternet search mode:
+- The user explicitly asked to search the internet/web.
+- Use the provided research context as the factual basis.
+- Give a direct answer first, then include a final "Sources:" section with only full URLs from context.
+- If the query is broad, summarize the top findings and flag uncertainty briefly when sources disagree.
+- Do not invent links or citations.
+- Do NOT say you cannot browse/search the internet.
+- If provider results are missing but fallback links are provided, use those links and still return a useful answer with Sources.`;
+
 const isPlanningRequest = (text: string): boolean => {
   const lower = text.toLowerCase();
   const planningKeywords = [
@@ -204,10 +213,10 @@ const isScheduleRequest = (text: string): boolean => {
     "appointment",
     "meeting",
     "book me",
-    "add this",
-    "set this up",
-    "put this in",
-    "plan my day",
+    "add to calendar",
+    "add event",
+    "set a reminder",
+    "remind me",
   ];
   return scheduleKeywords.some((k) => lower.includes(k));
 };
@@ -221,10 +230,9 @@ const isScheduleConversation = (messages: Array<{ role: string; content: string 
     "appointment",
     "reminder",
     "[schedule_save:",
-    "what date",
-    "what time",
-    "today",
-    "tomorrow",
+    "add event",
+    "set a reminder",
+    "remind me",
   ];
   return conversationMarkers.some((k) => combined.includes(k));
 };
@@ -419,6 +427,122 @@ const isReferencesRequest = (text: string): boolean => {
     "evidence",
   ];
   return keys.some((k) => lower.includes(k));
+};
+
+const isInternetSearchRequest = (text: string): boolean => {
+  const lower = text.toLowerCase();
+  const keys = [
+    "search the internet",
+    "search internet",
+    "search the web",
+    "help me search",
+    "look this up",
+    "look it up",
+    "find online",
+    "find on the internet",
+    "check online",
+    "web search",
+    "google this",
+    "search online",
+  ];
+  if (keys.some((k) => lower.includes(k))) return true;
+
+  // Catch natural requests like "search houses in london" or "can you find flats online"
+  const genericSearchPattern = /\b(search|look\s+up|find|google)\b/i;
+  return genericSearchPattern.test(lower);
+};
+
+const isInternetSearchConversation = (messages: Array<{ role: string; content: string }>): boolean => {
+  const recent = (messages ?? []).slice(-8);
+  const combined = recent.map((m) => String(m?.content ?? "").toLowerCase()).join("\n");
+  const markers = [
+    "search the internet",
+    "search the web",
+    "search online",
+    "web search",
+    "look this up",
+    "find online",
+    "google this",
+  ];
+  return markers.some((k) => combined.includes(k));
+};
+
+const isQueryRequiresWebSearch = (text: string): boolean => {
+  const lower = text.toLowerCase();
+
+  // Current events, news, latest info, real-time data
+  const currentInfoKeywords = ["latest", "current", "today", "this week", "this month", "recent", "newest", "breaking", "news", "update", "2026", "2025"];
+  if (currentInfoKeywords.some((k) => lower.includes(k))) return true;
+
+  // Prices, rates, costs, fees, affordability
+  const priceKeywords = ["price", "cost", "rate", "fee", "salary", "wage", "rent", "mortgage", "how much", "how expensive", "afford"];
+  if (priceKeywords.some((k) => lower.includes(k)) && !/\b(hypothetical|imagine|suppose|if)\b/i.test(lower)) return true;
+
+  // Locations, recommendations, businesses
+  const locationKeywords = ["restaurant", "hotel", "cafe", "coffee", "bar", "gym", "hospital", "doctor", "plumber", "electrician", "best place", "where to", "near me", "in london", "in manchester", "in uk", "in america", "nearby"];
+  if (locationKeywords.some((k) => lower.includes(k)) && !lower.includes("hypothetical")) return true;
+
+  // How-to, instructional queries that need current tools/methods
+  const instructKeywords = ["how to", "how do i", "guide", "tutorial", "steps to", "instructions"];
+  if (instructKeywords.some((k) => lower.includes(k)) && /\b(build|make|create|start|grow|launch|open|get|find|learn|setup|install)\b/i.test(lower)) return true;
+
+  // Comparisons of real products/services
+  const compareKeywords = ["best", "worst", "top", "vs", "versus", "better than", "compare"];
+  if (compareKeywords.some((k) => lower.includes(k)) && /\b(product|service|company|app|tool|software|phone|car|house|hotel|restaurant|job|career)\b/i.test(lower)) return true;
+
+  // Factual questions (who, what, when, where about real things)
+  if (/^(what is|who is|when was|where is|what are)\s+\b(?!the answer|the difference|the point)\w+/i.test(lower)) {
+    if (!/\b(hypothetical|theoretical|supposed|imagine)\b/i.test(lower)) return true;
+  }
+
+  return false;
+};
+
+const SEARCH_STOPWORDS = new Set([
+  "help", "me", "to", "for", "the", "a", "an", "on", "in", "at", "of", "and", "or", "please",
+  "can", "could", "would", "will", "you", "i", "want", "need", "find", "search", "look", "up",
+  "internet", "web", "online", "about", "with", "from", "this", "that", "it",
+]);
+
+const toKeywordQuery = (value: string): string => {
+  const tokens = String(value ?? "")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean)
+    .filter((token) => token.length > 1 || /^\d+$/.test(token))
+    .filter((token) => !SEARCH_STOPWORDS.has(token));
+
+  return [...new Set(tokens)].slice(0, 12).join(" ");
+};
+
+const extractInternetSearchQuery = (text: string): string => {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  const stripped = normalized
+    .replace(/^(please\s+)?(can you\s+|could you\s+|will you\s+)?/i, "")
+    .replace(/^(help\s+me\s+(to\s+)?)?(search|find|look\s+up|google)\s+((on\s+)?(the\s+)?(internet|web)\s+)?(for\s+)?/i, "")
+    .replace(/\b(search\s+(the\s+)?(internet|web)|look\s+(this|it)\s+up|find\s+(this\s+)?online|check\s+online|web\s+search|google\s+this)\b[:\-\s]*/i, "")
+    .trim();
+
+  const keywordQuery = toKeywordQuery(stripped || normalized);
+  if (keywordQuery) return buildSearchQuery(keywordQuery);
+
+  return buildSearchQuery(stripped || normalized);
+};
+
+const resolveInternetSearchQuery = (messages: Array<{ role: string; content: string }>, lastUserMessage: string): string => {
+  const direct = extractInternetSearchQuery(lastUserMessage);
+  const isTooGeneric = /^(help me search|search|look it up|look this up|find this|google this)$/i.test(direct);
+  if (direct && !isTooGeneric) return direct;
+
+  const recentUsers = (messages ?? []).filter((m) => m.role === "user").slice(-6).reverse();
+  for (const entry of recentUsers) {
+    const candidate = extractInternetSearchQuery(String(entry?.content ?? ""));
+    if (!candidate) continue;
+    if (/^(help me search|search|look it up|look this up|find this|google this)$/i.test(candidate)) continue;
+    return candidate;
+  }
+
+  return direct || buildSearchQuery(lastUserMessage);
 };
 
 const isAdviceRequest = (text: string): boolean => {
@@ -748,6 +872,76 @@ const extractUrlsFromResults = (results: string[]): string[] => {
   return [...new Set(urls)].slice(0, 8);
 };
 
+const normalizeResultUrl = (rawUrl: string): string => {
+  const input = String(rawUrl ?? "").trim();
+  if (!input) return "";
+
+  const withProtocol = input.startsWith("//") ? `https:${input}` : input;
+
+  try {
+    const parsed = new URL(withProtocol);
+
+    // DuckDuckGo sometimes returns redirect wrappers in result links.
+    if (parsed.hostname.endsWith("duckduckgo.com") && parsed.pathname.startsWith("/l/")) {
+      const wrapped = parsed.searchParams.get("uddg");
+      if (wrapped) {
+        const decoded = decodeURIComponent(wrapped);
+        if (/^https?:\/\//i.test(decoded)) return decoded;
+      }
+    }
+
+    if (!/^https?:$/i.test(parsed.protocol)) return "";
+    return parsed.toString();
+  } catch {
+    return "";
+  }
+};
+
+const isLikelyReachableUrl = async (url: string): Promise<boolean> => {
+  const check = async (method: "HEAD" | "GET") => {
+    const ac = new AbortController();
+    const t = setTimeout(() => ac.abort(), 4500);
+    try {
+      const resp = await fetch(url, {
+        method,
+        redirect: "follow",
+        signal: ac.signal,
+        headers: {
+          "User-Agent": "Mozilla/5.0",
+        },
+      });
+
+      // 401/403/405 can still indicate a valid live page behind restrictions.
+      return resp.ok || resp.status === 401 || resp.status === 403 || resp.status === 405;
+    } catch {
+      return false;
+    } finally {
+      clearTimeout(t);
+    }
+  };
+
+  const headOk = await check("HEAD");
+  if (headOk) return true;
+  return check("GET");
+};
+
+const getVerifiedLinks = async (results: string[], fallbackLinks: string[]): Promise<string[]> => {
+  const candidates = extractUrlsFromResults(results)
+    .map((url) => normalizeResultUrl(url))
+    .filter((url) => /^https?:\/\//i.test(url));
+
+  const dedupedCandidates = [...new Set(candidates)].slice(0, 8);
+  const checks = await Promise.all(
+    dedupedCandidates.map(async (url) => ({ url, ok: await isLikelyReachableUrl(url) })),
+  );
+
+  const verified = checks.filter((item) => item.ok).map((item) => item.url);
+  if (verified.length > 0) return verified;
+
+  // Fallback links are deterministic search URLs and should always be valid endpoints.
+  return fallbackLinks;
+};
+
 const fetchGoogleCseResults = async (query: string): Promise<string[]> => {
   const GOOGLE_API_KEY =
     Deno.env.get("GOOGLE_API_KEY") ??
@@ -816,22 +1010,151 @@ const fetchDuckDuckGoResults = async (query: string): Promise<string[]> => {
   return out;
 };
 
+const fetchDuckDuckGoHtmlResults = async (query: string): Promise<string[]> => {
+  const url = `https://duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), 7000);
+  let resp: Response;
+  try {
+    resp = await fetch(url, {
+      signal: ac.signal,
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+      },
+    });
+  } catch {
+    return [];
+  } finally {
+    clearTimeout(t);
+  }
+  if (!resp.ok) return [];
+
+  const html = await resp.text().catch(() => "");
+  if (!html) return [];
+
+  const results: string[] = [];
+  const re = /<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+  let match: RegExpExecArray | null;
+  let idx = 1;
+  while ((match = re.exec(html)) && idx <= 8) {
+    const href = String(match[1] ?? "").replace(/&amp;/g, "&");
+    const title = String(match[2] ?? "")
+      .replace(/<[^>]+>/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    if (!href || !/^https?:\/\//i.test(href)) continue;
+    if (!title) continue;
+
+    results.push(`${idx}. ${title}\n${href}`);
+    idx++;
+  }
+
+  return results;
+};
+
+const fetchBingHtmlResults = async (query: string): Promise<string[]> => {
+  const url = `https://www.bing.com/search?q=${encodeURIComponent(query)}`;
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), 7000);
+  let resp: Response;
+  try {
+    resp = await fetch(url, {
+      signal: ac.signal,
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+      },
+    });
+  } catch {
+    return [];
+  } finally {
+    clearTimeout(t);
+  }
+  if (!resp.ok) return [];
+
+  const html = await resp.text().catch(() => "");
+  if (!html) return [];
+
+  const results: string[] = [];
+  const re = /<li\s+class="b_algo"[\s\S]*?<a\s+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<p>([\s\S]*?)<\/p>/gi;
+  let match: RegExpExecArray | null;
+  let idx = 1;
+  while ((match = re.exec(html)) && idx <= 8) {
+    const href = String(match[1] ?? "").replace(/&amp;/g, "&");
+    const title = String(match[2] ?? "")
+      .replace(/<[^>]+>/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    const snippet = String(match[3] ?? "")
+      .replace(/<[^>]+>/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    if (!href || !/^https?:\/\//i.test(href)) continue;
+    if (!title) continue;
+
+    results.push(`${idx}. ${title}\n${snippet}\n${href}`.trim());
+    idx++;
+  }
+
+  return results;
+};
+
 const getResearchContext = async (query: string, requireGoogle = false): Promise<string> => {
   if (!query) return "";
 
-  const googleResults = await fetchGoogleCseResults(query);
+  const keywordQuery = toKeywordQuery(query) || query;
+
+  const encoded = encodeURIComponent(keywordQuery);
+  const fallbackLinks = [
+    `https://www.google.com/search?q=${encoded}`,
+    `https://duckduckgo.com/?q=${encoded}`,
+    `https://www.bing.com/search?q=${encoded}`,
+  ];
+
+  // Domain-specific helpers for common requests like housing searches.
+  if (/\b(house|houses|flat|flats|property|properties|rent|rental|letting|apartment|apartments)\b/i.test(keywordQuery)) {
+    fallbackLinks.push(
+      `https://www.google.com/search?q=${encodeURIComponent(`${keywordQuery} site:rightmove.co.uk`)}`,
+      `https://www.google.com/search?q=${encodeURIComponent(`${keywordQuery} site:zoopla.co.uk`)}`,
+      `https://www.google.com/search?q=${encodeURIComponent(`${keywordQuery} site:onthemarket.com`)}`,
+    );
+  }
+
+  const googleResults = await fetchGoogleCseResults(keywordQuery);
+  const ddgResults = requireGoogle ? [] : await fetchDuckDuckGoResults(keywordQuery);
+  const ddgHtmlResults = requireGoogle ? [] : await fetchDuckDuckGoHtmlResults(keywordQuery);
+  const bingHtmlResults = requireGoogle ? [] : await fetchBingHtmlResults(keywordQuery);
   const results = requireGoogle
     ? googleResults
-    : (googleResults.length > 0 ? googleResults : await fetchDuckDuckGoResults(query));
-  if (results.length === 0) return "";
+    : (
+        googleResults.length > 0
+          ? googleResults
+          : (ddgResults.length > 0
+              ? ddgResults
+              : (ddgHtmlResults.length > 0 ? ddgHtmlResults : bingHtmlResults))
+      );
+  if (results.length === 0) {
+    return [
+      "Web research notes for this request:",
+      "Live search provider snippets were unavailable, so fallback search links were generated.",
+      "Use these links directly to view current results for the user's query:",
+      ...fallbackLinks.map((url, idx) => `${idx + 1}. ${url}`),
+      "Verified links:",
+      ...fallbackLinks.map((url, idx) => `${idx + 1}. ${url}`),
+      "Use these as supporting context, not absolute truth. If data is uncertain or location-specific, say that briefly.",
+      "If you produce a practical plan or analysis, include a short Sources section using only full URLs listed above.",
+    ].join("\n\n");
+  }
 
-  const links = extractUrlsFromResults(results);
+  const links = await getVerifiedLinks(results, fallbackLinks);
   const linksBlock = links.length > 0
     ? ["Verified links:", ...links.map((url, idx) => `${idx + 1}. ${url}`)].join("\n")
     : "";
 
   return [
     requireGoogle ? "Google research notes for this request:" : "Web research notes for this request:",
+    `Search query used: ${keywordQuery}`,
     ...results,
     linksBlock,
     "Use these as supporting context, not absolute truth. If data is uncertain or location-specific, say that briefly.",
@@ -879,6 +1202,15 @@ const getVentReadTime = (text: string, ventMode: boolean): number => {
   // 2.2s to 7s range based on length
   const computed = 2200 + Math.min(4800, Math.floor(len * 10));
   return Math.min(computed, 7000);
+};
+
+const getInternetSearchReadTime = (text: string, internetSearchMode: boolean): number => {
+  if (!internetSearchMode) return 0;
+
+  const len = text.trim().length;
+  // 2.5s to 8s to make web-search state visibly distinct.
+  const computed = 2500 + Math.min(5500, Math.floor(len * 12));
+  return Math.min(computed, 8000);
 };
 
 type SafetyViolation = {
@@ -1194,6 +1526,10 @@ Deno.serve(async (req) => {
     const memoryInstruction = buildMemoryInstruction(memoryProfile, messages ?? []);
   const emailRequested = isEmailRequest(lastUserMessage);
   const referencesRequested = isReferencesRequest(lastUserMessage);
+  const internetSearchRequested =
+    isInternetSearchRequest(lastUserMessage) ||
+    isInternetSearchConversation(messages ?? []) ||
+    isQueryRequiresWebSearch(lastUserMessage);
   const scheduleRequested = isScheduleRequest(lastUserMessage) || isScheduleConversation(messages ?? []);
   const deepThinkingRequested = thinkDeeply || emailRequested;
   const planningRequested = !scheduleRequested && (forcePlan || emailRequested || isPlanningRequest(lastUserMessage));
@@ -1207,7 +1543,8 @@ Deno.serve(async (req) => {
     (isAdviceRequest(lastUserMessage) || practicalRequested || logicalExecutionRequested || businessMarketingRequested || (ventMode && ventAdviceMode === "advice"));
   const thinkingTime = getThinkingTime(lastUserMessage, deepThinkingRequested);
     const ventReadTime = getVentReadTime(lastUserMessage, ventMode);
-    const totalReadTime = Math.max(thinkingTime, ventReadTime);
+    const internetSearchReadTime = getInternetSearchReadTime(lastUserMessage, internetSearchRequested);
+    const totalReadTime = Math.max(thinkingTime, ventReadTime, internetSearchReadTime);
     const ventAdviceInstruction = ventMode
       ? ventAdviceMode === "advice"
         ? VENT_ADVICE
@@ -1234,6 +1571,7 @@ Deno.serve(async (req) => {
       (ventMode && !beReal ? VENT_MODE_BASE : "") +
       (beReal && ventMode ? `\n\nVent mode + Be Real: Listen and validate briefly, but prioritize honest feedback over endless sympathy. Be empathetic but not coddling.` : ventAdviceInstruction) +
       (referencesRequested ? REFERENCES_REQUEST_MODE : "") +
+      (internetSearchRequested ? INTERNET_SEARCH_MODE : "") +
       (memoryInstruction ? `\n\nUser memory context:\n${memoryInstruction}` : "");
 
     // Add memory limit warning if user is approaching limit
@@ -1247,8 +1585,14 @@ Deno.serve(async (req) => {
       return "";
     })();
 
-    const shouldUseResearch = referencesRequested || (adviceRequested && !(ventMode && ventAdviceMode === "none")) || ((deepThinkingRequested || practicalRequested || logicalExecutionRequested) && !emotionalRequested);
-    const researchQuery = shouldUseResearch ? buildSearchQuery(lastUserMessage) : "";
+    const shouldUseResearch =
+      internetSearchRequested ||
+      referencesRequested ||
+      (adviceRequested && !(ventMode && ventAdviceMode === "none")) ||
+      ((deepThinkingRequested || practicalRequested || logicalExecutionRequested) && !emotionalRequested);
+    const researchQuery = shouldUseResearch
+      ? (internetSearchRequested ? resolveInternetSearchQuery(messages ?? [], lastUserMessage) : buildSearchQuery(lastUserMessage))
+      : "";
     const researchContext = shouldUseResearch
       ? await getResearchContext(researchQuery, referencesRequested)
       : "";
@@ -1277,7 +1621,9 @@ Deno.serve(async (req) => {
         if (totalReadTime > 0) {
           const startEvent = {
             event: "thinking_start",
-            label: ventMode ? "Reading carefully..." : "🤔 Thinking...",
+            label: internetSearchRequested
+              ? "Deeply searching the internet..."
+              : (ventMode ? "Reading carefully..." : "🤔 Thinking..."),
           };
           sendSse(startEvent);
           

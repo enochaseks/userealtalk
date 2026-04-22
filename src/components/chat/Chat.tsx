@@ -932,9 +932,9 @@ export function Chat() {
     return;
   }
 
-    const scheduleRequested = isScheduleIntent(text);
+    const scheduleRequested = false;
     let thinkingRequested = forceThinking || shouldUseThinkingMode(text);
-    const planIntentRequested = !scheduleRequested && (forcePlan || userAskedForPlan(text));
+    const planIntentRequested = forcePlan;
     let planningRequested = planIntentRequested;
     const ventDetectedFromText = shouldUseVentMode(text);
     const ventRequested = forceVent || ventDetectedFromText || !!overrideVentAdviceMode;
@@ -947,10 +947,6 @@ export function Chat() {
 
     const featureSnapshot = await refreshSubscription();
     const activePlan = featureSnapshot?.plan ?? subscriptionSnapshot?.plan ?? "free";
-    if (scheduleRequested && featureSnapshot && !hasFeatureAccess(featureSnapshot.plan, "schedule")) {
-      toast.error("Schedule is available on Pro and Platinum.");
-      return;
-    }
     if (thinkingRequested && featureSnapshot && !canUseMeteredFeature("deep_thinking", featureSnapshot)) {
       showFeatureLimitToast("deep_thinking", featureSnapshot);
       thinkingRequested = false;
