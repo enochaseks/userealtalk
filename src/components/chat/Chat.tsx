@@ -2060,7 +2060,7 @@ export function Chat() {
         content: `✅ **Email sent successfully**\n\n**To:** ${sentTo}\n**Subject:** ${sentSubject}\n\nDelivery channel: ${provider}.`,
       };
       setMessages((prev) => [...prev, confirmationMsg]);
-      await recordFeatureUsage("gmail_send");
+      // gmail_send usage is now recorded server-side in the gmail-send edge function
       toast.success(`Email sent to ${sentTo}`);
     } catch (e: any) {
       toast.error(e.message || "Failed to send email");

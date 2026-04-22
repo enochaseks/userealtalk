@@ -1,9 +1,73 @@
 // @ts-nocheck
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
+const GMAIL_SEND_LIMITS: Record<"free" | "pro" | "platinum", number | null> = {
+  free: 5,
+  pro: 50,
+  platinum: null,
+};
+
+const enforceGmailSendQuota = async (authHeader: string | null): Promise<{ userId: string } | { error: string; status: number }> => {
+  const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+  const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return { error: "Server misconfiguration", status: 500 };
+
+  const token = authHeader?.replace(/^Bearer\s+/i, "").trim();
+  if (!token) return { error: "Unauthorized", status: 401 };
+
+  const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+  const { data: { user }, error: authErr } = await admin.auth.getUser(token);
+  if (authErr || !user) return { error: "Unauthorized", status: 401 };
+
+  const { data: subRow } = await admin
+    .from("user_subscriptions")
+    .select("plan")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  const rawPlan = String(subRow?.plan || "free");
+  const plan: "free" | "pro" | "platinum" = rawPlan === "pro" || rawPlan === "platinum" ? rawPlan : "free";
+  const limit = GMAIL_SEND_LIMITS[plan];
+
+  if (limit !== null) {
+    const now = new Date();
+    const periodKey = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+
+    const { data: usageRow } = await admin
+      .from("user_feature_usage")
+      .select("id, used_count")
+      .eq("user_id", user.id)
+      .eq("feature", "gmail_send")
+      .eq("period_type", "month")
+      .eq("period_key", periodKey)
+      .maybeSingle();
+
+    const used = Number(usageRow?.used_count ?? 0);
+    if (used >= limit) {
+      return {
+        error: `You've reached your monthly Gmail send limit (${limit}/month on the ${plan} plan). Upgrade or wait until next month.`,
+        status: 429,
+      };
+    }
+
+    // Record usage atomically
+    if (usageRow) {
+      await admin.from("user_feature_usage").update({ used_count: used + 1 }).eq("id", usageRow.id);
+    } else {
+      await admin.from("user_feature_usage").insert({
+        user_id: user.id, feature: "gmail_send", period_type: "month", period_key: periodKey, used_count: 1,
+      });
+    }
+  }
+
+  return { userId: user.id };
 };
 
 const encodeBase64Url = (bytes: Uint8Array): string => {
@@ -42,6 +106,16 @@ serve(async (req) => {
 
   try {
     const { to, subject, body, googleAccessToken, replyTo } = await req.json();
+
+    // Enforce quota server-side before sending
+    const quotaResult = await enforceGmailSendQuota(req.headers.get("authorization"));
+    if ("error" in quotaResult) {
+      return new Response(JSON.stringify({ error: quotaResult.error }), {
+        status: quotaResult.status,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
     const RESEND_FROM_EMAIL = Deno.env.get("RESEND_FROM_EMAIL");
 
