@@ -942,6 +942,49 @@ const getVerifiedLinks = async (results: string[], fallbackLinks: string[]): Pro
   return fallbackLinks;
 };
 
+const fetchTavilyResults = async (query: string): Promise<string[]> => {
+  const tavilyApiKey = Deno.env.get("TAVILY_API_KEY");
+  if (!tavilyApiKey) return [];
+
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), 7000);
+  let resp: Response;
+  try {
+    resp = await fetch("https://api.tavily.com/search", {
+      method: "POST",
+      signal: ac.signal,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${tavilyApiKey}`,
+      },
+      body: JSON.stringify({
+        query,
+        search_depth: "advanced",
+        max_results: 8,
+      }),
+    });
+  } catch {
+    return [];
+  } finally {
+    clearTimeout(t);
+  }
+
+  if (!resp.ok) return [];
+
+  const data = await resp.json().catch(() => ({}));
+  const items = Array.isArray((data as any)?.results) ? (data as any).results : [];
+
+  return items
+    .slice(0, 8)
+    .map((item: any, idx: number) => {
+      const title = String(item?.title ?? "Untitled").trim();
+      const snippet = String(item?.content ?? item?.snippet ?? "").replace(/\s+/g, " ").trim();
+      const link = String(item?.url ?? "").trim();
+      return `${idx + 1}. ${title}\n${snippet}\n${link}`.trim();
+    })
+    .filter(Boolean);
+};
+
 const fetchGoogleCseResults = async (query: string): Promise<string[]> => {
   const GOOGLE_API_KEY =
     Deno.env.get("GOOGLE_API_KEY") ??
@@ -1121,18 +1164,21 @@ const getResearchContext = async (query: string, requireGoogle = false): Promise
     );
   }
 
+  const tavilyResults = await fetchTavilyResults(keywordQuery);
   const googleResults = await fetchGoogleCseResults(keywordQuery);
   const ddgResults = requireGoogle ? [] : await fetchDuckDuckGoResults(keywordQuery);
   const ddgHtmlResults = requireGoogle ? [] : await fetchDuckDuckGoHtmlResults(keywordQuery);
   const bingHtmlResults = requireGoogle ? [] : await fetchBingHtmlResults(keywordQuery);
   const results = requireGoogle
-    ? googleResults
+    ? (tavilyResults.length > 0 ? tavilyResults : googleResults)
     : (
-        googleResults.length > 0
+        tavilyResults.length > 0
+          ? tavilyResults
+          : (googleResults.length > 0
           ? googleResults
           : (ddgResults.length > 0
               ? ddgResults
-              : (ddgHtmlResults.length > 0 ? ddgHtmlResults : bingHtmlResults))
+              : (ddgHtmlResults.length > 0 ? ddgHtmlResults : bingHtmlResults)))
       );
   if (results.length === 0) {
     return [

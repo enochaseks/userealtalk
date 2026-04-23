@@ -2165,9 +2165,26 @@ export function Chat() {
                             <ReactMarkdown
                               remarkPlugins={[remarkGfm]}
                               components={{
-                                a: ({ node, ...props }) => (
-                                  <a {...props} target="_blank" rel="noopener noreferrer" />
-                                ),
+                                a: ({ node, href, children, ...props }) => {
+                                  // If the child text is the raw URL itself, shorten it to just the domain
+                                  const childText = typeof children === "string" ? children : Array.isArray(children) ? children.join("") : "";
+                                  const isRawUrl = href && (childText === href || childText.startsWith("http"));
+                                  let label = <>{children}</>;
+                                  if (isRawUrl && href) {
+                                    try {
+                                      const u = new URL(href);
+                                      const domain = u.hostname.replace(/^www\./, "");
+                                      label = <>{domain}</>;
+                                    } catch {
+                                      // fallback to children
+                                    }
+                                  }
+                                  return (
+                                    <a {...props} href={href} target="_blank" rel="noopener noreferrer">
+                                      {label}
+                                    </a>
+                                  );
+                                },
                               }}
                             >
                               {visibleContent || " "}
