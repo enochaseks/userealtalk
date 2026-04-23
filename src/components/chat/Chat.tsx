@@ -12,6 +12,7 @@ import { Document, Packer, Paragraph, TextRun } from "docx";
 import { jsPDF } from "jspdf";
 import { toast } from "sonner";
 import { useSearch, useNavigate } from "@tanstack/react-router";
+import { useVoiceInput } from "../../hooks/use-voice-input";
 import {
   consumeMeteredFeature,
   getUsageWindowLabel,
@@ -106,6 +107,7 @@ const FEATURE_LABELS: Record<MeteredFeature, string> = {
   deep_thinking: "Deep Thinking",
   plan: "Plan Mode",
   gmail_send: "Gmail send",
+  voice_input: "Voice input",
 };
 
 export function Chat() {
@@ -148,6 +150,18 @@ export function Chat() {
   const [isRegeneratingPlan, setIsRegeneratingPlan] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const voiceDraftBaseRef = useRef("");
+  const previousVoiceListeningRef = useRef(false);
+  const voiceSessionStartedAtRef = useRef<number | null>(null);
+  const {
+    error: voiceInputError,
+    isListening: isVoiceListening,
+    isSupported: isVoiceSupported,
+    resetTranscript: resetVoiceTranscript,
+    startListening,
+    stopListening,
+    transcript: voiceTranscript,
+  } = useVoiceInput();
 
   // Sync convId with search params
   useEffect(() => {
@@ -336,6 +350,89 @@ export function Chat() {
     el.style.height = "auto";
     el.style.height = Math.min(el.scrollHeight, 180) + "px";
   }, [input]);
+
+  useEffect(() => {
+    if (!voiceInputError) return;
+    toast.error(voiceInputError);
+  }, [voiceInputError]);
+
+  useEffect(() => {
+    if (busy && isVoiceListening) {
+      stopListening();
+    }
+  }, [busy, isVoiceListening, stopListening]);
+
+  useEffect(() => {
+    if (!previousVoiceListeningRef.current && isVoiceListening) {
+      voiceDraftBaseRef.current = input;
+      voiceSessionStartedAtRef.current = Date.now();
+    }
+
+    if (previousVoiceListeningRef.current && !isVoiceListening) {
+      textareaRef.current?.focus();
+
+      const startedAt = voiceSessionStartedAtRef.current;
+      voiceSessionStartedAtRef.current = null;
+
+      if (startedAt && user) {
+        const elapsedSeconds = Math.max(1, Math.ceil((Date.now() - startedAt) / 1000));
+
+        void (async () => {
+          try {
+            const result = await consumeMeteredFeature(user.id, "voice_input", elapsedSeconds);
+            setSubscriptionSnapshot(result.snapshot);
+            if (!result.allowed) {
+              showFeatureLimitToast("voice_input", result.snapshot);
+            }
+          } catch {
+            toast.error("Could not record your voice usage right now. Please try again.");
+          }
+        })();
+      }
+    }
+
+    previousVoiceListeningRef.current = isVoiceListening;
+  }, [input, isVoiceListening, user]);
+
+  useEffect(() => {
+    if (!isVoiceListening && !voiceTranscript) {
+      return;
+    }
+
+    const nextInput = [voiceDraftBaseRef.current.trimEnd(), voiceTranscript]
+      .filter(Boolean)
+      .join(voiceDraftBaseRef.current.trimEnd() ? " " : "")
+      .trim();
+
+    setInput(nextInput);
+  }, [isVoiceListening, voiceTranscript]);
+
+  const handleVoiceInputToggle = async () => {
+    if (!isVoiceSupported) {
+      toast.error("Voice input is only available in supported browsers.");
+      return;
+    }
+
+    if (busy) {
+      return;
+    }
+
+    if (isVoiceListening) {
+      stopListening();
+      return;
+    }
+
+    if (user) {
+      const snapshot = await refreshSubscription();
+      if (snapshot && !canUseMeteredFeature("voice_input", snapshot)) {
+        showFeatureLimitToast("voice_input", snapshot);
+        return;
+      }
+    }
+
+    resetVoiceTranscript();
+    startListening();
+  };
 
   const toLocalInputDateTime = (iso?: string | null): string => {
     if (!iso) return "";
@@ -2607,15 +2704,33 @@ export function Chat() {
               placeholder="Type what's on your mind…"
               className="w-full resize-none bg-transparent px-4 pt-3 pb-2 text-[0.97rem] outline-none placeholder:text-muted-foreground/70 max-h-[180px]"
             />
+            {(isVoiceListening || !isVoiceSupported) && (
+              <div className="px-4 pb-1 text-xs">
+                {isVoiceListening ? (
+                  <span className="text-primary">Listening... speak now, then tap the mic again to stop.</span>
+                ) : (
+                  <span className="text-muted-foreground">Voice input requires a supported browser with microphone access.</span>
+                )}
+              </div>
+            )}
             <div className="flex items-center justify-between px-2 pb-2">
               <div className="flex items-center gap-1">
                 <Button
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="h-9 w-9 text-muted-foreground"
-                  onClick={() => toast("Voice input coming soon")}
-                  aria-label="Voice input"
+                  className={`h-9 w-9 ${isVoiceListening ? "text-primary" : "text-muted-foreground"}`}
+                  onClick={() => void handleVoiceInputToggle()}
+                  aria-label={isVoiceListening ? "Stop voice input" : "Start voice input"}
+                  aria-pressed={isVoiceListening}
+                  disabled={busy}
+                  title={
+                    !isVoiceSupported
+                      ? "Voice input is not supported in this browser"
+                      : isVoiceListening
+                        ? "Stop voice input"
+                        : "Start voice input"
+                  }
                 >
                   <Mic className="h-4 w-4" />
                 </Button>

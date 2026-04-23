@@ -40,6 +40,7 @@ const SUBSCRIPTION_FEATURE_LABELS: Record<MeteredFeature, string> = {
   deep_thinking: "Deep Thinking",
   plan: "Plan Mode",
   gmail_send: "Gmail send",
+  voice_input: "Voice input",
 };
 
 function SettingsPage() {
@@ -105,6 +106,21 @@ function SettingsPage() {
   const formatUsageSummary = (feature: MeteredFeature) => {
     const usage = subscriptionSnapshot?.usage[feature];
     if (!usage) return "Loading...";
+    if (feature === "voice_input") {
+      const formatVoiceDuration = (seconds: number) => {
+        const safeSeconds = Math.max(0, Math.floor(seconds));
+        const minutes = Math.floor(safeSeconds / 60);
+        const remainder = safeSeconds % 60;
+
+        if (minutes > 0 && remainder > 0) return `${minutes}m ${remainder}s`;
+        if (minutes > 0) return `${minutes}m`;
+        return `${remainder}s`;
+      };
+
+      if (usage.limit === null) return "Unlimited today";
+      return `${formatVoiceDuration(usage.remaining ?? 0)} left of ${formatVoiceDuration(usage.limit)} today`;
+    }
+
     if (usage.limit === null) return `Unlimited ${getUsageWindowLabel(feature)}`;
     return `${usage.remaining} left of ${usage.limit} ${getUsageWindowLabel(feature)}`;
   };
@@ -327,7 +343,7 @@ function SettingsPage() {
               <span>Schedule</span>
               <span>{subscriptionSnapshot ? (hasFeatureAccess(subscriptionSnapshot.plan, "schedule") ? "Included" : "Pro / Platinum") : "Loading..."}</span>
             </div>
-            {(["deep_thinking", "plan", "gmail_send"] as MeteredFeature[]).map((feature) => (
+            {(["deep_thinking", "plan", "gmail_send", "voice_input"] as MeteredFeature[]).map((feature) => (
               <div key={feature} className="flex items-center justify-between gap-3">
                 <span>{SUBSCRIPTION_FEATURE_LABELS[feature]}</span>
                 <span>{formatUsageSummary(feature)}</span>

@@ -1,7 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 
 export type SubscriptionPlan = "free" | "pro" | "platinum";
-export type MeteredFeature = "deep_thinking" | "plan" | "gmail_send";
+export type MeteredFeature = "deep_thinking" | "plan" | "gmail_send" | "voice_input";
 export type AccessFeature = MeteredFeature | "schedule";
 export type UsagePeriodType = "day" | "month";
 
@@ -37,6 +37,7 @@ export const PLAN_CATALOG: PlanCatalogItem[] = [
       "Chat and Vent included",
       "Insights, Brain, and Be Real included",
       "Deep Thinking: 5 per day",
+      "Voice input: up to 20 minutes per day",
       "Plan Mode: 3 per month",
       "Gmail send: 5 per month",
       "Schedule: not included",
@@ -55,6 +56,7 @@ export const PLAN_CATALOG: PlanCatalogItem[] = [
       "Everything in Free",
       "Schedule included",
       "Deep Thinking: 50 per day",
+      "Voice input: up to 60 minutes per day",
       "Plan Mode: 25 per month",
       "Gmail send: 50 per month",
       "Conversation Memory: up to 300 messages",
@@ -71,6 +73,7 @@ export const PLAN_CATALOG: PlanCatalogItem[] = [
     features: [
       "Everything in Pro",
       "Deep Thinking: unlimited",
+      "Voice input: up to 300 minutes per day",
       "Plan Mode: unlimited",
       "Gmail send: unlimited",
       "Schedule included",
@@ -85,18 +88,21 @@ const PLAN_LIMITS: Record<SubscriptionPlan, Record<AccessFeature, number | boole
     deep_thinking: 5,
     plan: 3,
     gmail_send: 5,
+    voice_input: 20 * 60,
   },
   pro: {
     schedule: true,
     deep_thinking: 50,
     plan: 25,
     gmail_send: 50,
+    voice_input: 60 * 60,
   },
   platinum: {
     schedule: true,
     deep_thinking: null,
     plan: null,
     gmail_send: null,
+    voice_input: 300 * 60,
   },
 };
 
@@ -104,6 +110,7 @@ const FEATURE_PERIOD: Record<MeteredFeature, UsagePeriodType> = {
   deep_thinking: "day",
   plan: "month",
   gmail_send: "month",
+  voice_input: "day",
 };
 
 export const getCurrentPeriodKey = (periodType: UsagePeriodType, now = new Date()): string => {
@@ -187,20 +194,27 @@ export const loadSubscriptionSnapshot = async (userId: string): Promise<Subscrip
   };
 };
 
-export const consumeMeteredFeature = async (userId: string, feature: MeteredFeature) => {
+export const consumeMeteredFeature = async (userId: string, feature: MeteredFeature, amount = 1) => {
+  const requestedAmount = Math.max(1, Math.floor(amount));
   const snapshot = await loadSubscriptionSnapshot(userId);
   const featureUsage = snapshot.usage[feature];
 
   if (featureUsage.limit !== null && featureUsage.used >= featureUsage.limit) {
-    return { allowed: false, snapshot } as const;
+    return { allowed: false, consumed: 0, snapshot } as const;
   }
 
   if (featureUsage.limit === null) {
-    return { allowed: true, snapshot } as const;
+    return { allowed: true, consumed: 0, snapshot } as const;
   }
 
   const periodType = FEATURE_PERIOD[feature];
   const periodKey = getCurrentPeriodKey(periodType);
+  const remainingBeforeConsume = Math.max(0, featureUsage.limit - featureUsage.used);
+  const amountToConsume = Math.min(requestedAmount, remainingBeforeConsume);
+
+  if (amountToConsume <= 0) {
+    return { allowed: false, consumed: 0, snapshot } as const;
+  }
 
   const { data: existing, error: existingError } = await supabase
     .from("user_feature_usage")
@@ -219,19 +233,19 @@ export const consumeMeteredFeature = async (userId: string, feature: MeteredFeat
       feature,
       period_type: periodType,
       period_key: periodKey,
-      used_count: 1,
+      used_count: amountToConsume,
     });
     if (insertError) throw insertError;
   } else {
     const { error: updateError } = await supabase
       .from("user_feature_usage")
-      .update({ used_count: Number(existing.used_count) + 1 })
+      .update({ used_count: Number(existing.used_count) + amountToConsume })
       .eq("id", existing.id);
     if (updateError) throw updateError;
   }
 
   const refreshed = await loadSubscriptionSnapshot(userId);
-  return { allowed: true, snapshot: refreshed } as const;
+  return { allowed: true, consumed: amountToConsume, snapshot: refreshed } as const;
 };
 
 export const setSubscriptionPlan = async (userId: string, plan: SubscriptionPlan): Promise<SubscriptionSnapshot> => {
