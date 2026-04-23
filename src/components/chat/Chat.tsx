@@ -122,6 +122,8 @@ export function Chat() {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [beReal, setBeReal] = useState(false);
+  const [emotionalMode, setEmotionalMode] = useState(false);
+  const [logicalMode, setLogicalMode] = useState(true);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [forceThinking, setForceThinking] = useState(false);
   const [forcePlan, setForcePlan] = useState(false);
@@ -1096,7 +1098,8 @@ export function Chat() {
 
     const scheduleRequested = false;
     let thinkingRequested = forceThinking || shouldUseThinkingMode(text);
-    const planIntentRequested = forcePlan;
+    const planIntentFromText = /\b(plan|roadmap|strategy|steps|timeline|launch|start my|grow my|marketing plan|action plan|next steps)\b/i.test(text);
+    const planIntentRequested = forcePlan || planIntentFromText;
     let planningRequested = planIntentRequested;
     const ventDetectedFromText = shouldUseVentMode(text);
     const ventRequested = forceVent || ventDetectedFromText || !!overrideVentAdviceMode;
@@ -1311,6 +1314,8 @@ export function Chat() {
         body: JSON.stringify({
           messages: requestMessages,
           beReal,
+          emotionalMode,
+          logicalMode,
           thinkDeeply: thinkingRequested && !shouldOfferVentChoice,
           forcePlan: planningRequested,
           forceVent: activeVent,
@@ -1704,6 +1709,8 @@ export function Chat() {
         body: JSON.stringify({
           messages: [...context, { role: "user", content: planEditPrompt }],
           beReal,
+          emotionalMode,
+          logicalMode,
           thinkDeeply: false,
           forcePlan: true,
           forceVent: false,
@@ -1933,7 +1940,9 @@ export function Chat() {
       },
       body: JSON.stringify({
         messages: [{ role: "user", content: instruction }],
-        beReal: false,
+        beReal,
+        emotionalMode,
+        logicalMode,
         thinkDeeply: false,
         forcePlan: false,
         forceVent: false,
@@ -2260,20 +2269,50 @@ export function Chat() {
                 <img src={logo} alt="RealTalk" className="h-[64px] w-auto opacity-95" />
                 <p className="text-4xl font-semibold tracking-tight">Hello, {userName}</p>
               </div>
-              <p className="mt-3 text-xl text-muted-foreground">What's on your mind?</p>
+              <p className="mt-3 text-xl text-muted-foreground">How are you feeling right now?</p>
 
-              <div className="mt-4 flex flex-wrap justify-center gap-2 max-w-xl">
-                {suggestions.map((suggestion) => (
-                  <button
-                    key={`hero-${suggestion}`}
-                    type="button"
-                    onClick={() => applySuggestion(suggestion)}
-                    className="rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground hover:border-primary hover:text-foreground transition"
-                  >
-                    {suggestion}
-                  </button>
-                ))}
+              <div className="mt-6 inline-flex rounded-full border border-border bg-surface/60 p-1 gap-1">
+                <button
+                  type="button"
+                  onClick={() => { setEmotionalMode(false); setBeReal(false); setLogicalMode(true); }}
+                  className={`rounded-full px-5 py-2 text-sm font-medium transition-colors ${
+                    !emotionalMode && !beReal
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  🧠 Logical
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setEmotionalMode(true); setBeReal(false); setLogicalMode(false); }}
+                  className={`rounded-full px-5 py-2 text-sm font-medium transition-colors ${
+                    emotionalMode
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  🫶 Emotional Support
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setBeReal(true); setEmotionalMode(false); setLogicalMode(false); }}
+                  className={`rounded-full px-5 py-2 text-sm font-medium transition-colors ${
+                    beReal
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  🔥 Be Real
+                </button>
               </div>
+              <p className="mt-3 text-xs text-muted-foreground max-w-xs">
+                {emotionalMode
+                  ? "I'll meet you where you are — no pressure, just support."
+                  : beReal
+                  ? "No filter, no softening — just the honest truth."
+                  : "I'll help you think clearly and work through it step by step."}
+              </p>
             </motion.div>
           ) : (
             <div className="space-y-4 pb-3">
@@ -2491,10 +2530,35 @@ export function Chat() {
         <div className="max-w-2xl mx-auto px-5 py-3">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
-              <Switch id="real" checked={beReal} onCheckedChange={setBeReal} />
-              <Label htmlFor="real" className="text-xs text-muted-foreground cursor-pointer">
-                Be real with me
-              </Label>
+              {/* Mode toggle — compact, always visible during active chat */}
+              {!isEmpty && (
+                <div className="inline-flex rounded-full border border-border bg-surface/60 p-0.5 gap-0.5">
+                  <button
+                    type="button"
+                    onClick={() => { setEmotionalMode(false); setBeReal(false); setLogicalMode(true); }}
+                    className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${!emotionalMode && !beReal ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                    title="Logical mode"
+                  >
+                    🧠
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setEmotionalMode(true); setBeReal(false); setLogicalMode(false); }}
+                    className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${emotionalMode ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                    title="Emotional support mode"
+                  >
+                    🫶
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setBeReal(true); setEmotionalMode(false); setLogicalMode(false); }}
+                    className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${beReal ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                    title="Be real — no filter"
+                  >
+                    🔥
+                  </button>
+                </div>
+              )}
               <button
                 type="button"
                 onClick={() => {

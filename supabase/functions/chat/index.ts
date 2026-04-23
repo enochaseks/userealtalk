@@ -154,10 +154,16 @@ const DETAILED_PLAN_OUTPUT_MODE = `\n\nDetailed output rule for plan requests:
 - Prefer depth over brevity for plan mode.
 - End with "Sources:" and list the supporting links when available.`;
 
-const EMOTIONAL_SUPPORT_MODE = `\n\nThe user is sharing an emotional or personal struggle.
-- Lead with empathy and emotional validation.
-- Keep advice grounded and gentle.
-- Avoid overly analytical or robotic tone unless the user asks for a strict logical breakdown.`;
+const EMOTIONAL_SUPPORT_MODE = `\n\nEmotional Support Mode — the user needs to feel heard first:
+- Your PRIMARY job right now is to make the user feel understood, not to fix their problem.
+- Start by acknowledging and naming their feeling. Reflect it back so they know you heard them.
+- Do NOT lead with advice, solutions, bullet points, or a logical breakdown.
+- Use warm, human language. Speak gently. No clinical tone.
+- Ask at most one soft, open question to invite them to share more — and only after validating first.
+- If they specifically ask for advice after venting, then offer it — gently, not prescriptively.
+- Avoid phrases like "Here is what you should do" or "The logical next step is."
+- Short replies are usually better here. Don't overwhelm them.
+- You are a caring, grounded presence — not a therapist, not a life coach. Just someone who genuinely listens.`;
 
 const VENT_MODE_BASE = `\n\nThe user is venting. Your first job is to understand and emotionally validate what they shared.
 - Do not minimize or judge.
@@ -1389,7 +1395,7 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { messages, beReal, thinkDeeply, forcePlan, forceVent, ventAdviceMode, userId, userPlan, totalMessageCount, memoryLimit } = await req.json();
+    const { messages, beReal, emotionalMode, logicalMode, thinkDeeply, forcePlan, forceVent, ventAdviceMode, userId, userPlan, totalMessageCount, memoryLimit } = await req.json();
     const plan = userPlan ?? "free";
     const MISTRAL_API_KEY = Deno.env.get("MISTRAL_API_KEY");
     const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
@@ -1520,7 +1526,7 @@ Deno.serve(async (req) => {
       }
 
       // --- plan mode (monthly) ---
-      if (forcePlan && limits.plan !== null) {
+      if ((forcePlan || planningRequested) && limits.plan !== null) {
         const { data: planRow } = await admin
           .from("user_feature_usage")
           .select("id, used_count")
@@ -1612,12 +1618,12 @@ Deno.serve(async (req) => {
         ? "\n\nEmail mode: Treat email requests as strategic writing tasks, not emotional support. Think like a sharp editor and planner. Optimize for clarity, tone, structure, persuasion, and outcome. When reviewing an email, identify weaknesses directly and propose stronger wording."
         : "") +
       (scheduleRequested ? SCHEDULE_ASSIST_MODE : "") +
-      ((practicalRequested || logicalExecutionRequested) && !emotionalRequested ? PRACTICAL_LOGIC_MODE : "") +
-      (adviceRequested ? ADVICE_FIRST_MODE : "") +
-      (adviceRequested ? OPTION_SET_MODE : "") +
+      ((practicalRequested || logicalExecutionRequested || logicalMode) && !emotionalRequested && !emotionalMode ? PRACTICAL_LOGIC_MODE : "") +
+      (adviceRequested || logicalMode ? ADVICE_FIRST_MODE : "") +
+      (adviceRequested || logicalMode ? OPTION_SET_MODE : "") +
       (businessMarketingRequested && !emotionalRequested ? BUSINESS_MARKETING_CONNOISSEUR_MODE : "") +
       (logicalExecutionRequested && !emotionalRequested ? `\n\nExecution-focused response: Options first, no questions. Provide 2-4 actionable options with pros/cons immediately. Then recommend one and give a clear starter plan. Ask at most one optional follow-up question. Include sources when available.` : "") +
-      (emotionalRequested && !beReal ? EMOTIONAL_SUPPORT_MODE : "") +
+      (emotionalMode || (emotionalRequested && !beReal) ? EMOTIONAL_SUPPORT_MODE : "") +
       (ventMode && !beReal ? VENT_MODE_BASE : "") +
       (beReal && ventMode ? `\n\nVent mode + Be Real: Listen and validate briefly, but prioritize honest feedback over endless sympathy. Be empathetic but not coddling.` : ventAdviceInstruction) +
       (referencesRequested ? REFERENCES_REQUEST_MODE : "") +
