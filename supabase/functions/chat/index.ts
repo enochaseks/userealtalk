@@ -956,11 +956,15 @@ const fetchTavilyResults = async (query: string): Promise<string[]> => {
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${tavilyApiKey}`,
+        "x-api-key": tavilyApiKey,
       },
       body: JSON.stringify({
+        api_key: tavilyApiKey,
         query,
         search_depth: "advanced",
         max_results: 8,
+        include_answer: true,
+        include_raw_content: false,
       }),
     });
   } catch {
