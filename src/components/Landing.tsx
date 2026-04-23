@@ -202,7 +202,7 @@ export function Landing() {
           <img src={logo} alt="RealTalk" className="h-10 w-auto" />
           <div className="flex items-center gap-1.5 sm:gap-2">
             <a href="/privacy" className="text-xs text-muted-foreground hover:text-foreground transition-colors px-1">
-              Privacy
+              Privacy Policy
             </a>
             <Link to="/auth">
               <Button
