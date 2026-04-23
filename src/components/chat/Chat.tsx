@@ -13,6 +13,7 @@ import { jsPDF } from "jspdf";
 import { toast } from "sonner";
 import { useSearch, useNavigate } from "@tanstack/react-router";
 import { useVoiceInput } from "../../hooks/use-voice-input";
+import { useIsMobile } from "@/hooks/use-mobile";
 import {
   consumeMeteredFeature,
   getUsageWindowLabel,
@@ -113,6 +114,7 @@ const FEATURE_LABELS: Record<MeteredFeature, string> = {
 export function Chat() {
   const { user, session, connectGoogleForGmail } = useAuth();
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const search = useSearch({ strict: false }) as { c?: string };
   const [convId, setConvId] = useState<string | null>(search?.c ?? null);
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -152,6 +154,8 @@ export function Chat() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const voiceDraftBaseRef = useRef("");
   const previousVoiceListeningRef = useRef(false);
+  const voicePressActiveRef = useRef(false);
+  const [isVoicePressing, setIsVoicePressing] = useState(false);
   const voiceSessionStartedAtRef = useRef<number | null>(null);
   const {
     error: voiceInputError,
@@ -358,9 +362,37 @@ export function Chat() {
 
   useEffect(() => {
     if (busy && isVoiceListening) {
+      voicePressActiveRef.current = false;
+      setIsVoicePressing(false);
       stopListening();
     }
   }, [busy, isVoiceListening, stopListening]);
+
+  useEffect(() => {
+    if (!isVoicePressing) {
+      return;
+    }
+
+    const releaseVoice = () => {
+      voicePressActiveRef.current = false;
+      setIsVoicePressing(false);
+      stopListening();
+    };
+
+    window.addEventListener("pointerup", releaseVoice);
+    window.addEventListener("pointercancel", releaseVoice);
+    window.addEventListener("mouseup", releaseVoice);
+    window.addEventListener("touchend", releaseVoice);
+    window.addEventListener("blur", releaseVoice);
+
+    return () => {
+      window.removeEventListener("pointerup", releaseVoice);
+      window.removeEventListener("pointercancel", releaseVoice);
+      window.removeEventListener("mouseup", releaseVoice);
+      window.removeEventListener("touchend", releaseVoice);
+      window.removeEventListener("blur", releaseVoice);
+    };
+  }, [isVoicePressing, stopListening]);
 
   useEffect(() => {
     if (!previousVoiceListeningRef.current && isVoiceListening) {
@@ -407,7 +439,7 @@ export function Chat() {
     setInput(nextInput);
   }, [isVoiceListening, voiceTranscript]);
 
-  const handleVoiceInputToggle = async () => {
+  const handleVoicePressStart = async (trackPress = true) => {
     if (!isVoiceSupported) {
       toast.error("Voice input is only available in supported browsers.");
       return;
@@ -417,21 +449,44 @@ export function Chat() {
       return;
     }
 
+    voicePressActiveRef.current = true;
+    setIsVoicePressing(trackPress);
+
     if (isVoiceListening) {
-      stopListening();
       return;
     }
 
     if (user) {
       const snapshot = await refreshSubscription();
       if (snapshot && !canUseMeteredFeature("voice_input", snapshot)) {
+        voicePressActiveRef.current = false;
+        setIsVoicePressing(false);
         showFeatureLimitToast("voice_input", snapshot);
         return;
       }
     }
 
+    if (!voicePressActiveRef.current) {
+      return;
+    }
+
     resetVoiceTranscript();
     startListening();
+  };
+
+  const handleVoicePressEnd = () => {
+    voicePressActiveRef.current = false;
+    setIsVoicePressing(false);
+    stopListening();
+  };
+
+  const handleVoiceDesktopToggle = async () => {
+    if (isVoiceListening || voicePressActiveRef.current) {
+      handleVoicePressEnd();
+      return;
+    }
+
+    await handleVoicePressStart(false);
   };
 
   const toLocalInputDateTime = (iso?: string | null): string => {
@@ -2707,7 +2762,9 @@ export function Chat() {
             {(isVoiceListening || !isVoiceSupported) && (
               <div className="px-4 pb-1 text-xs">
                 {isVoiceListening ? (
-                  <span className="text-primary">Listening... speak now, then tap the mic again to stop.</span>
+                  <span className="text-primary">
+                    {isMobile ? "Listening... hold to record and release to stop." : "Listening... click the mic again to stop."}
+                  </span>
                 ) : (
                   <span className="text-muted-foreground">Voice input requires a supported browser with microphone access.</span>
                 )}
@@ -2720,16 +2777,60 @@ export function Chat() {
                   variant="ghost"
                   size="icon"
                   className={`h-9 w-9 ${isVoiceListening ? "text-primary" : "text-muted-foreground"}`}
-                  onClick={() => void handleVoiceInputToggle()}
-                  aria-label={isVoiceListening ? "Stop voice input" : "Start voice input"}
+                  onClick={() => {
+                    if (!isMobile) {
+                      void handleVoiceDesktopToggle();
+                    }
+                  }}
+                  onPointerDown={(event) => {
+                    if (!isMobile) return;
+                    if (event.button !== 0) return;
+                    void handleVoicePressStart();
+                  }}
+                  onPointerUp={() => {
+                    if (!isMobile) return;
+                    handleVoicePressEnd();
+                  }}
+                  onPointerLeave={() => {
+                    if (!isMobile) return;
+                    handleVoicePressEnd();
+                  }}
+                  onPointerCancel={() => {
+                    if (!isMobile) return;
+                    handleVoicePressEnd();
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.repeat) return;
+                    if (event.key === " " || event.key === "Enter") {
+                      event.preventDefault();
+                      if (isMobile) {
+                        void handleVoicePressStart();
+                      } else {
+                        void handleVoiceDesktopToggle();
+                      }
+                    }
+                  }}
+                  onKeyUp={(event) => {
+                    if (event.key === " " || event.key === "Enter") {
+                      event.preventDefault();
+                      if (isMobile) {
+                        handleVoicePressEnd();
+                      }
+                    }
+                  }}
+                  aria-label={isVoiceListening ? "Recording voice input" : isMobile ? "Hold for voice input" : "Click for voice input"}
                   aria-pressed={isVoiceListening}
                   disabled={busy}
                   title={
                     !isVoiceSupported
                       ? "Voice input is not supported in this browser"
                       : isVoiceListening
-                        ? "Stop voice input"
-                        : "Start voice input"
+                        ? isMobile
+                          ? "Release to stop voice input"
+                          : "Click to stop voice input"
+                        : isMobile
+                          ? "Hold for voice input"
+                          : "Click for voice input"
                   }
                 >
                   <Mic className="h-4 w-4" />

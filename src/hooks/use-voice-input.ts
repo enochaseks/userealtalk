@@ -74,6 +74,8 @@ const normalizeVoiceError = (errorCode: string) => {
 
 export const useVoiceInput = (language = "en-US") => {
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const keepAliveRef = useRef(false);
+  const restartTimeoutRef = useRef<number | null>(null);
   const [isListening, setIsListening] = useState(false);
   const [isSupported, setIsSupported] = useState(false);
   const [transcript, setTranscript] = useState("");
@@ -86,7 +88,7 @@ export const useVoiceInput = (language = "en-US") => {
     }
 
     const recognition = new recognitionConstructor();
-    recognition.continuous = false;
+    recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = language;
 
@@ -113,10 +115,33 @@ export const useVoiceInput = (language = "en-US") => {
     };
 
     recognition.onerror = (event) => {
+      if (event.error === "not-allowed" || event.error === "service-not-allowed" || event.error === "audio-capture") {
+        keepAliveRef.current = false;
+      }
       setError(normalizeVoiceError(event.error));
     };
 
     recognition.onend = () => {
+      if (keepAliveRef.current) {
+        if (restartTimeoutRef.current !== null) {
+          window.clearTimeout(restartTimeoutRef.current);
+          restartTimeoutRef.current = null;
+        }
+
+        restartTimeoutRef.current = window.setTimeout(() => {
+          if (!keepAliveRef.current || !recognitionRef.current) {
+            return;
+          }
+
+          try {
+            recognitionRef.current.start();
+          } catch {
+            setError("Voice input could not stay active. Keep holding and try again.");
+          }
+        }, 120);
+        return;
+      }
+
       setIsListening(false);
     };
 
@@ -129,6 +154,12 @@ export const useVoiceInput = (language = "en-US") => {
     recognitionRef.current = recognition;
 
     return () => {
+      keepAliveRef.current = false;
+      if (restartTimeoutRef.current !== null) {
+        window.clearTimeout(restartTimeoutRef.current);
+        restartTimeoutRef.current = null;
+      }
+
       if (!recognition) {
         recognitionRef.current = null;
         return;
@@ -158,6 +189,8 @@ export const useVoiceInput = (language = "en-US") => {
       return;
     }
 
+    keepAliveRef.current = true;
+
     setError(null);
     setTranscript("");
 
@@ -169,11 +202,24 @@ export const useVoiceInput = (language = "en-US") => {
   }, [buildRecognition, isListening]);
 
   const stopListening = useCallback(() => {
-    if (!recognitionRef.current || !isListening) {
+    keepAliveRef.current = false;
+
+    if (!recognitionRef.current) {
       return;
     }
 
-    recognitionRef.current.stop();
+    try {
+      if (isListening) {
+        recognitionRef.current.stop();
+      } else {
+        // Abort cancels a start-in-progress when release happens very quickly.
+        recognitionRef.current.abort();
+      }
+    } catch {
+      // Ignore browser-level invalid state races from rapid press/release.
+    }
+
+    setIsListening(false);
   }, [isListening]);
 
   const resetTranscript = useCallback(() => {
