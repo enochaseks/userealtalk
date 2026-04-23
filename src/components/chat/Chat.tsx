@@ -152,6 +152,7 @@ export function Chat() {
   const [isRegeneratingPlan, setIsRegeneratingPlan] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const lastVoiceErrorToastRef = useRef<{ message: string; at: number } | null>(null);
   const voiceDraftBaseRef = useRef("");
   const previousVoiceListeningRef = useRef(false);
   const voicePressActiveRef = useRef(false);
@@ -357,6 +358,15 @@ export function Chat() {
 
   useEffect(() => {
     if (!voiceInputError) return;
+
+    const now = Date.now();
+    const previous = lastVoiceErrorToastRef.current;
+    const isDuplicate = previous?.message === voiceInputError && now - previous.at < 4000;
+    if (isDuplicate) {
+      return;
+    }
+
+    lastVoiceErrorToastRef.current = { message: voiceInputError, at: now };
     toast.error(voiceInputError);
   }, [voiceInputError]);
 

@@ -66,7 +66,10 @@ const normalizeVoiceError = (errorCode: string) => {
     case "audio-capture":
       return "No microphone was found for voice input.";
     case "network":
-      return "Speech recognition hit a network problem. Try again.";
+      return "Speech recognition hit a network problem. Please try again.";
+    case "aborted":
+    case "no-speech":
+      return null;
     default:
       return "Voice input failed. Please try again.";
   }
@@ -118,7 +121,13 @@ export const useVoiceInput = (language = "en-US") => {
       if (event.error === "not-allowed" || event.error === "service-not-allowed" || event.error === "audio-capture") {
         keepAliveRef.current = false;
       }
-      setError(normalizeVoiceError(event.error));
+
+      const message = normalizeVoiceError(event.error);
+      if (!message) {
+        return;
+      }
+
+      setError(message);
     };
 
     recognition.onend = () => {
@@ -136,7 +145,7 @@ export const useVoiceInput = (language = "en-US") => {
           try {
             recognitionRef.current.start();
           } catch {
-            setError("Voice input could not stay active. Keep holding and try again.");
+            // Ignore restart races while recognition engine is transitioning states.
           }
         }, 120);
         return;
@@ -196,7 +205,11 @@ export const useVoiceInput = (language = "en-US") => {
 
     try {
       recognitionRef.current.start();
-    } catch {
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "InvalidStateError") {
+        return;
+      }
+
       setError("Voice input could not start. Check microphone permission and try again.");
     }
   }, [buildRecognition, isListening]);
