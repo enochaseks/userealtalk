@@ -473,6 +473,10 @@ function TopNav() {
   return (
     <header className="border-b border-border/60 backdrop-blur supports-[backdrop-filter]:bg-background/70 sticky top-0 z-30">
       <div className="max-w-3xl mx-auto px-5 h-14 flex items-center relative">
+        <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2 pointer-events-none select-none">
+          <span className="text-sm font-semibold tracking-tight text-foreground">RealTalk</span>
+          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">1.0</span>
+        </div>
         <div className="flex items-center gap-2">
           <Sheet open={open} onOpenChange={setOpen}>
             <SheetTrigger asChild>

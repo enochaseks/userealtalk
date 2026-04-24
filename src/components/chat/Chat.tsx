@@ -2266,7 +2266,6 @@ export function Chat() {
               className="min-h-[72vh] flex flex-col items-center justify-center text-center"
             >
               <div className="inline-flex items-center justify-center gap-4">
-                <img src={logo} alt="RealTalk" className="h-[64px] w-auto opacity-95" />
                 <p className="text-4xl font-semibold tracking-tight">Hello, {userName}</p>
               </div>
               <p className="mt-3 text-xl text-muted-foreground">How are you feeling right now?</p>
