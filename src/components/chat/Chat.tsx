@@ -53,6 +53,8 @@ type ScheduleItem = {
   is_completed: boolean;
 };
 
+type ChatMode = "logical" | "emotional" | "beReal";
+
 const parseScheduleCandidateFromText = (text: string): {
   cleanContent: string;
   candidate?: NonNullable<Msg["scheduleCandidate"]>;
@@ -124,6 +126,11 @@ export function Chat() {
   const [beReal, setBeReal] = useState(false);
   const [emotionalMode, setEmotionalMode] = useState(false);
   const [logicalMode, setLogicalMode] = useState(true);
+  const modeRef = useRef<{ beReal: boolean; emotionalMode: boolean; logicalMode: boolean }>({
+    beReal: false,
+    emotionalMode: false,
+    logicalMode: true,
+  });
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [forceThinking, setForceThinking] = useState(false);
   const [forcePlan, setForcePlan] = useState(false);
@@ -195,6 +202,20 @@ export function Chat() {
   const canUseMeteredFeature = (feature: MeteredFeature, snapshot: SubscriptionSnapshot) => {
     const usage = snapshot.usage[feature];
     return usage.limit === null || usage.used < usage.limit;
+  };
+
+  const setChatMode = (mode: ChatMode) => {
+    const next = {
+      beReal: mode === "beReal",
+      emotionalMode: mode === "emotional",
+      logicalMode: mode === "logical",
+    };
+
+    // Keep a synchronous copy for request payloads to avoid stale state races.
+    modeRef.current = next;
+    setBeReal(next.beReal);
+    setEmotionalMode(next.emotionalMode);
+    setLogicalMode(next.logicalMode);
   };
 
   const requireScheduleAccess = async () => {
@@ -1083,6 +1104,7 @@ export function Chat() {
  const send = async (overrideText?: string, overrideVentAdviceMode?: VentAdviceMode) => {
   const text = (overrideText ?? input).trim();
   if (!text || busy || !user) return;
+  const activeMode = modeRef.current;
 
   // If the user expresses email intent, open the Gmail panel instead of chatting
   if (!overrideText && isEmailIntent(text)) {
@@ -1313,9 +1335,9 @@ export function Chat() {
         },
         body: JSON.stringify({
           messages: requestMessages,
-          beReal,
-          emotionalMode,
-          logicalMode,
+          beReal: activeMode.beReal,
+          emotionalMode: activeMode.emotionalMode,
+          logicalMode: activeMode.logicalMode,
           thinkDeeply: thinkingRequested && !shouldOfferVentChoice,
           forcePlan: planningRequested,
           forceVent: activeVent,
@@ -2273,7 +2295,7 @@ export function Chat() {
               <div className="mt-6 inline-flex rounded-full border border-border bg-surface/60 p-1 gap-1">
                 <button
                   type="button"
-                  onClick={() => { setEmotionalMode(false); setBeReal(false); setLogicalMode(true); }}
+                  onClick={() => { setChatMode("logical"); }}
                   className={`rounded-full px-5 py-2 text-sm font-medium transition-colors ${
                     !emotionalMode && !beReal
                       ? "bg-primary text-primary-foreground shadow-sm"
@@ -2284,7 +2306,7 @@ export function Chat() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => { setEmotionalMode(true); setBeReal(false); setLogicalMode(false); }}
+                  onClick={() => { setChatMode("emotional"); }}
                   className={`rounded-full px-5 py-2 text-sm font-medium transition-colors ${
                     emotionalMode
                       ? "bg-primary text-primary-foreground shadow-sm"
@@ -2295,7 +2317,7 @@ export function Chat() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => { setBeReal(true); setEmotionalMode(false); setLogicalMode(false); }}
+                  onClick={() => { setChatMode("beReal"); }}
                   className={`rounded-full px-5 py-2 text-sm font-medium transition-colors ${
                     beReal
                       ? "bg-primary text-primary-foreground shadow-sm"
@@ -2534,7 +2556,7 @@ export function Chat() {
                 <div className="inline-flex rounded-full border border-border bg-surface/60 p-0.5 gap-0.5">
                   <button
                     type="button"
-                    onClick={() => { setEmotionalMode(false); setBeReal(false); setLogicalMode(true); }}
+                    onClick={() => { setChatMode("logical"); }}
                     className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${!emotionalMode && !beReal ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
                     title="Logical mode"
                   >
@@ -2542,7 +2564,7 @@ export function Chat() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => { setEmotionalMode(true); setBeReal(false); setLogicalMode(false); }}
+                    onClick={() => { setChatMode("emotional"); }}
                     className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${emotionalMode ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
                     title="Emotional support mode"
                   >
@@ -2550,7 +2572,7 @@ export function Chat() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => { setBeReal(true); setEmotionalMode(false); setLogicalMode(false); }}
+                    onClick={() => { setChatMode("beReal"); }}
                     className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${beReal ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
                     title="Be real — no filter"
                   >

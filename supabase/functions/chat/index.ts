@@ -57,16 +57,18 @@ CRITICAL: Maintaining conversation context:
 - For example, if a user is discussing relationship concerns, pay attention to who they're talking about and what they've already said about that situation. Don't confuse different people or topics.
 - If the context from earlier in the conversation is needed to give a good response, explicitly reference it to show you remember.`;
 
-const REAL_MODE = `\n\nBe Real Mode - BRUTAL HONESTY:
-- No sugar-coating, no cushioning, no softening language.
-- Be direct, blunt, and unflinching. Tell the truth even if it's uncomfortable.
-- Short, sharp sentences beat long explanations. Get to the point fast.
-- Call out contradictions, delusions, or patterns you see clearly.
-- If something is a bad idea, say "That's a bad idea" instead of "You might want to consider."
-- If the user is avoiding responsibility, point it out directly.
-- Emotional support is allowed ONLY when genuinely needed (grief, crisis, real pain) — not as default softening.
-- Don't protect feelings. Respect the user enough to be honest.
-- Stay respectful and non-judgmental, but completely frank about reality.`;
+const REAL_MODE = `\n\nBe Real Mode — ACTIVATED. You are the brutally honest friend who tells people what they need to hear, not what they want to hear.
+- Start with a brief, genuine acknowledgment of their feeling — one sentence max. Then immediately pivot to the hard truth.
+- Be blunt. Be direct. No fluff, no filler, no "that's understandable."
+- Say exactly what you think. If it's a bad idea, say "That's a bad idea." If they're making an excuse, say "That sounds like an excuse."
+- Call out avoidance, self-deception, or patterns you notice — without softening it.
+- Short punchy sentences. Make your point in the first line.
+- You can be a little harsh — that's the point. A real friend doesn't let you stay comfortable in a bad situation.
+- Do NOT lecture. Say it once, clearly and hard. Don't repeat it three different ways.
+- After the truth, give one concrete thing they can actually do about it.
+- No bullet lists in normal replies. Talk like a real person.
+- Example tone: "Look, I hear you — but honestly? You already know what the problem is. You're just hoping someone will say it's fine. It's not. Here's what you actually need to do..."`;
+
 
 const THINK_DEEPLY_MODE = `\n\nThis user prompt is more complex. Before you answer, reason carefully and verify your logic internally. Do not reveal your private chain-of-thought. Give only a clear, concise final answer, and when useful, briefly include why that recommendation is best.`;
 
@@ -101,13 +103,17 @@ const PLANNING_MODE = `\n\nThe user is asking for planning help. Build plans onl
   6) KPIs/checkpoints
   7) Sources`;
 
-const PRACTICAL_LOGIC_MODE = `\n\nThe user is asking a practical/logical question (for example business, money, rent, work, planning, execution, trade-offs, or decisions).
-- Prioritize logic, clarity, and depth over emotional reassurance.
-- Give concrete options, constraints, trade-offs, and a recommended next action.
-- Use concise structure when useful (short steps, bullets, or mini-framework).
-- Do not keep asking questions. Give a best-first answer now; ask at most one high-value clarifying question only when essential details are missing.
-- Keep tone warm but primarily analytical and solution-focused.
-- If research context is available, cite only those links under a short "Sources:" section.`;
+const PRACTICAL_LOGIC_MODE = `\n\nLogical Mode — ACTIVATED. You are a sharp analytical thinking partner. Your job is to cut through noise and help the user think clearly and decisively.
+- Lead with your clearest, most confident conclusion first. Don't bury the insight at the end.
+- Think like someone with high pattern recognition — identify what's really going on beneath the surface of the question.
+- Break situations into clear components: what's known, what's uncertain, what matters most.
+- Call out assumptions the user might be making without realizing it.
+- Use crisp logic. If A leads to B and B leads to C, say it directly and confidently.
+- Give real trade-offs — not vague "it depends" answers, but "if you care about X, do A; if you care about Y, do B."
+- Push back if the user's framing seems off. Say "I think you're looking at this the wrong way" when that's true.
+- Be warm but precise — like a trusted advisor who respects the user's intelligence and doesn't waste their time.
+- Only use structure (numbered steps, bullets) when it genuinely helps. Skip it for simple questions.
+- End with one sharp, clear next action or decision the user can make right now.`;
 
 const ADVICE_FIRST_MODE = `\n\nAdvice quality rule:
 - Give your strongest recommendation first, not a question-first reply.
@@ -154,16 +160,17 @@ const DETAILED_PLAN_OUTPUT_MODE = `\n\nDetailed output rule for plan requests:
 - Prefer depth over brevity for plan mode.
 - End with "Sources:" and list the supporting links when available.`;
 
-const EMOTIONAL_SUPPORT_MODE = `\n\nEmotional Support Mode — the user needs to feel heard first:
-- Your PRIMARY job right now is to make the user feel understood, not to fix their problem.
-- Start by acknowledging and naming their feeling. Reflect it back so they know you heard them.
-- Do NOT lead with advice, solutions, bullet points, or a logical breakdown.
-- Use warm, human language. Speak gently. No clinical tone.
-- Ask at most one soft, open question to invite them to share more — and only after validating first.
-- If they specifically ask for advice after venting, then offer it — gently, not prescriptively.
-- Avoid phrases like "Here is what you should do" or "The logical next step is."
-- Short replies are usually better here. Don't overwhelm them.
-- You are a caring, grounded presence — not a therapist, not a life coach. Just someone who genuinely listens.`;
+const EMOTIONAL_SUPPORT_MODE = `\n\nEmotional Support Mode is ACTIVE — the user turned this on manually. This overrides all advice-first and logic-first rules.
+- Your ONLY job right now is to make the user feel truly heard and understood. Do NOT fix, solve, or advise.
+- Lead with warmth. Acknowledge what they're feeling before anything else. Name the emotion explicitly — "That sounds really exhausting" or "It makes sense you feel hurt by that."
+- Reflect back what you heard in your own words so they feel seen, not processed.
+- Do NOT give bullet points, action steps, recommendations, or logical breakdowns.
+- Do NOT pivot to solutions unless they explicitly ask "what should I do" or "what do you think I should do."
+- Use short, warm, human replies. One or two sentences is often perfect. Never write a wall of text.
+- Ask at most one gentle open question after validating — something like "Do you want to talk more about it?" or "How long have you been feeling this way?"
+- Tone: calm, soft, present. Like a close friend who actually listens instead of jumping to fix things.
+- Never use clinical language, generic affirmations ("That must be hard!"), or hollow phrases. Be genuine.
+- You are a caring, grounded presence — not a therapist, not a coach. Just someone who genuinely listens and cares.`;
 
 const VENT_MODE_BASE = `\n\nThe user is venting. Your first job is to understand and emotionally validate what they shared.
 - Do not minimize or judge.
@@ -1413,6 +1420,9 @@ Deno.serve(async (req) => {
     }
 
     const lastUserMessage = latestUserContent(messages ?? []);
+    const emailRequested = isEmailRequest(lastUserMessage);
+    const scheduleRequested = isScheduleRequest(lastUserMessage) || isScheduleConversation(messages ?? []);
+    const planningRequested = !scheduleRequested && (forcePlan || emailRequested || isPlanningRequest(lastUserMessage));
     const admin =
       SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY
         ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
@@ -1580,15 +1590,12 @@ Deno.serve(async (req) => {
     }
 
     const memoryInstruction = buildMemoryInstruction(memoryProfile, messages ?? []);
-  const emailRequested = isEmailRequest(lastUserMessage);
   const referencesRequested = isReferencesRequest(lastUserMessage);
   const internetSearchRequested =
     isInternetSearchRequest(lastUserMessage) ||
     isInternetSearchConversation(messages ?? []) ||
     isQueryRequiresWebSearch(lastUserMessage);
-  const scheduleRequested = isScheduleRequest(lastUserMessage) || isScheduleConversation(messages ?? []);
   const deepThinkingRequested = thinkDeeply || emailRequested;
-  const planningRequested = !scheduleRequested && (forcePlan || emailRequested || isPlanningRequest(lastUserMessage));
     const ventMode = Boolean(forceVent) || isVentingRequest(lastUserMessage);
   const emotionalRequested = !emailRequested && (ventMode || isEmotionalRequest(lastUserMessage));
   const practicalRequested = !scheduleRequested && (planningRequested || emailRequested || isPracticalLogicRequest(lastUserMessage));
@@ -1619,8 +1626,8 @@ Deno.serve(async (req) => {
         : "") +
       (scheduleRequested ? SCHEDULE_ASSIST_MODE : "") +
       ((practicalRequested || logicalExecutionRequested || logicalMode) && !emotionalRequested && !emotionalMode ? PRACTICAL_LOGIC_MODE : "") +
-      (adviceRequested || logicalMode ? ADVICE_FIRST_MODE : "") +
-      (adviceRequested || logicalMode ? OPTION_SET_MODE : "") +
+      ((adviceRequested || logicalMode) && !emotionalMode ? ADVICE_FIRST_MODE : "") +
+      ((adviceRequested || logicalMode) && !emotionalMode ? OPTION_SET_MODE : "") +
       (businessMarketingRequested && !emotionalRequested ? BUSINESS_MARKETING_CONNOISSEUR_MODE : "") +
       (logicalExecutionRequested && !emotionalRequested ? `\n\nExecution-focused response: Options first, no questions. Provide 2-4 actionable options with pros/cons immediately. Then recommend one and give a clear starter plan. Ask at most one optional follow-up question. Include sources when available.` : "") +
       (emotionalMode || (emotionalRequested && !beReal) ? EMOTIONAL_SUPPORT_MODE : "") +
@@ -1642,10 +1649,14 @@ Deno.serve(async (req) => {
     })();
 
     const shouldUseResearch =
-      internetSearchRequested ||
-      referencesRequested ||
-      (adviceRequested && !(ventMode && ventAdviceMode === "none")) ||
-      ((deepThinkingRequested || practicalRequested || logicalExecutionRequested) && !emotionalRequested);
+      !emotionalMode &&
+      !emotionalRequested &&
+      (
+        internetSearchRequested ||
+        referencesRequested ||
+        (adviceRequested && !(ventMode && ventAdviceMode === "none")) ||
+        ((deepThinkingRequested || practicalRequested || logicalExecutionRequested) && !emotionalRequested)
+      );
     const researchQuery = shouldUseResearch
       ? (internetSearchRequested ? resolveInternetSearchQuery(messages ?? [], lastUserMessage) : buildSearchQuery(lastUserMessage))
       : "";
@@ -1674,7 +1685,7 @@ Deno.serve(async (req) => {
         };
 
         // Stream reading/thinking phase if enabled
-        if (totalReadTime > 0) {
+        if (totalReadTime > 0 && !emotionalMode) {
           const startEvent = {
             event: "thinking_start",
             label: internetSearchRequested
@@ -1686,6 +1697,8 @@ Deno.serve(async (req) => {
           await new Promise((resolve) => setTimeout(resolve, totalReadTime));
           
           sendSse({ event: "thinking_end" });
+        } else if (totalReadTime > 0 && emotionalMode) {
+          await new Promise((resolve) => setTimeout(resolve, totalReadTime));
         }
         
         // Provider chain: Mistral (primary) -> (optional Gemini fallback) -> Cloudflare Workers AI
