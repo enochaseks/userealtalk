@@ -134,6 +134,7 @@ export function Chat() {
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [forceThinking, setForceThinking] = useState(false);
   const [forcePlan, setForcePlan] = useState(false);
+  const [forceBenefits, setForceBenefits] = useState(false);
   const [forceVent, setForceVent] = useState(false);
   const [ventAdviceMode, setVentAdviceMode] = useState<VentAdviceMode>("none");
   const [showFeatureMenu, setShowFeatureMenu] = useState(false);
@@ -203,6 +204,9 @@ export function Chat() {
     const usage = snapshot.usage[feature];
     return usage.limit === null || usage.used < usage.limit;
   };
+
+  const planLimitReached =
+    subscriptionSnapshot !== null && !canUseMeteredFeature("plan", subscriptionSnapshot);
 
   const setChatMode = (mode: ChatMode) => {
     const next = {
@@ -1159,6 +1163,7 @@ export function Chat() {
     const activeFeatures: string[] = [
       thinkingRequested ? "Deep Thinking" : "",
       planningRequested ? "Plan Mode" : "",
+      forceBenefits ? "Benefits Helper" : "",
       activeVent ? "Vent" : "",
     ].filter(Boolean);
 
@@ -1340,6 +1345,7 @@ export function Chat() {
           logicalMode: activeMode.logicalMode,
           thinkDeeply: thinkingRequested && !shouldOfferVentChoice,
           forcePlan: planningRequested,
+          forceBenefits,
           forceVent: activeVent,
           ventAdviceMode: activeVentAdviceMode,
           userId: user.id,
@@ -2334,6 +2340,26 @@ export function Chat() {
                   ? "No filter, no softening — just the honest truth."
                   : "I'll help you think clearly and work through it step by step."}
               </p>
+
+              {forceBenefits && (
+                <div className="mt-6 flex flex-col items-center gap-2 w-full max-w-sm">
+                  <p className="text-xs text-muted-foreground mb-1">🏛️ Benefits Helper is on — try a quick start:</p>
+                  {[
+                    "Help me prepare for my Universal Credit claim this week.",
+                    "What documents do I need for a Universal Credit claim?",
+                    "I'm worried about a sanction — what should I do?",
+                  ].map((prompt) => (
+                    <button
+                      key={prompt}
+                      type="button"
+                      onClick={() => send(prompt)}
+                      className="w-full text-left px-4 py-2.5 rounded-xl border border-border bg-surface/60 hover:bg-surface-elevated text-sm text-foreground transition-colors"
+                    >
+                      {prompt}
+                    </button>
+                  ))}
+                </div>
+              )}
             </motion.div>
           ) : (
             <div className="space-y-4 pb-3">
@@ -2416,7 +2442,7 @@ export function Chat() {
                             )}
                           </div>
                         )}
-                        {visibleContent && !(busy && i === messages.length - 1) && shouldShowSavePlan(messages, i) && (
+                        {visibleContent && !(busy && i === messages.length - 1) && !m.retryable && shouldShowSavePlan(messages, i) && !planLimitReached && (
                           <div className="mt-3 flex items-center gap-2">
                             <Button
                               variant="ghost"
@@ -2626,7 +2652,7 @@ export function Chat() {
           </div>
 
           <div className="rounded-2xl border border-border bg-surface focus-within:border-primary/60 transition-colors">
-            {(forceThinking || forcePlan || forceVent || showEmailPanel || showSchedulePanel) && (
+            {(forceThinking || forcePlan || forceBenefits || forceVent || showEmailPanel || showSchedulePanel) && (
               <div className="px-4 pt-2 flex flex-wrap gap-2">
                 {forceThinking && (
                   <button
@@ -2643,6 +2669,15 @@ export function Chat() {
                     className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-primary/20 text-primary text-xs rounded-full hover:bg-primary/30 transition-colors"
                   >
                     📋 Plan Mode
+                    <span className="text-lg leading-none">×</span>
+                  </button>
+                )}
+                {forceBenefits && (
+                  <button
+                    onClick={() => setForceBenefits(false)}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-primary/20 text-primary text-xs rounded-full hover:bg-primary/30 transition-colors"
+                  >
+                    🧾 Benefits Helper
                     <span className="text-lg leading-none">×</span>
                   </button>
                 )}
@@ -2986,6 +3021,19 @@ export function Chat() {
                         }`}
                       >
                         📋 Plan Mode
+                      </button>
+                      <button
+                        onClick={() => {
+                          setForceBenefits((prev) => !prev);
+                          setShowFeatureMenu(false);
+                        }}
+                        className={`w-full text-left px-3 py-2 text-sm rounded-md transition-colors ${
+                          forceBenefits
+                            ? "bg-primary/20 text-primary"
+                            : "text-muted-foreground hover:bg-surface-elevated hover:text-foreground"
+                        }`}
+                      >
+                        🧾 Benefits Helper
                       </button>
                       <button
                         onClick={() => {

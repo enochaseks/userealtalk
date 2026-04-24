@@ -149,6 +149,22 @@ const BUSINESS_MARKETING_CONNOISSEUR_MODE = `\n\nBusiness/Marketing Connoisseur 
 - You may ask one optional clarifying question only at the very end.
 - Keep it actionable and realistic, not motivational fluff.`;
 
+const BENEFITS_HELPER_MODE = `\n\nBenefits Helper Mode (UK Universal Credit and related support):
+- Treat benefits requests as high-stakes practical support: reduce overwhelm, improve accuracy, and prevent missed actions.
+- Be clear and supportive, but factual. Use plain English and avoid jargon.
+- Never present yourself as DWP or as an official government decision-maker.
+- Do NOT guarantee eligibility, payment amounts, or outcomes. Use probability language when uncertain.
+- Start with the best immediate next step first, then give a short checklist tailored to the user's situation.
+- For UC-related guidance, prioritize:
+  1) readiness/documents needed,
+  2) timeline and deadlines,
+  3) journal/appointment actions,
+  4) common sanction-risk mistakes to avoid,
+  5) one draft message template when useful.
+- If details are missing, provide assumptions and one follow-up question max.
+- Include a brief disclaimer naturally: informational guidance, not legal/government advice.
+- If research links are available, prefer official GOV.UK sources first in Sources.`;
+
 const REFERENCES_GUARDRAIL_MODE = `\n\nReferences rule:
 - Only cite links explicitly present in the provided research context.
 - Do not invent sources or URLs.
@@ -203,7 +219,6 @@ const isPlanningRequest = (text: string): boolean => {
     "plan",
     "roadmap",
     "strategy",
-    "steps",
     "timeline",
     "budget",
     "launch",
@@ -212,7 +227,6 @@ const isPlanningRequest = (text: string): boolean => {
     "marketing plan",
     "action plan",
     "next steps",
-    "what should i do",
   ];
   return planningKeywords.some((k) => lower.includes(k));
 };
@@ -283,6 +297,28 @@ const isPracticalLogicRequest = (text: string): boolean => {
   ];
 
   return practicalKeywords.some((k) => lower.includes(k));
+};
+
+const isBenefitsSupportRequest = (text: string): boolean => {
+  const lower = text.toLowerCase();
+  const benefitsKeywords = [
+    "universal credit",
+    "uc claim",
+    "benefits",
+    "dwp",
+    "jobcentre",
+    "journal",
+    "sanction",
+    "limited capability for work",
+    "lcwra",
+    "housing element",
+    "carer element",
+    "pip",
+    "esa",
+    "work capability assessment",
+    "mandatory reconsideration",
+  ];
+  return benefitsKeywords.some((k) => lower.includes(k));
 };
 
 const isLogicalExecutionRequest = (text: string): boolean => {
@@ -1402,7 +1438,7 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { messages, beReal, emotionalMode, logicalMode, thinkDeeply, forcePlan, forceVent, ventAdviceMode, userId, userPlan, totalMessageCount, memoryLimit } = await req.json();
+    const { messages, beReal, emotionalMode, logicalMode, thinkDeeply, forcePlan, forceBenefits, forceVent, ventAdviceMode, userId, userPlan, totalMessageCount, memoryLimit } = await req.json();
     const plan = userPlan ?? "free";
     const MISTRAL_API_KEY = Deno.env.get("MISTRAL_API_KEY");
     const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
@@ -1422,7 +1458,7 @@ Deno.serve(async (req) => {
     const lastUserMessage = latestUserContent(messages ?? []);
     const emailRequested = isEmailRequest(lastUserMessage);
     const scheduleRequested = isScheduleRequest(lastUserMessage) || isScheduleConversation(messages ?? []);
-    const planningRequested = !scheduleRequested && (forcePlan || emailRequested || isPlanningRequest(lastUserMessage));
+    const planningRequested = !scheduleRequested && !forceBenefits && (forcePlan || emailRequested || isPlanningRequest(lastUserMessage));
     const admin =
       SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY
         ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
@@ -1597,8 +1633,9 @@ Deno.serve(async (req) => {
     isQueryRequiresWebSearch(lastUserMessage);
   const deepThinkingRequested = thinkDeeply || emailRequested;
     const ventMode = Boolean(forceVent) || isVentingRequest(lastUserMessage);
+  const benefitsRequested = Boolean(forceBenefits) || isBenefitsSupportRequest(lastUserMessage);
   const emotionalRequested = !emailRequested && (ventMode || isEmotionalRequest(lastUserMessage));
-  const practicalRequested = !scheduleRequested && (planningRequested || emailRequested || isPracticalLogicRequest(lastUserMessage));
+  const practicalRequested = !scheduleRequested && (benefitsRequested || planningRequested || emailRequested || isPracticalLogicRequest(lastUserMessage));
     const logicalExecutionRequested = !scheduleRequested && isLogicalExecutionRequest(lastUserMessage);
     const businessMarketingRequested = isBusinessMarketingRequest(lastUserMessage);
   const adviceRequested =
@@ -1629,6 +1666,7 @@ Deno.serve(async (req) => {
       ((adviceRequested || logicalMode) && !emotionalMode ? ADVICE_FIRST_MODE : "") +
       ((adviceRequested || logicalMode) && !emotionalMode ? OPTION_SET_MODE : "") +
       (businessMarketingRequested && !emotionalRequested ? BUSINESS_MARKETING_CONNOISSEUR_MODE : "") +
+      (benefitsRequested && !emotionalRequested ? BENEFITS_HELPER_MODE : "") +
       (logicalExecutionRequested && !emotionalRequested ? `\n\nExecution-focused response: Options first, no questions. Provide 2-4 actionable options with pros/cons immediately. Then recommend one and give a clear starter plan. Ask at most one optional follow-up question. Include sources when available.` : "") +
       (emotionalMode || (emotionalRequested && !beReal) ? EMOTIONAL_SUPPORT_MODE : "") +
       (ventMode && !beReal ? VENT_MODE_BASE : "") +
@@ -1654,8 +1692,9 @@ Deno.serve(async (req) => {
       (
         internetSearchRequested ||
         referencesRequested ||
+        benefitsRequested ||
         (adviceRequested && !(ventMode && ventAdviceMode === "none")) ||
-        ((deepThinkingRequested || practicalRequested || logicalExecutionRequested) && !emotionalRequested)
+        ((deepThinkingRequested || practicalRequested || logicalExecutionRequested || benefitsRequested) && !emotionalRequested)
       );
     const researchQuery = shouldUseResearch
       ? (internetSearchRequested ? resolveInternetSearchQuery(messages ?? [], lastUserMessage) : buildSearchQuery(lastUserMessage))

@@ -42,6 +42,7 @@ export const PLAN_CATALOG: PlanCatalogItem[] = [
       "Gmail send: 5 per month",
       "Schedule: not included",
       "Conversation Memory: up to 100 messages",
+      "Benefits Helper (UC/DWP guidance): free",
     ],
   },
   {
@@ -60,6 +61,7 @@ export const PLAN_CATALOG: PlanCatalogItem[] = [
       "Plan Mode: 25 per month",
       "Gmail send: 50 per month",
       "Conversation Memory: up to 300 messages",
+      "Benefits Helper (UC/DWP guidance): free",
     ],
   },
   {
@@ -78,6 +80,7 @@ export const PLAN_CATALOG: PlanCatalogItem[] = [
       "Gmail send: unlimited",
       "Schedule included",
       "Conversation Memory: unlimited messages",
+      "Benefits Helper (UC/DWP guidance): free",
     ],
   },
 ];
