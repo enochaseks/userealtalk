@@ -13,6 +13,7 @@ import logo from "../assets/logo.png";
 
 const SIGNUP_COOLDOWN_MS = 60_000;
 const SIGNUP_LAST_ATTEMPT_KEY = "realtalk_signup_last_attempt";
+const KEEP_KEY = "realtalk_keep_logged_in";
 
 const normalizeEmail = (value: string) => value.trim().toLowerCase();
 
@@ -27,7 +28,7 @@ function AuthPage() {
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [keep, setKeep] = useState(true);
+  const [keep, setKeep] = useState(() => localStorage.getItem(KEEP_KEY) !== "false");
   const [busy, setBusy] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 

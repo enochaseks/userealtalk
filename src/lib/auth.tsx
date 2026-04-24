@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 
 const KEEP_KEY = "realtalk_keep_logged_in";
 const SESSION_KEY = "realtalk_session_active";
+const BACKUP_SESSION_KEY = "realtalk_session_backup";
 
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
@@ -77,6 +78,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const shouldPersistSession = () => localStorage.getItem(KEEP_KEY) !== "false";
+
+  const writeSessionBackup = (nextSession: Session | null) => {
+    if (!shouldPersistSession() || !nextSession?.access_token || !nextSession?.refresh_token) {
+      localStorage.removeItem(BACKUP_SESSION_KEY);
+      return;
+    }
+
+    localStorage.setItem(
+      BACKUP_SESSION_KEY,
+      JSON.stringify({
+        access_token: nextSession.access_token,
+        refresh_token: nextSession.refresh_token,
+      }),
+    );
+  };
+
   // "Keep me logged in" enforcement: if user opted out, clear session on new browser start
   useEffect(() => {
     const keep = localStorage.getItem(KEEP_KEY);
@@ -84,6 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (keep === "false" && !sessionAlive) {
       // New browser session and user didn't want persistence — sign out silently
       void supabase.auth.signOut({ scope: "local" });
+      localStorage.removeItem(BACKUP_SESSION_KEY);
     }
     sessionStorage.setItem(SESSION_KEY, "1");
   }, []);
@@ -96,15 +115,63 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
       if (!mounted) return;
+      writeSessionBackup(s);
       setSession(s);
       setLoading(false);
     });
 
     supabase.auth
       .getSession()
-      .then(({ data }) => {
+      .then(async ({ data }) => {
         if (!mounted) return;
-        setSession(data.session);
+
+        if (data.session) {
+          writeSessionBackup(data.session);
+          setSession(data.session);
+          return;
+        }
+
+        if (!shouldPersistSession()) {
+          localStorage.removeItem(BACKUP_SESSION_KEY);
+          setSession(null);
+          return;
+        }
+
+        const backupRaw = localStorage.getItem(BACKUP_SESSION_KEY);
+        if (!backupRaw) {
+          setSession(null);
+          return;
+        }
+
+        try {
+          const parsed = JSON.parse(backupRaw) as {
+            access_token?: string;
+            refresh_token?: string;
+          };
+
+          if (!parsed.access_token || !parsed.refresh_token) {
+            localStorage.removeItem(BACKUP_SESSION_KEY);
+            setSession(null);
+            return;
+          }
+
+          const { data: restored, error: restoreError } = await supabase.auth.setSession({
+            access_token: parsed.access_token,
+            refresh_token: parsed.refresh_token,
+          });
+
+          if (restoreError || !restored.session) {
+            localStorage.removeItem(BACKUP_SESSION_KEY);
+            setSession(null);
+            return;
+          }
+
+          writeSessionBackup(restored.session);
+          setSession(restored.session);
+        } catch {
+          localStorage.removeItem(BACKUP_SESSION_KEY);
+          setSession(null);
+        }
       })
       .catch(() => {
         // If Safari storage/network glitches, avoid freezing the UI in loading state.
@@ -186,6 +253,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     loading,
     signIn: async (email, password, keep = true) => {
       localStorage.setItem(KEEP_KEY, String(keep));
+      if (!keep) localStorage.removeItem(BACKUP_SESSION_KEY);
       const { error } = await supabase.auth.signInWithPassword({
         email: normalizeEmail(email),
         password,
@@ -194,6 +262,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     signUp: async (email, password, keep = true) => {
       localStorage.setItem(KEEP_KEY, String(keep));
+      if (!keep) localStorage.removeItem(BACKUP_SESSION_KEY);
       const { error } = await supabase.auth.signUp({
         email: normalizeEmail(email),
         password,
@@ -213,6 +282,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     signInWithGoogle: async (keep = true) => {
       localStorage.setItem(KEEP_KEY, String(keep));
+      if (!keep) localStorage.removeItem(BACKUP_SESSION_KEY);
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: getGoogleAuthOptions(),
@@ -258,6 +328,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Safari/network-safe fallback: always clear local session state.
         await supabase.auth.signOut({ scope: "local" });
       }
+      localStorage.removeItem(BACKUP_SESSION_KEY);
+      sessionStorage.removeItem(SESSION_KEY);
     },
   };
 
