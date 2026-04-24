@@ -1692,6 +1692,7 @@ Deno.serve(async (req) => {
         const aiAbort = new AbortController();
         const aiTimeout = setTimeout(() => aiAbort.abort(), 25000);
         try {
+          if (!aiKey) throw new Error("MISTRAL_API_KEY not set, skipping to fallback");
           const aiResp = await fetch(aiUrl, {
             method: "POST",
             headers: {
@@ -1740,7 +1741,6 @@ Deno.serve(async (req) => {
             if (geminiText) {
               sendSse({ choices: [{ delta: { content: geminiText } }] });
               controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-              controller.close();
               return;
             }
           }
@@ -1754,7 +1754,6 @@ Deno.serve(async (req) => {
           if (workersText) {
             sendSse({ choices: [{ delta: { content: workersText } }] });
             controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-            controller.close();
             return;
           }
 
