@@ -568,6 +568,7 @@ function SettingsPage() {
             </AlertDialogContent>
           </AlertDialog>
         </div>
+        <p className="text-center text-xs text-muted-foreground/60 pb-2">RealTalk v1.0 &mdash; Your thinking companion</p>
       </div>
     </div>
   );

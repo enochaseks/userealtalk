@@ -630,7 +630,7 @@ export function Landing() {
             <Link to="/account-data" className="hover:text-foreground transition-colors">Account & data export</Link>
           </div>
           <p className="mt-4 text-xs text-muted-foreground/80">
-            © ™ 2026 RealTalk LTD. All Rights Reserved.
+            © ™ 2026 RealTalk LTD. All Rights Reserved. &nbsp;·&nbsp; v1.0
           </p>
         </div>
       </motion.div>
