@@ -2,6 +2,13 @@ import { useEffect, useRef, useState, useLayoutEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Mic, ArrowUp, Bookmark, Trash2, ChevronDown, Plus, Pencil, Mail, RotateCcw, CalendarDays } from "lucide-react";
@@ -21,6 +28,7 @@ import {
   loadSubscriptionSnapshot,
   getConversationMemoryLimit,
   getConversationMemoryWarningThreshold,
+  PLAN_CATALOG,
   type MeteredFeature,
   type SubscriptionSnapshot,
 } from "@/lib/subscriptions";
@@ -111,6 +119,7 @@ const FEATURE_LABELS: Record<MeteredFeature, string> = {
   plan: "Plan Mode",
   gmail_send: "Gmail send",
   voice_input: "Voice input",
+  journal_save: "Journal saves",
 };
 
 export function Chat() {
@@ -160,6 +169,9 @@ export function Chat() {
   const [editingPlanIndex, setEditingPlanIndex] = useState<number | null>(null);
   const [editedPlanText, setEditedPlanText] = useState("");
   const [isRegeneratingPlan, setIsRegeneratingPlan] = useState(false);
+  const [savedJournalIds, setSavedJournalIds] = useState<Set<string>>(new Set());
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [upgradeBusy, setUpgradeBusy] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lastVoiceErrorToastRef = useRef<{ message: string; at: number } | null>(null);
@@ -198,6 +210,9 @@ export function Chat() {
     const usage = snapshot.usage[feature];
     if (usage.limit === null) return;
     toast.error(`${FEATURE_LABELS[feature]} limit reached for ${getUsageWindowLabel(feature)} on ${snapshot.plan}.`);
+    if (snapshot.plan !== "platinum") {
+      setShowUpgradeModal(true);
+    }
   };
 
   const canUseMeteredFeature = (feature: MeteredFeature, snapshot: SubscriptionSnapshot) => {
@@ -1541,11 +1556,32 @@ export function Chat() {
             const recentMessages = [...messages, userMsg, { role: "assistant", content: cleanAssistant }]
               .slice(-8)
               .map((m) => ({ role: m.role, content: m.content }));
-            await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/profile-learn`, {
+            const learnUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/profile-learn`;
+            const payload = JSON.stringify({ userId: user.id, recentMessages });
+            const headers = {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${session?.access_token ?? ""}`,
+              apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "",
+            };
+
+            let learnResp = await fetch(learnUrl, {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ userId: user.id, recentMessages }),
+              headers,
+              body: payload,
             });
+
+            // Retry once for transient edge/network failures.
+            if (!learnResp.ok && learnResp.status >= 500) {
+              learnResp = await fetch(learnUrl, {
+                method: "POST",
+                headers,
+                body: payload,
+              });
+            }
+
+            if (!learnResp.ok) {
+              console.warn("profile-learn skipped", learnResp.status);
+            }
           } catch {
             // Silent — never block the chat experience
           }
@@ -1940,8 +1976,58 @@ export function Chat() {
     textareaRef.current?.focus();
   };
 
-  const deleteCurrentConversation = async () => {
-    if (!convId || !user) return;
+  const handleUpgradeCheckout = async (plan: "pro" | "platinum", cycle: "monthly" | "annual") => {
+    if (!session || upgradeBusy) return;
+    setUpgradeBusy(true);
+    try {
+      const resp = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/stripe-checkout`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+            apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "",
+          },
+          body: JSON.stringify({ plan, cycle, returnUrl: window.location.href }),
+        },
+      );
+      const json = await resp.json();
+      if (!resp.ok || !json.url) throw new Error(json.error || "Could not start checkout");
+      window.location.href = json.url;
+    } catch (e: any) {
+      toast.error(e?.message || "Could not start checkout");
+      setUpgradeBusy(false);
+    }
+  };
+
+  const saveToJournal = async (msg: Msg) => {
+    if (!user) return;
+    const key = msg.id ?? msg.content.slice(0, 40);
+    if (savedJournalIds.has(key)) return;
+
+    try {
+      const usageResult = await consumeMeteredFeature(user.id, "journal_save");
+      setSubscriptionSnapshot(usageResult.snapshot);
+      if (!usageResult.allowed) {
+        showFeatureLimitToast("journal_save", usageResult.snapshot);
+        return;
+      }
+
+      const { error } = await (supabase as any).from("journal_entries").insert({
+        user_id: user.id,
+        source_message_id: msg.id ?? null,
+        content: msg.content,
+      });
+      if (error) throw error;
+      setSavedJournalIds((prev) => new Set([...prev, key]));
+      toast.success("Saved to journal");
+    } catch {
+      toast.error("Could not save to journal");
+    }
+  };
+
+  const deleteCurrentConversation = async () => {    if (!convId || !user) return;
     const { error } = await supabase
       .from("conversations")
       .delete()
@@ -2480,6 +2566,20 @@ export function Chat() {
                             </Button>
                           </div>
                         )}
+                        {visibleContent && !(busy && i === messages.length - 1) && !m.retryable && !m.ventChoicePending && (
+                          <div className="mt-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => void saveToJournal(m)}
+                              disabled={savedJournalIds.has(m.id ?? m.content.slice(0, 40))}
+                              className="text-xs text-muted-foreground hover:text-foreground h-7 px-2 gap-1.5"
+                            >
+                              <Bookmark className="h-3 w-3" />
+                              {savedJournalIds.has(m.id ?? m.content.slice(0, 40)) ? "Saved" : "Save to Journal"}
+                            </Button>
+                          </div>
+                        )}
                         {scheduleCandidate && (
                           <div className="mt-3 flex items-center gap-2">
                             <Button
@@ -2574,6 +2674,20 @@ export function Chat() {
 
       {/* Composer */}
       <div className="border-t border-border/60 bg-background/90 backdrop-blur">
+        {planLimitReached && (
+          <div className="max-w-2xl mx-auto px-5 pt-3">
+            <div className="flex items-center justify-between gap-3 rounded-lg bg-primary/10 border border-primary/20 px-3 py-2 text-xs text-primary">
+              <span>You've reached your plan limit for this period.</span>
+              <button
+                type="button"
+                className="font-semibold underline underline-offset-2 shrink-0"
+                onClick={() => setShowUpgradeModal(true)}
+              >
+                Upgrade
+              </button>
+            </div>
+          </div>
+        )}
         <div className="max-w-2xl mx-auto px-5 py-3">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
@@ -3124,6 +3238,63 @@ export function Chat() {
           </div>
         </div>
       )}
+
+      {/* Upgrade plan modal */}
+      <Dialog open={showUpgradeModal} onOpenChange={setShowUpgradeModal}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Upgrade your plan</DialogTitle>
+            <DialogDescription>
+              You've reached your limit on the{" "}
+              <span className="font-semibold capitalize">{subscriptionSnapshot?.plan ?? "free"}</span>{" "}
+              plan. Upgrade to unlock higher limits.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {PLAN_CATALOG.filter((p) => p.plan !== "free").map((plan) => (
+              <div
+                key={plan.plan}
+                className="rounded-xl border border-border bg-surface/60 px-4 py-4 flex flex-col"
+              >
+                <p className="font-semibold text-sm mb-0.5">{plan.title}</p>
+                <p className="text-xs text-muted-foreground mb-2">{plan.blurb}</p>
+                <p className="text-sm font-bold mb-1">
+                  £{plan.pricing.monthlyGbp}/mo
+                  <span className="text-xs text-muted-foreground font-normal ml-1">
+                    or £{plan.pricing.annualGbp}/yr
+                  </span>
+                </p>
+                <ul className="space-y-1 mb-4 flex-1">
+                  {plan.features.map((f) => (
+                    <li key={f} className="text-xs text-muted-foreground flex gap-1.5">
+                      <span className="text-primary">✓</span>
+                      {f}
+                    </li>
+                  ))}
+                </ul>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    disabled={upgradeBusy}
+                    onClick={() => void handleUpgradeCheckout(plan.plan as "pro" | "platinum", "monthly")}
+                    className="flex-1 rounded-lg bg-primary text-primary-foreground text-xs font-medium h-8 hover:bg-primary/90 transition-colors disabled:opacity-50"
+                  >
+                    {upgradeBusy ? "…" : "Monthly"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={upgradeBusy}
+                    onClick={() => void handleUpgradeCheckout(plan.plan as "pro" | "platinum", "annual")}
+                    className="flex-1 rounded-lg border border-primary text-primary text-xs font-medium h-8 hover:bg-primary/10 transition-colors disabled:opacity-50"
+                  >
+                    {upgradeBusy ? "…" : "Annual (save ~25%)"}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

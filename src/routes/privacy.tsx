@@ -38,6 +38,7 @@ function PrivacyPage() {
           <ul className="mt-2 list-disc pl-5 text-muted-foreground space-y-1">
             <li>Account information (e.g. email address)</li>
             <li>Chat conversations and generated responses</li>
+            <li>Advice library submissions, feedback, and reports (if you use that feature)</li>
             <li>Venting preference settings (private by default, optional share)</li>
             <li>Saved plans and profile preferences</li>
             <li>Comfort boundary settings</li>

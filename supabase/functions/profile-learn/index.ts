@@ -14,11 +14,13 @@ Return ONLY strict JSON with these keys:
 - communication_style: one short phrase describing how the user communicates (e.g. "direct and blunt", "reflective and measured", "casual and expressive") — blank if unclear
 - life_context: brief note about their current life situation (e.g. "running a business", "job hunting", "going through a breakup") — blank if unclear
 - positive_signals: topics or approaches that clearly resonated well with the user (blank if none detected)
+- confidence: number between 0 and 1 reflecting extraction confidence
 
 Rules:
 - Only extract from what was explicitly said. Do not invent.
 - Blank string if nothing clear enough to extract.
 - Keep each value very short (under 100 chars).
+- If confidence is low, set confidence below 0.4.
 - Never mention mental health diagnoses.`;
 
 const mergePreferenceNotes = (existing: string, extracted: Record<string, string>): string => {
@@ -178,6 +180,32 @@ const callAiWithFallback = async (systemText: string, userPrompt: string): Promi
   return null;
 };
 
+const logAttempt = async (
+  admin: ReturnType<typeof createClient>,
+  userId: string | null,
+  outcome: "changed" | "skipped",
+  opts: {
+    skip_reason?: string;
+    confidence?: number | null;
+    extracted_summary?: Record<string, unknown> | null;
+    message_count?: number;
+  } = {},
+) => {
+  if (!userId) return;
+  try {
+    await admin.from("user_learning_attempts").insert({
+      user_id: userId,
+      outcome,
+      skip_reason: opts.skip_reason ?? null,
+      confidence: opts.confidence != null ? opts.confidence : null,
+      extracted_summary: opts.extracted_summary ?? null,
+      message_count: opts.message_count ?? null,
+    });
+  } catch {
+    // logging is best-effort, never block the response
+  }
+};
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -190,14 +218,40 @@ serve(async (req) => {
       });
     }
 
-    const { userId, recentMessages } = await req.json();
+    const authHeader = req.headers.get("Authorization") || req.headers.get("authorization") || "";
+    const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+    if (!token) {
+      return new Response(JSON.stringify({ skipped: true, reason: "missing_auth" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const body = await req.json();
+    const { userId, recentMessages } = body;
+    const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
     if (!userId || !Array.isArray(recentMessages) || recentMessages.length < 2) {
+      await logAttempt(admin, userId ?? null, "skipped", { skip_reason: "insufficient_data" });
       return new Response(JSON.stringify({ skipped: true, reason: "insufficient_data" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    const { data: authData, error: authError } = await admin.auth.getUser(token);
+    if (authError || !authData?.user) {
+      return new Response(JSON.stringify({ skipped: true, reason: "invalid_auth" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (authData.user.id !== userId) {
+      return new Response(JSON.stringify({ skipped: true, reason: "user_mismatch" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     // Load existing memory profile
     const { data: existing } = await admin
@@ -220,6 +274,7 @@ serve(async (req) => {
     );
 
     if (!raw) {
+      await logAttempt(admin, userId, "skipped", { skip_reason: "ai_error", message_count: recentMessages.length });
       return new Response(JSON.stringify({ skipped: true, reason: "ai_error" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -231,7 +286,17 @@ serve(async (req) => {
       const cleaned = raw.replace(/```(?:json)?/g, "").replace(/```/g, "").trim();
       extracted = JSON.parse(cleaned);
     } catch {
+      await logAttempt(admin, userId, "skipped", { skip_reason: "parse_error", message_count: recentMessages.length });
       return new Response(JSON.stringify({ skipped: true, reason: "parse_error" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const confidenceRaw = Number((extracted as any)?.confidence);
+    const confidence = Number.isFinite(confidenceRaw) ? confidenceRaw : 0;
+    if (confidence < 0.4) {
+      await logAttempt(admin, userId, "skipped", { skip_reason: "low_confidence", confidence, extracted_summary: extracted, message_count: recentMessages.length });
+      return new Response(JSON.stringify({ ok: true, changed: false, skipped: true, reason: "low_confidence" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -240,6 +305,7 @@ serve(async (req) => {
 
     // Only write if something actually changed
     if (nextNotes === existingNotes) {
+      await logAttempt(admin, userId, "skipped", { skip_reason: "no_change", confidence, extracted_summary: extracted, message_count: recentMessages.length });
       return new Response(JSON.stringify({ ok: true, changed: false }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -252,6 +318,7 @@ serve(async (req) => {
       updated_at: new Date().toISOString(),
     });
 
+    await logAttempt(admin, userId, "changed", { confidence, extracted_summary: extracted, message_count: recentMessages.length });
     return new Response(JSON.stringify({ ok: true, changed: true }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

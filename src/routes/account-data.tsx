@@ -23,7 +23,8 @@ function AccountDataPage() {
 
     setBusy(true);
     try {
-      const [conversationsRes, messagesRes, plansRes, insightsRes, settingsRes, memoryProfileRes] = await Promise.all([
+      const client = supabase as any;
+      const [conversationsRes, messagesRes, plansRes, insightsRes, settingsRes, memoryProfileRes, advicePostsRes, adviceFeedbackRes, adviceReportsRes] = await Promise.all([
         supabase.from("conversations").select("*").eq("user_id", user.id).order("updated_at", { ascending: false }),
         supabase.from("messages").select("*").eq("user_id", user.id).order("created_at", { ascending: true }),
         supabase.from("plans").select("*").eq("user_id", user.id).order("created_at", { ascending: false }),
@@ -34,6 +35,9 @@ function AccountDataPage() {
           .order("week_start", { ascending: false }),
         supabase.from("user_insight_settings").select("*").eq("user_id", user.id).maybeSingle(),
         supabase.from("user_memory_profiles").select("*").eq("user_id", user.id).maybeSingle(),
+        client.from("advice_posts").select("*").eq("author_user_id", user.id).order("created_at", { ascending: false }),
+        client.from("advice_feedback").select("*").eq("user_id", user.id).order("created_at", { ascending: false }),
+        client.from("advice_reports").select("*").eq("reporter_user_id", user.id).order("created_at", { ascending: false }),
       ]);
 
       const payload = {
@@ -48,6 +52,9 @@ function AccountDataPage() {
         weekly_insights: insightsRes.data ?? [],
         insight_settings: settingsRes.data ?? null,
         learned_profile_preferences: memoryProfileRes.data ?? null,
+        advice_posts: advicePostsRes.data ?? [],
+        advice_feedback: adviceFeedbackRes.data ?? [],
+        advice_reports: adviceReportsRes.data ?? [],
       };
 
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
@@ -92,6 +99,7 @@ function AccountDataPage() {
           <ul className="mt-2 list-disc pl-5 text-sm text-muted-foreground space-y-1">
             <li>conversations and messages</li>
             <li>saved plans</li>
+            <li>advice submissions, feedback, and reports</li>
             <li>insights and summaries</li>
             <li>venting privacy settings (including whether you opted in to sharing vent chats)</li>
             <li>learned profile preferences (such as communication style and behavioural patterns)</li>

@@ -1,10 +1,11 @@
 import { useRef, useState } from "react";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import { ArrowUp, ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { PLAN_CATALOG, STRIPE_BILLING_ENABLED } from "@/lib/subscriptions";
+import { useAuth } from "@/lib/auth";
 import logo from "../assets/logo.png";
 
 type DemoMsg = { role: "user" | "assistant"; content: string };
@@ -63,6 +64,10 @@ export function Landing() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const { user, session } = useAuth();
+  const navigate = useNavigate();
+  const [landingCycle, setLandingCycle] = useState<"monthly" | "annual">("monthly");
+  const [checkoutBusy, setCheckoutBusy] = useState(false);
   const [feature, setFeature] = useState<PreviewFeature>("none");
   const [featureUses, setFeatureUses] = useState({ thinking: 0, plan: 0, vent: 0 });
   const [showFeatureMenu, setShowFeatureMenu] = useState(false);
@@ -94,6 +99,36 @@ export function Landing() {
       globalThis.dispatchEvent(new CustomEvent("realtalk:tracking", { detail: payload }));
     } catch {
       // no-op in environments without analytics hooks
+    }
+  };
+
+  const landingCheckout = async (plan: "pro" | "platinum", cycle: "monthly" | "annual") => {
+    if (checkoutBusy) return;
+    if (!user || !session) {
+      localStorage.setItem("realtalk_pending_checkout", JSON.stringify({ plan, cycle }));
+      void navigate({ to: "/auth" });
+      return;
+    }
+    setCheckoutBusy(true);
+    try {
+      const resp = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/stripe-checkout`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+            apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "",
+          },
+          body: JSON.stringify({ plan, cycle, returnUrl: window.location.href }),
+        },
+      );
+      const json = await resp.json();
+      if (!resp.ok || !json.url) throw new Error(json.error || "Could not start checkout");
+      window.location.href = json.url;
+    } catch (e: any) {
+      console.error(e);
+      setCheckoutBusy(false);
     }
   };
 
@@ -509,30 +544,78 @@ export function Landing() {
             )}
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
-            Compare plans below. Until billing is enabled, all users stay on Free.
+            Choose a plan and subscribe directly. Start free, upgrade anytime.
           </p>
 
           <div className="mt-3 -mx-1 px-1 overflow-x-auto">
+            {/* Billing cycle toggle */}
+            <div className="flex gap-1 mb-3 p-0.5 w-fit rounded-lg bg-muted/50 border border-border/50">
+              {(["monthly", "annual"] as const).map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setLandingCycle(c)}
+                  className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                    landingCycle === c
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {c === "monthly" ? "Monthly" : "Annual (save ~25%)"}
+                </button>
+              ))}
+            </div>
             <div className="flex gap-3 min-w-max pb-1">
               {PLAN_CATALOG.map((item) => (
                 <div
                   key={item.plan}
-                  className="w-[250px] shrink-0 rounded-xl border border-border/70 bg-background/50 p-3"
+                  className="w-[250px] shrink-0 rounded-xl border border-border/70 bg-background/50 p-3 flex flex-col"
                 >
                   <div className="text-sm font-semibold">{item.title}</div>
-                  <div className="mt-1 text-sm text-foreground">
-                    £{item.pricing.monthlyGbp.toFixed(2)} /month
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    £{item.pricing.annualGbp.toFixed(2)} /year
-                  </div>
+                  {item.plan === "free" ? (
+                    <div className="mt-1 text-sm font-bold text-foreground">Free</div>
+                  ) : (
+                    <div className="mt-1 text-sm font-bold text-foreground">
+                      £{landingCycle === "monthly"
+                        ? `${item.pricing.monthlyGbp.toFixed(2)}/mo`
+                        : `${item.pricing.annualGbp.toFixed(2)}/yr`}
+                    </div>
+                  )}
                   <div className="mt-2 text-[11px] text-muted-foreground">{item.blurb}</div>
-                  <div className="mt-2 space-y-1">
-                    {item.features.map((feature) => (
-                      <p key={feature} className="text-[11px] text-muted-foreground">
-                        • {feature}
-                      </p>
+                  <div className="mt-2 space-y-1 flex-1">
+                    {item.features.map((f) => (
+                      <p key={f} className="text-[11px] text-muted-foreground">• {f}</p>
                     ))}
+                  </div>
+                  <div className="mt-3">
+                    {item.plan === "free" ? (
+                      <Link to="/auth">
+                        <button
+                          type="button"
+                          className="w-full rounded-lg border border-border text-xs font-medium h-8 hover:bg-muted/50 transition-colors"
+                        >
+                          Get started free
+                        </button>
+                      </Link>
+                    ) : STRIPE_BILLING_ENABLED ? (
+                      <button
+                        type="button"
+                        disabled={checkoutBusy}
+                        onClick={() => void landingCheckout(item.plan as "pro" | "platinum", landingCycle)}
+                        className="w-full rounded-lg bg-primary text-primary-foreground text-xs font-medium h-8 hover:bg-primary/90 transition-colors disabled:opacity-50"
+                      >
+                        {checkoutBusy ? "…" : `Subscribe ${landingCycle === "annual" ? "(Annual)" : "(Monthly)"}`}
+                      </button>
+                    ) : (
+                      <Link to="/auth">
+                        <button
+                          type="button"
+                          className="w-full rounded-lg bg-primary text-primary-foreground text-xs font-medium h-8 hover:bg-primary/90 transition-colors"
+                        >
+                          Sign up to subscribe
+                        </button>
+                      </Link>
+                    )}
                   </div>
                 </div>
               ))}

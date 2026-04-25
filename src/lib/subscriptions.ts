@@ -1,11 +1,11 @@
 import { supabase } from "@/integrations/supabase/client";
 
 export type SubscriptionPlan = "free" | "pro" | "platinum";
-export type MeteredFeature = "deep_thinking" | "plan" | "gmail_send" | "voice_input";
+export type MeteredFeature = "deep_thinking" | "plan" | "gmail_send" | "voice_input" | "journal_save";
 export type AccessFeature = MeteredFeature | "schedule";
 export type UsagePeriodType = "day" | "month";
 
-export const STRIPE_BILLING_ENABLED = false;
+export const STRIPE_BILLING_ENABLED = true;
 
 export type SubscriptionSnapshot = {
   plan: SubscriptionPlan;
@@ -38,6 +38,7 @@ export const PLAN_CATALOG: PlanCatalogItem[] = [
       "Insights, Brain, and Be Real included",
       "Deep Thinking: 5 per day",
       "Voice input: up to 20 minutes per day",
+      "Journal saves: 100 per day",
       "Plan Mode: 3 per month",
       "Gmail send: 5 per month",
       "Schedule: not included",
@@ -58,6 +59,7 @@ export const PLAN_CATALOG: PlanCatalogItem[] = [
       "Schedule included",
       "Deep Thinking: 50 per day",
       "Voice input: up to 60 minutes per day",
+      "Journal saves: 300 per day",
       "Plan Mode: 25 per month",
       "Gmail send: 50 per month",
       "Conversation Memory: up to 300 messages",
@@ -76,6 +78,7 @@ export const PLAN_CATALOG: PlanCatalogItem[] = [
       "Everything in Pro",
       "Deep Thinking: unlimited",
       "Voice input: up to 300 minutes per day",
+      "Journal saves: 500 per day",
       "Plan Mode: unlimited",
       "Gmail send: unlimited",
       "Schedule included",
@@ -92,6 +95,7 @@ const PLAN_LIMITS: Record<SubscriptionPlan, Record<AccessFeature, number | boole
     plan: 3,
     gmail_send: 5,
     voice_input: 20 * 60,
+    journal_save: 100,
   },
   pro: {
     schedule: true,
@@ -99,6 +103,7 @@ const PLAN_LIMITS: Record<SubscriptionPlan, Record<AccessFeature, number | boole
     plan: 25,
     gmail_send: 50,
     voice_input: 60 * 60,
+    journal_save: 300,
   },
   platinum: {
     schedule: true,
@@ -106,6 +111,7 @@ const PLAN_LIMITS: Record<SubscriptionPlan, Record<AccessFeature, number | boole
     plan: null,
     gmail_send: null,
     voice_input: 300 * 60,
+    journal_save: 500,
   },
 };
 
@@ -114,6 +120,7 @@ const FEATURE_PERIOD: Record<MeteredFeature, UsagePeriodType> = {
   plan: "month",
   gmail_send: "month",
   voice_input: "day",
+  journal_save: "day",
 };
 
 export const getCurrentPeriodKey = (periodType: UsagePeriodType, now = new Date()): string => {

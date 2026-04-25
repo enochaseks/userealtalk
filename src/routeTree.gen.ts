@@ -16,7 +16,10 @@ import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as RecoverRouteImport } from './routes/recover'
 import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as PrivacyRouteImport } from './routes/privacy'
+import { Route as JournalRouteImport } from './routes/journal'
 import { Route as AuthRouteImport } from './routes/auth'
+import { Route as AdviceAdminRouteImport } from './routes/advice-admin'
+import { Route as AdviceRouteImport } from './routes/advice'
 import { Route as AccountDataRouteImport } from './routes/account-data'
 import { Route as IndexRouteImport } from './routes/index'
 
@@ -55,9 +58,24 @@ const PrivacyRoute = PrivacyRouteImport.update({
   path: '/privacy',
   getParentRoute: () => rootRouteImport,
 } as any)
+const JournalRoute = JournalRouteImport.update({
+  id: '/journal',
+  path: '/journal',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
   path: '/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdviceAdminRoute = AdviceAdminRouteImport.update({
+  id: '/advice-admin',
+  path: '/advice-admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdviceRoute = AdviceRouteImport.update({
+  id: '/advice',
+  path: '/advice',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AccountDataRoute = AccountDataRouteImport.update({
@@ -74,7 +92,10 @@ const IndexRoute = IndexRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/account-data': typeof AccountDataRoute
+  '/advice': typeof AdviceRoute
+  '/advice-admin': typeof AdviceAdminRoute
   '/auth': typeof AuthRoute
+  '/journal': typeof JournalRoute
   '/privacy': typeof PrivacyRoute
   '/profile': typeof ProfileRoute
   '/recover': typeof RecoverRoute
@@ -86,7 +107,10 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/account-data': typeof AccountDataRoute
+  '/advice': typeof AdviceRoute
+  '/advice-admin': typeof AdviceAdminRoute
   '/auth': typeof AuthRoute
+  '/journal': typeof JournalRoute
   '/privacy': typeof PrivacyRoute
   '/profile': typeof ProfileRoute
   '/recover': typeof RecoverRoute
@@ -99,7 +123,10 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/account-data': typeof AccountDataRoute
+  '/advice': typeof AdviceRoute
+  '/advice-admin': typeof AdviceAdminRoute
   '/auth': typeof AuthRoute
+  '/journal': typeof JournalRoute
   '/privacy': typeof PrivacyRoute
   '/profile': typeof ProfileRoute
   '/recover': typeof RecoverRoute
@@ -113,7 +140,10 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/account-data'
+    | '/advice'
+    | '/advice-admin'
     | '/auth'
+    | '/journal'
     | '/privacy'
     | '/profile'
     | '/recover'
@@ -125,7 +155,10 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/account-data'
+    | '/advice'
+    | '/advice-admin'
     | '/auth'
+    | '/journal'
     | '/privacy'
     | '/profile'
     | '/recover'
@@ -137,7 +170,10 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/account-data'
+    | '/advice'
+    | '/advice-admin'
     | '/auth'
+    | '/journal'
     | '/privacy'
     | '/profile'
     | '/recover'
@@ -150,7 +186,10 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AccountDataRoute: typeof AccountDataRoute
+  AdviceRoute: typeof AdviceRoute
+  AdviceAdminRoute: typeof AdviceAdminRoute
   AuthRoute: typeof AuthRoute
+  JournalRoute: typeof JournalRoute
   PrivacyRoute: typeof PrivacyRoute
   ProfileRoute: typeof ProfileRoute
   RecoverRoute: typeof RecoverRoute
@@ -211,11 +250,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PrivacyRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/journal': {
+      id: '/journal'
+      path: '/journal'
+      fullPath: '/journal'
+      preLoaderRoute: typeof JournalRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/auth': {
       id: '/auth'
       path: '/auth'
       fullPath: '/auth'
       preLoaderRoute: typeof AuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/advice-admin': {
+      id: '/advice-admin'
+      path: '/advice-admin'
+      fullPath: '/advice-admin'
+      preLoaderRoute: typeof AdviceAdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/advice': {
+      id: '/advice'
+      path: '/advice'
+      fullPath: '/advice'
+      preLoaderRoute: typeof AdviceRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/account-data': {
@@ -238,7 +298,10 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AccountDataRoute: AccountDataRoute,
+  AdviceRoute: AdviceRoute,
+  AdviceAdminRoute: AdviceAdminRoute,
   AuthRoute: AuthRoute,
+  JournalRoute: JournalRoute,
   PrivacyRoute: PrivacyRoute,
   ProfileRoute: ProfileRoute,
   RecoverRoute: RecoverRoute,

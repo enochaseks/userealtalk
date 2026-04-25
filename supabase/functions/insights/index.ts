@@ -7,8 +7,9 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const INSIGHT_SYSTEM = `You are an assistant that generates compact weekly mental-wellbeing insights from conversations.
-Return strict JSON with these keys only:
+const INSIGHT_SYSTEM = `You are a sharp, honest weekly wellbeing analyst. You read a user's chat history and write a concise weekly insight report.
+
+Return ONLY strict JSON with these keys:
 - emotion_trend
 - thought_patterns
 - calm_progress
@@ -20,12 +21,13 @@ Return strict JSON with these keys only:
 - boundary_respect
 
 Rules:
-- Each value must be 1-2 short sentences.
-- Be supportive and neutral.
-- Mention observable patterns only from provided messages.
-- No diagnosis, no medical claims.
-- If data is limited, state uncertainty briefly.
-- Focus on user growth, moments of progress, and where the assistant should adapt better.`;
+- Each value must be 1–2 short, specific sentences.
+- Reference actual topics, emotions, situations, or phrases from the conversation. Do NOT write generic filler.
+- NEVER write phrases like "still forming", "still being gathered", "still being observed", "still being tracked", "still being measured", "still limited". These are meaningless and forbidden.
+- If a field genuinely has no signal, write exactly: "No clear pattern this week."
+- Be direct and honest — name what actually happened in the chat.
+- No medical diagnoses. No invented content.
+- Focus on: what emotions came up, how the user responded to advice, what types of thinking appeared, where progress showed, and where the conversation fell flat.`;
 
 const getWeekStartIso = () => {
   const now = new Date();
@@ -183,6 +185,7 @@ serve(async (req) => {
     }
 
     const weekStart = getWeekStartIso();
+    const weekStartIso = new Date(weekStart + "T00:00:00Z").toISOString();
 
     const { data: memoryProfile } = await admin
       .from("user_memory_profiles")
@@ -190,21 +193,37 @@ serve(async (req) => {
       .eq("user_id", userId)
       .maybeSingle();
 
-    const { data: msgs } = await admin
+    // Fetch this week's messages first (up to 200), then pad with up to 50 older messages for context
+    const { data: weekMsgs } = await admin
       .from("messages")
       .select("role, content, created_at")
       .eq("user_id", userId)
-      .order("created_at", { ascending: false })
-      .limit(250);
+      .gte("created_at", weekStartIso)
+      .order("created_at", { ascending: true })
+      .limit(200);
 
-    if (!msgs || msgs.length < 2) {
+    const { data: priorMsgs } = await admin
+      .from("messages")
+      .select("role, content, created_at")
+      .eq("user_id", userId)
+      .lt("created_at", weekStartIso)
+      .order("created_at", { ascending: false })
+      .limit(50);
+
+    const msgs = [
+      ...(priorMsgs ? [...priorMsgs].reverse() : []),
+      ...(weekMsgs ?? []),
+    ];
+
+    const thisWeekUserMessages = (weekMsgs ?? []).filter((m) => m.role === "user");
+
+    if (thisWeekUserMessages.length < 2) {
       return new Response(JSON.stringify({ skipped: true, reason: "not_enough_messages" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const chronological = [...msgs].reverse();
-    const compact = chronological
+    const compact = msgs
       .map((m) => `${m.role.toUpperCase()}: ${m.content.slice(0, 900)}`)
       .join("\n\n");
 
@@ -220,11 +239,10 @@ serve(async (req) => {
       .join("\n");
 
     const insightPrompt = [
-      "Generate strict JSON weekly insight from this user's full chat history (old + new).",
-      "Highlight growth, what helped, what did not help, and how the user responded.",
-      "If boundaries were voiced, evaluate whether the assistant adapted respectfully.",
+      `Generate a weekly wellbeing insight report based on ${thisWeekUserMessages.length} user messages from this week${priorMsgs && priorMsgs.length > 0 ? `, plus ${priorMsgs.length} earlier messages for context` : ""}.`,
+      "Be specific — reference actual topics, emotions, or situations from the conversation. Do not write generic filler.",
       memoryText ? `\nKnown profile context:\n${memoryText}` : "",
-      `\nChat history:\n\n${compact}`,
+      `\nChat history (oldest first):\n\n${compact}`,
     ]
       .filter(Boolean)
       .join("\n\n");
@@ -241,17 +259,15 @@ serve(async (req) => {
     const row = {
       user_id: userId,
       week_start: weekStart,
-      emotion_trend: String(parsed.emotion_trend || "Emotion trend is still forming this week."),
-      thought_patterns: String(parsed.thought_patterns || "Thought patterns are still being gathered."),
-      calm_progress: String(parsed.calm_progress || "Calm progress is still being measured."),
-      overthinking_reduction: String(
-        parsed.overthinking_reduction || "Overthinking reduction indicators are still limited.",
-      ),
-      ai_help_summary: String(parsed.ai_help_summary || "Support focused on reflection and clarity."),
-      what_worked: String(parsed.what_worked || "Helpful patterns are still being learned."),
-      what_didnt: String(parsed.what_didnt || "Areas to improve are still being learned."),
-      response_patterns: String(parsed.response_patterns || "Response patterns are still being observed."),
-      boundary_respect: String(parsed.boundary_respect || "Comfort boundaries are still being tracked."),
+      emotion_trend: String(parsed.emotion_trend || "No clear pattern this week."),
+      thought_patterns: String(parsed.thought_patterns || "No clear pattern this week."),
+      calm_progress: String(parsed.calm_progress || "No clear pattern this week."),
+      overthinking_reduction: String(parsed.overthinking_reduction || "No clear pattern this week."),
+      ai_help_summary: String(parsed.ai_help_summary || "No clear pattern this week."),
+      what_worked: String(parsed.what_worked || "No clear pattern this week."),
+      what_didnt: String(parsed.what_didnt || "No clear pattern this week."),
+      response_patterns: String(parsed.response_patterns || "No clear pattern this week."),
+      boundary_respect: String(parsed.boundary_respect || "No clear pattern this week."),
       source_message_count: msgs.length,
       updated_at: new Date().toISOString(),
     };
@@ -261,6 +277,24 @@ serve(async (req) => {
     });
 
     if (error) throw error;
+
+    // ── Fetch top 3 approved advice posts this week for the digest email ────
+    const { data: topAdvice } = await admin
+      .from("advice_posts")
+      .select("title, body, category")
+      .eq("status", "approved")
+      .gte("published_at", weekStartIso)
+      .order("helpful_count", { ascending: false })
+      .limit(3);
+
+    // Attach advice to the insight row so the email sender can pick it up
+    if (topAdvice && topAdvice.length > 0) {
+      await admin
+        .from("user_weekly_insights")
+        .update({ advice_snippets: topAdvice })
+        .eq("user_id", userId)
+        .eq("week_start", weekStart);
+    }
 
     return new Response(JSON.stringify({ ok: true, weekStart, source_message_count: msgs.length }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

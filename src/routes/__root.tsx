@@ -16,7 +16,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { loadSubscriptionSnapshot } from "@/lib/subscriptions";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Menu, Plus, Settings, Trash2 } from "lucide-react";
+import { BookOpen, Menu, NotebookPen, Plus, Settings, Trash2 } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
 const ASSET_VERSION = appCss;
@@ -343,6 +343,23 @@ function TopNav() {
   const [profileName, setProfileName] = useState("Profile");
   const [avatarUrl, setAvatarUrl] = useState("");
   const [subscriptionLabel, setSubscriptionLabel] = useState("Free");
+  const [adviceNotif, setAdviceNotif] = useState(() => {
+    if (typeof window === "undefined") return false;
+    const uid = (window as any).__advice_uid__ ?? "";
+    // will be refreshed in useEffect once user is known
+    return false;
+  });
+
+  useEffect(() => {
+    if (!user?.id) { setAdviceNotif(false); return; }
+    const key = `rte_advice_notif_${user.id}`;
+    setAdviceNotif(Boolean(localStorage.getItem(key)));
+    const handler = (e: StorageEvent) => {
+      if (e.key === key) setAdviceNotif(Boolean(e.newValue));
+    };
+    window.addEventListener("storage", handler);
+    return () => window.removeEventListener("storage", handler);
+  }, [user?.id]);
 
   useEffect(() => {
     const syncProfile = (detail?: { name?: string; avatarUrl?: string }) => {
@@ -539,7 +556,29 @@ function TopNav() {
                   )}
                 </div>
 
-                <div className="mx-2 mt-auto pt-3 border-t border-border/70 flex items-center gap-2">
+                <div className="mx-2 mt-auto">
+                  <Link
+                    to="/advice"
+                    onClick={() => setOpen(false)}
+                    className="flex items-center gap-2 px-3 py-2 mb-1 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-surface-elevated transition-colors w-full"
+                  >
+                    <BookOpen className="h-4 w-4 shrink-0" />
+                    <span>Advice Library</span>
+                    {adviceNotif && (
+                      <span className="ml-auto h-2 w-2 rounded-full bg-primary shrink-0" />
+                    )}
+                  </Link>
+                  <Link
+                    to="/journal"
+                    onClick={() => setOpen(false)}
+                    className="flex items-center gap-2 px-3 py-2 mb-1 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-surface-elevated transition-colors w-full"
+                  >
+                    <NotebookPen className="h-4 w-4 shrink-0" />
+                    <span>Journal</span>
+                  </Link>
+                </div>
+
+                <div className="mx-2 pt-3 border-t border-border/70 flex items-center gap-2">
                   <Link
                     to="/settings"
                     onClick={() => setOpen(false)}

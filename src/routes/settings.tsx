@@ -41,6 +41,7 @@ const SUBSCRIPTION_FEATURE_LABELS: Record<MeteredFeature, string> = {
   plan: "Plan Mode",
   gmail_send: "Gmail send",
   voice_input: "Voice input",
+  journal_save: "Journal saves",
 };
 
 function SettingsPage() {
@@ -49,6 +50,8 @@ function SettingsPage() {
   const [subscriptionSnapshot, setSubscriptionSnapshot] = useState<SubscriptionSnapshot | null>(null);
   const [planUpdateBusy, setPlanUpdateBusy] = useState(false);
   const [billingCycle, setBillingCycle] = useState<BillingCycle>("monthly");
+  const [checkoutBusy, setCheckoutBusy] = useState(false);
+  const [portalBusy, setPortalBusy] = useState(false);
   const [weeklyEmailEnabled, setWeeklyEmailEnabled] = useState(false);
   const [scheduleEmailRemindersEnabled, setScheduleEmailRemindersEnabled] = useState(false);
   const [scheduleReminderMinutes, setScheduleReminderMinutes] = useState(30);
@@ -141,6 +144,73 @@ function SettingsPage() {
       toast.error(e?.message || "Failed to change plan");
     } finally {
       setPlanUpdateBusy(false);
+    }
+  };
+
+  const startCheckout = async (plan: SubscriptionPlan, cycle: BillingCycle) => {
+    if (!user || !session || checkoutBusy) return;
+    setCheckoutBusy(true);
+    try {
+      const resp = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/stripe-checkout`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+            apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "",
+          },
+          body: JSON.stringify({ plan, cycle, returnUrl: window.location.href }),
+        },
+      );
+      const json = await resp.json();
+      if (!resp.ok || !json.url) throw new Error(json.error || "Could not start checkout");
+      window.location.href = json.url;
+    } catch (e: any) {
+      toast.error(e?.message || "Could not start checkout");
+      setCheckoutBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!user || !session) return;
+    const raw = localStorage.getItem("realtalk_pending_checkout");
+    if (!raw) return;
+    try {
+      const { plan, cycle } = JSON.parse(raw) as {
+        plan: "pro" | "platinum";
+        cycle: "monthly" | "annual";
+      };
+      localStorage.removeItem("realtalk_pending_checkout");
+      void startCheckout(plan, cycle);
+    } catch {
+      localStorage.removeItem("realtalk_pending_checkout");
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, session]);
+
+  const openPortal = async () => {
+    if (!user || !session || portalBusy) return;
+    setPortalBusy(true);
+    try {
+      const resp = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/stripe-portal`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+            apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "",
+          },
+          body: JSON.stringify({ returnUrl: window.location.href }),
+        },
+      );
+      const json = await resp.json();
+      if (!resp.ok || !json.url) throw new Error(json.error || "Could not open billing portal");
+      window.location.href = json.url;
+    } catch (e: any) {
+      toast.error(e?.message || "Could not open billing portal");
+      setPortalBusy(false);
     }
   };
 
@@ -398,18 +468,27 @@ function SettingsPage() {
                       type="button"
                       size="sm"
                       variant={selected ? "secondary" : "outline"}
-                      disabled={planUpdateBusy || selected || !subscriptionSnapshot || !STRIPE_BILLING_ENABLED}
-                      onClick={() => void changePlan(item.plan)}
+                      disabled={
+                        selected ||
+                        !subscriptionSnapshot ||
+                        checkoutBusy ||
+                        planUpdateBusy
+                      }
+                      onClick={() => {
+                        if (item.plan === "free") {
+                          void openPortal();
+                        } else {
+                          void startCheckout(item.plan, billingCycle);
+                        }
+                      }}
                     >
                       {selected
                         ? "Current"
-                        : !STRIPE_BILLING_ENABLED
-                          ? "Coming with Stripe"
-                          : planUpdateBusy
-                            ? "Updating..."
-                            : item.plan === "free"
-                              ? "Downgrade"
-                              : "Choose"}
+                        : checkoutBusy
+                          ? "Loading…"
+                          : item.plan === "free"
+                            ? "Downgrade"
+                            : "Subscribe"}
                     </Button>
                   </div>
                   <div className="mt-2 space-y-1.5">
@@ -423,6 +502,25 @@ function SettingsPage() {
               );
             })}
           </div>
+
+          {/* Manage / cancel subscription for paid users */}
+          {subscriptionSnapshot && subscriptionSnapshot.plan !== "free" && (
+            <div className="mt-4 flex items-center justify-between rounded-lg border border-border/60 bg-background/30 px-3 py-2.5">
+              <div>
+                <p className="text-xs font-medium">Manage subscription</p>
+                <p className="text-[11px] text-muted-foreground">Update payment method, download invoices, or cancel.</p>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={portalBusy}
+                onClick={() => void openPortal()}
+              >
+                {portalBusy ? "Opening…" : "Billing portal"}
+              </Button>
+            </div>
+          )}
         </div>
 
         <div className="rounded-xl border border-border bg-surface/60 p-5">

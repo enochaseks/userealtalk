@@ -116,11 +116,22 @@ type ScheduleItem = {
   updated_at: string;
 };
 
+type LearningAttempt = {
+  id: string;
+  attempted_at: string;
+  outcome: "changed" | "skipped";
+  skip_reason: string | null;
+  confidence: number | null;
+  extracted_summary: Record<string, string> | null;
+  message_count: number | null;
+};
+
 const SUBSCRIPTION_FEATURE_LABELS: Record<MeteredFeature, string> = {
   deep_thinking: "Deep Thinking",
   plan: "Plan Mode",
   gmail_send: "Gmail send",
   voice_input: "Voice input",
+  journal_save: "Journal saves",
 };
 
 const getUtcWeekStart = (): string => {
@@ -194,6 +205,7 @@ function ProfilePage() {
   const [scheduleStartsAt, setScheduleStartsAt] = useState("");
   const [scheduleEndsAt, setScheduleEndsAt] = useState("");
   const [scheduleSaving, setScheduleSaving] = useState(false);
+  const [learningAttempts, setLearningAttempts] = useState<LearningAttempt[]>([]);
   const [subscriptionSnapshot, setSubscriptionSnapshot] = useState<SubscriptionSnapshot | null>(null);
   const [planUpdateBusy, setPlanUpdateBusy] = useState(false);
   const [billingCycle, setBillingCycle] = useState<BillingCycle>("monthly");
@@ -350,11 +362,22 @@ function ProfilePage() {
       setSchedules((data as ScheduleItem[] | null) ?? []);
     };
 
+    const loadLearningAttempts = async () => {
+      const { data } = await (supabase as any)
+        .from("user_learning_attempts")
+        .select("id,attempted_at,outcome,skip_reason,confidence,extracted_summary,message_count")
+        .eq("user_id", user.id)
+        .order("attempted_at", { ascending: false })
+        .limit(30);
+      setLearningAttempts((data as LearningAttempt[] | null) ?? []);
+    };
+
     void loadPlans();
     void loadInsightSettings();
     void loadInsights();
     void loadMemoryProfile();
     void loadSchedules();
+    void loadLearningAttempts();
 
     const channel = supabase
       .channel(`profile-sync-${user.id}`)
@@ -1259,6 +1282,7 @@ function ProfilePage() {
                       comfort_boundaries: memoryProfile?.comfort_boundaries ?? null,
                     }}
                   />
+                  <LearningAttemptLog attempts={learningAttempts} />
               </div>
             )}
           </div>
@@ -1747,6 +1771,75 @@ function BrainCard({
         <p className="mt-3 text-[11px] text-muted-foreground">
           Brain growth is intentionally slow. RealTalk increases this as it learns consistent patterns over time.
         </p>
+      </div>
+    </div>
+  );
+}
+
+function LearningAttemptLog({ attempts }: { attempts: LearningAttempt[] }) {
+  if (attempts.length === 0) {
+    return (
+      <div className="rounded-xl border border-border/50 bg-background/20 px-5 py-6 text-center text-xs text-muted-foreground">
+        No learning attempts yet. They'll appear here after your next chat session.
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-border/50 bg-background/20 overflow-hidden">
+      <div className="px-4 py-3 border-b border-border/40 flex items-center justify-between">
+        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Learning attempt log</div>
+        <div className="text-[11px] text-muted-foreground">last {attempts.length}</div>
+      </div>
+      <div className="divide-y divide-border/30 max-h-64 overflow-y-auto">
+        {attempts.map((a) => {
+          const summary = a.extracted_summary;
+          const summaryParts = summary
+            ? Object.entries(summary)
+                .filter(([k, v]) => k !== "confidence" && String(v).trim())
+                .map(([k, v]) => `${k.replace(/_/g, " ")}: ${String(v).slice(0, 60)}`)
+            : [];
+          return (
+            <div key={a.id} className="px-4 py-2.5 flex flex-col gap-1">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                      a.outcome === "changed"
+                        ? "bg-green-500/15 text-green-600"
+                        : "bg-muted/60 text-muted-foreground"
+                    }`}
+                  >
+                    {a.outcome}
+                  </span>
+                  {a.skip_reason && (
+                    <span className="text-[11px] text-muted-foreground truncate max-w-[160px]">
+                      {a.skip_reason}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2.5">
+                  {a.confidence !== null && (
+                    <span className="text-[11px] text-muted-foreground">
+                      conf: {Math.round(a.confidence * 100)}%
+                    </span>
+                  )}
+                  {a.message_count !== null && (
+                    <span className="text-[11px] text-muted-foreground">{a.message_count} msgs</span>
+                  )}
+                  <span className="text-[11px] text-muted-foreground">
+                    {new Date(a.attempted_at).toLocaleDateString()}
+                  </span>
+                </div>
+              </div>
+              {summaryParts.length > 0 && (
+                <div className="text-[11px] text-muted-foreground/70 truncate">
+                  {summaryParts.join(" · ")}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

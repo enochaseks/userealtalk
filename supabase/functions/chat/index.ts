@@ -323,7 +323,7 @@ const isBenefitsSupportRequest = (text: string): boolean => {
 
 const isLogicalExecutionRequest = (text: string): boolean => {
   const lower = text.toLowerCase();
-  
+
   // Action verbs that signal "I want to start/build/execute something"
   const executionVerbs = [
     "start ",
@@ -417,6 +417,91 @@ const isLogicalExecutionRequest = (text: string): boolean => {
   ];
   
   return directPatterns.some(pattern => lower.includes(pattern));
+};
+
+const resolveAdviceCategory = (text: string): string | null => {
+  const lower = String(text || "").toLowerCase();
+  if (!lower) return null;
+
+  if (isBenefitsSupportRequest(lower)) return "benefits";
+  if (/(anxious|anxiety|panic|overthink|stress|depress|low mood|mental health|burnout)/.test(lower)) return "mental-health";
+  if (/(money|debt|rent|bill|budget|saving|salary|wage|financial)/.test(lower)) return "money";
+  if (/(job|career|interview|manager|promotion|workplace|boss|coworker|colleague)/.test(lower)) return "work";
+  if (/(relationship|partner|dating|boyfriend|girlfriend|marriage|friendship|family|parent)/.test(lower)) return "relationships";
+  return "general";
+};
+
+const buildAdviceSearchTerms = (text: string): string[] => {
+  const lower = String(text || "").toLowerCase();
+  if (!lower) return [];
+
+  const stopWords = new Set([
+    "a", "an", "the", "and", "or", "but", "if", "then", "to", "for", "of", "in", "on", "at", "by", "with", "about", "from",
+    "is", "are", "am", "be", "been", "was", "were", "i", "im", "me", "my", "we", "our", "you", "your", "it", "this", "that",
+    "what", "when", "where", "why", "how", "should", "could", "would", "can", "just", "really", "very", "help", "advice",
+  ]);
+
+  return Array.from(
+    new Set(
+      lower
+        .replace(/[^a-z0-9\s-]/g, " ")
+        .split(/\s+/)
+        .map((w) => w.trim())
+        .filter((w) => w.length >= 3 && !stopWords.has(w)),
+    ),
+  ).slice(0, 8);
+};
+
+const buildAdviceContext = async (
+  admin: any,
+  lastUserMessage: string,
+  options: { benefitsRequested: boolean; adviceRequested: boolean; practicalRequested: boolean; logicalExecutionRequested: boolean; emotionalRequested: boolean; emotionalMode: boolean },
+): Promise<string> => {
+  if (!admin) return "";
+  if (options.emotionalMode || options.emotionalRequested) return "";
+  if (!options.benefitsRequested && !options.adviceRequested && !options.practicalRequested && !options.logicalExecutionRequested) return "";
+
+  const category = resolveAdviceCategory(lastUserMessage);
+  const terms = buildAdviceSearchTerms(lastUserMessage);
+
+  let query = admin
+    .from("advice_posts")
+    .select("id, title, body, category, tags, helpful_count, created_at")
+    .eq("status", "approved")
+    .order("helpful_count", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(24);
+
+  if (category && category !== "general") {
+    query = query.eq("category", category);
+  }
+
+  const { data } = await query;
+  const posts = Array.isArray(data) ? data : [];
+  if (posts.length === 0) return "";
+
+  const scored = posts
+    .map((post: any) => {
+      const haystack = `${String(post.title || "")} ${String(post.body || "")} ${(Array.isArray(post.tags) ? post.tags.join(" ") : "")}`.toLowerCase();
+      const matchCount = terms.reduce((acc, term) => acc + (haystack.includes(term) ? 1 : 0), 0);
+      const helpfulWeight = Number(post.helpful_count || 0) * 0.2;
+      return { post, score: matchCount + helpfulWeight };
+    })
+    .sort((a: any, b: any) => b.score - a.score)
+    .slice(0, 5)
+    .map((item: any) => item.post);
+
+  if (scored.length === 0) return "";
+
+  const lines = scored.map((post: any, index: number) => {
+    const title = String(post.title || "Untitled advice").replace(/\s+/g, " ").trim();
+    const body = String(post.body || "").replace(/\s+/g, " ").trim();
+    const snippet = body.length > 260 ? `${body.slice(0, 257)}...` : body;
+    const postCategory = String(post.category || "general");
+    return `${index + 1}. [${postCategory}] ${title} - ${snippet}`;
+  });
+
+  return `Approved community advice context (anonymous, moderated):\n${lines.join("\n")}\nUse this as supportive experiential guidance, not as legal/medical authority.`;
 };
 
 const isBusinessMarketingRequest = (text: string): boolean => {
@@ -1702,6 +1787,14 @@ Deno.serve(async (req) => {
     const researchContext = shouldUseResearch
       ? await getResearchContext(researchQuery, referencesRequested)
       : "";
+    const adviceContext = await buildAdviceContext(admin, lastUserMessage, {
+      benefitsRequested,
+      adviceRequested,
+      practicalRequested,
+      logicalExecutionRequested,
+      emotionalRequested,
+      emotionalMode,
+    });
 
     const systemMessages = [
       {
@@ -1712,6 +1805,9 @@ Deno.serve(async (req) => {
     ];
     if (researchContext) {
       systemMessages.push({ role: "system", content: researchContext });
+    }
+    if (adviceContext) {
+      systemMessages.push({ role: "system", content: adviceContext });
     }
 
     // Create a writable stream encoder for custom event streaming

@@ -67,7 +67,8 @@ function AuthPage() {
         setMode("signin");
         return;
       }
-      navigate({ to: "/" });
+      const pending = localStorage.getItem("realtalk_pending_checkout");
+      navigate({ to: pending ? "/settings" : "/" });
     }
   };
 
