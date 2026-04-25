@@ -13,6 +13,7 @@ import { Route as TermsRouteImport } from './routes/terms'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SafetyAdminRouteImport } from './routes/safety-admin'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
+import { Route as RefundPolicyRouteImport } from './routes/refund-policy'
 import { Route as RecoverRouteImport } from './routes/recover'
 import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as PrivacyRouteImport } from './routes/privacy'
@@ -41,6 +42,11 @@ const SafetyAdminRoute = SafetyAdminRouteImport.update({
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
   id: '/reset-password',
   path: '/reset-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RefundPolicyRoute = RefundPolicyRouteImport.update({
+  id: '/refund-policy',
+  path: '/refund-policy',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RecoverRoute = RecoverRouteImport.update({
@@ -99,6 +105,7 @@ export interface FileRoutesByFullPath {
   '/privacy': typeof PrivacyRoute
   '/profile': typeof ProfileRoute
   '/recover': typeof RecoverRoute
+  '/refund-policy': typeof RefundPolicyRoute
   '/reset-password': typeof ResetPasswordRoute
   '/safety-admin': typeof SafetyAdminRoute
   '/settings': typeof SettingsRoute
@@ -114,6 +121,7 @@ export interface FileRoutesByTo {
   '/privacy': typeof PrivacyRoute
   '/profile': typeof ProfileRoute
   '/recover': typeof RecoverRoute
+  '/refund-policy': typeof RefundPolicyRoute
   '/reset-password': typeof ResetPasswordRoute
   '/safety-admin': typeof SafetyAdminRoute
   '/settings': typeof SettingsRoute
@@ -130,6 +138,7 @@ export interface FileRoutesById {
   '/privacy': typeof PrivacyRoute
   '/profile': typeof ProfileRoute
   '/recover': typeof RecoverRoute
+  '/refund-policy': typeof RefundPolicyRoute
   '/reset-password': typeof ResetPasswordRoute
   '/safety-admin': typeof SafetyAdminRoute
   '/settings': typeof SettingsRoute
@@ -147,6 +156,7 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/profile'
     | '/recover'
+    | '/refund-policy'
     | '/reset-password'
     | '/safety-admin'
     | '/settings'
@@ -162,6 +172,7 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/profile'
     | '/recover'
+    | '/refund-policy'
     | '/reset-password'
     | '/safety-admin'
     | '/settings'
@@ -177,6 +188,7 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/profile'
     | '/recover'
+    | '/refund-policy'
     | '/reset-password'
     | '/safety-admin'
     | '/settings'
@@ -193,6 +205,7 @@ export interface RootRouteChildren {
   PrivacyRoute: typeof PrivacyRoute
   ProfileRoute: typeof ProfileRoute
   RecoverRoute: typeof RecoverRoute
+  RefundPolicyRoute: typeof RefundPolicyRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   SafetyAdminRoute: typeof SafetyAdminRoute
   SettingsRoute: typeof SettingsRoute
@@ -227,6 +240,13 @@ declare module '@tanstack/react-router' {
       path: '/reset-password'
       fullPath: '/reset-password'
       preLoaderRoute: typeof ResetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/refund-policy': {
+      id: '/refund-policy'
+      path: '/refund-policy'
+      fullPath: '/refund-policy'
+      preLoaderRoute: typeof RefundPolicyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/recover': {
@@ -305,6 +325,7 @@ const rootRouteChildren: RootRouteChildren = {
   PrivacyRoute: PrivacyRoute,
   ProfileRoute: ProfileRoute,
   RecoverRoute: RecoverRoute,
+  RefundPolicyRoute: RefundPolicyRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   SafetyAdminRoute: SafetyAdminRoute,
   SettingsRoute: SettingsRoute,

@@ -207,10 +207,10 @@ function TermsPage() {
           <p className="mt-2 text-muted-foreground">
             <strong>Email:</strong>{" "}
             <a
-              href="mailto:support@userealtalk.co.uk"
+              href="mailto:realtalklimited@gmail.com"
               className="text-primary hover:underline"
             >
-              support@userealtalk.co.uk
+              realtalklimited@gmail.com
             </a>
           </p>
           <p className="mt-2 text-muted-foreground">Instagram: @userealtalk</p>

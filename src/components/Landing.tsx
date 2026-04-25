@@ -763,6 +763,7 @@ export function Landing() {
           <div className="mt-4 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
             <a href="/privacy" className="hover:text-foreground transition-colors">Privacy Policy</a>
             <Link to="/terms" className="hover:text-foreground transition-colors">Terms</Link>
+            <Link to="/refund-policy" className="hover:text-foreground transition-colors">Refund &amp; Cancellation</Link>
             <Link to="/account-data" className="hover:text-foreground transition-colors">Account & data export</Link>
           </div>
           <p className="mt-4 text-xs text-muted-foreground/80">

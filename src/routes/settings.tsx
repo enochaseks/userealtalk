@@ -413,7 +413,7 @@ function SettingsPage() {
               <span>Schedule</span>
               <span>{subscriptionSnapshot ? (hasFeatureAccess(subscriptionSnapshot.plan, "schedule") ? "Included" : "Pro / Platinum") : "Loading..."}</span>
             </div>
-            {(["deep_thinking", "plan", "gmail_send", "voice_input"] as MeteredFeature[]).map((feature) => (
+            {(["deep_thinking", "plan", "gmail_send", "voice_input", "journal_save"] as MeteredFeature[]).map((feature) => (
               <div key={feature} className="flex items-center justify-between gap-3">
                 <span>{SUBSCRIPTION_FEATURE_LABELS[feature]}</span>
                 <span>{formatUsageSummary(feature)}</span>
@@ -624,6 +624,7 @@ function SettingsPage() {
           <div className="flex flex-wrap gap-3 text-sm">
             <Link to="/privacy" className="text-primary hover:underline">Privacy Policy</Link>
             <Link to="/terms" className="text-primary hover:underline">Terms</Link>
+            <Link to="/refund-policy" className="text-primary hover:underline">Refund &amp; Cancellation</Link>
             <Link to="/account-data" className="text-primary hover:underline">Account & data export</Link>
             <Link to="/safety-admin" className="text-primary hover:underline">App policy</Link>
           </div>

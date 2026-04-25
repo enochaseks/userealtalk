@@ -38,7 +38,7 @@ export const PLAN_CATALOG: PlanCatalogItem[] = [
       "Insights, Brain, and Be Real included",
       "Deep Thinking: 5 per day",
       "Voice input: up to 20 minutes per day",
-      "Journal saves: 100 per day",
+      "Journal saves: 50 per day",
       "Plan Mode: 3 per month",
       "Gmail send: 5 per month",
       "Schedule: not included",
@@ -95,7 +95,7 @@ const PLAN_LIMITS: Record<SubscriptionPlan, Record<AccessFeature, number | boole
     plan: 3,
     gmail_send: 5,
     voice_input: 20 * 60,
-    journal_save: 100,
+    journal_save: 50,
   },
   pro: {
     schedule: true,

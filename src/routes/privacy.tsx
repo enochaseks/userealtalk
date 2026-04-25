@@ -218,10 +218,10 @@ function PrivacyPage() {
           <p className="mt-2 text-muted-foreground">
             <strong>Email:</strong>{" "}
             <a
-              href="mailto:support@userealtalk.co.uk"
+              href="mailto:realtalklimited@gmail.com"
               className="text-primary hover:underline"
             >
-              support@userealtalk.co.uk
+              realtalklimited@gmail.com
             </a>
           </p>
         </section>
