@@ -319,7 +319,7 @@ function AdvicePage() {
     setEditSubmitting(true);
     try {
       const client = supabase as any;
-      const { error } = await client
+      const { data: updatedPost, error } = await client
         .from("advice_posts")
         .update({
           title: cleanTitle,
@@ -327,11 +327,16 @@ function AdvicePage() {
           category: editCategory,
           tags: editedTags,
           status: "pending",
-          moderation_notes: null,
+          moderation_notes: "",
         })
         .eq("id", editingPostId)
-        .eq("author_user_id", user.id);
+        .eq("author_user_id", user.id)
+        .select("id")
+        .maybeSingle();
       if (error) throw error;
+      if (!updatedPost) {
+        throw new Error("Could not resubmit this post. It may no longer be editable.");
+      }
       toast.success("Resubmitted for review.");
       cancelEdit();
       await loadAdvice();
