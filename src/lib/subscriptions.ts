@@ -95,7 +95,7 @@ const PLAN_LIMITS: Record<SubscriptionPlan, Record<AccessFeature, number | boole
     plan: 3,
     gmail_send: 5,
     voice_input: 20 * 60,
-    journal_save: 100,
+    journal_save: 50,
   },
   pro: {
     schedule: true,
@@ -103,7 +103,7 @@ const PLAN_LIMITS: Record<SubscriptionPlan, Record<AccessFeature, number | boole
     plan: 25,
     gmail_send: 50,
     voice_input: 60 * 60,
-    journal_save: 300,
+    journal_save: 100,
   },
   platinum: {
     schedule: true,
@@ -111,7 +111,7 @@ const PLAN_LIMITS: Record<SubscriptionPlan, Record<AccessFeature, number | boole
     plan: null,
     gmail_send: null,
     voice_input: 300 * 60,
-    journal_save: 500,
+    journal_save: 150,
   },
 };
 

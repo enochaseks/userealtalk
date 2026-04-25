@@ -1327,36 +1327,34 @@ function ProfilePage() {
           {insights.length === 0 && (
             <EmptyState text="No weekly insights yet. Insights are generated every Friday based on this week’s chats." />
           )}
-          {insights.map((insight) => {
-              return (
-                <div key={insight.id} className="rounded-xl border border-border bg-surface/60 p-5">
+          {insights.length > 0 && (() => {
+            const [latest, ...older] = insights;
+            return (
+              <>
+                <div className="rounded-xl border border-border bg-surface/60 p-5">
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <div className="text-sm font-semibold">Week of {new Date(insight.week_start).toLocaleDateString()}</div>
-                      <div className="text-xs text-muted-foreground mt-0.5">
-                        Full weekly analysis
-                      </div>
+                      <div className="text-sm font-semibold">Week of {new Date(latest.week_start).toLocaleDateString()}</div>
+                      <div className="text-xs text-muted-foreground mt-0.5">This week’s analysis</div>
                     </div>
-                    <div className="text-[11px] text-muted-foreground">Every Friday</div>
+                    <div className="text-[11px] text-muted-foreground">Updated every Friday</div>
                   </div>
-
                   <div className="mt-4 space-y-3 text-sm">
-                    <InsightRow title="Emotion trend" value={insight.emotion_trend} />
-                    <InsightRow title="Thought patterns" value={insight.thought_patterns} />
-                    <InsightRow title="Calm progress" value={insight.calm_progress} />
-                    <InsightRow
-                      title="Overthinking reduction"
-                      value={insight.overthinking_reduction}
-                    />
-                    <InsightRow title="How RealTalk helped" value={insight.ai_help_summary} />
-                    <InsightRow title="What worked" value={insight.what_worked} />
-                    <InsightRow title="What didn't work" value={insight.what_didnt} />
-                    <InsightRow title="Your response pattern" value={insight.response_patterns} />
-                    <InsightRow title="Boundary comfort" value={insight.boundary_respect} />
+                    <InsightRow title="Emotion trend" value={latest.emotion_trend} />
+                    <InsightRow title="Thought patterns" value={latest.thought_patterns} />
+                    <InsightRow title="Calm progress" value={latest.calm_progress} />
+                    <InsightRow title="Overthinking reduction" value={latest.overthinking_reduction} />
+                    <InsightRow title="How RealTalk helped" value={latest.ai_help_summary} />
+                    <InsightRow title="What worked" value={latest.what_worked} />
+                    <InsightRow title="What didn’t work" value={latest.what_didnt} />
+                    <InsightRow title="Your response pattern" value={latest.response_patterns} />
+                    <InsightRow title="Boundary comfort" value={latest.boundary_respect} />
                   </div>
                 </div>
-              );
-            })}
+                {older.length > 0 && <InsightHistory insights={older} />}
+              </>
+            );
+          })()}
         </div>
       )}
 
@@ -1772,6 +1770,47 @@ function BrainCard({
           Brain growth is intentionally slow. RealTalk increases this as it learns consistent patterns over time.
         </p>
       </div>
+    </div>
+  );
+}
+
+
+function InsightHistory({ insights }: { insights: Insight[] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="rounded-xl border border-border/50 bg-surface/60 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between px-5 py-3.5 text-left hover:bg-surface-elevated transition-colors"
+      >
+        <span className="text-sm text-muted-foreground">Previous weeks ({insights.length})</span>
+        <ChevronDown
+          className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+      {open && (
+        <div className="divide-y divide-border/40 border-t border-border/40">
+          {insights.map((insight) => (
+            <div key={insight.id} className="px-5 py-4">
+              <div className="text-xs font-semibold text-muted-foreground mb-3">
+                Week of {new Date(insight.week_start).toLocaleDateString()}
+              </div>
+              <div className="space-y-3 text-sm">
+                <InsightRow title="Emotion trend" value={insight.emotion_trend} />
+                <InsightRow title="Thought patterns" value={insight.thought_patterns} />
+                <InsightRow title="Calm progress" value={insight.calm_progress} />
+                <InsightRow title="Overthinking reduction" value={insight.overthinking_reduction} />
+                <InsightRow title="How RealTalk helped" value={insight.ai_help_summary} />
+                <InsightRow title="What worked" value={insight.what_worked} />
+                <InsightRow title="What didn’t work" value={insight.what_didnt} />
+                <InsightRow title="Your response pattern" value={insight.response_patterns} />
+                <InsightRow title="Boundary comfort" value={insight.boundary_respect} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
