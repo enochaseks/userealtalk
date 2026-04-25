@@ -1674,15 +1674,38 @@ function BrainCard({
   ];
 
   const dotPositions = [
-    { x: 18, y: 40 },
-    { x: 34, y: 22 },
-    { x: 52, y: 18 },
-    { x: 70, y: 26 },
-    { x: 82, y: 42 },
-    { x: 68, y: 60 },
-    { x: 48, y: 66 },
-    { x: 28, y: 58 },
+    { x: 28, y: 42 },
+    { x: 39, y: 28 },
+    { x: 52, y: 25 },
+    { x: 65, y: 32 },
+    { x: 72, y: 47 },
+    { x: 61, y: 58 },
+    { x: 46, y: 55 },
+    { x: 34, y: 55 },
   ];
+
+  const connectionPaths = [
+    "M28 42 C34 31 42 28 52 25",
+    "M39 28 C50 35 55 25 65 32",
+    "M52 25 C63 34 70 38 72 47",
+    "M28 42 C35 49 39 54 46 55",
+    "M34 55 C45 45 52 50 61 58",
+    "M46 55 C56 51 63 55 72 47",
+    "M39 28 C37 41 34 47 34 55",
+    "M65 32 C60 43 58 50 61 58",
+  ];
+
+  const foldPaths = [
+    "M23 40 C20 31 26 24 35 25 C39 17 51 17 56 24 C66 19 78 27 77 39",
+    "M27 42 C31 35 38 35 40 42 C44 32 55 33 56 43 C60 36 69 38 71 46",
+    "M31 54 C38 51 41 45 38 39",
+    "M46 58 C51 51 50 44 45 39",
+    "M59 58 C58 50 63 45 70 46",
+    "M53 25 C50 34 54 39 62 41",
+    "M35 25 C36 32 32 37 25 39",
+  ];
+
+  const brainScale = 0.88 + Math.min(growth, 100) / 850;
 
   return (
     <div className="pt-4">
@@ -1692,16 +1715,68 @@ function BrainCard({
           <div className="text-sm font-semibold text-primary">{growth.toFixed(1)}%</div>
         </div>
 
-        <div className="relative mx-auto w-full max-w-[360px] aspect-[2/1.1] rounded-xl bg-primary/[0.04] border border-primary/10 overflow-hidden">
-          <svg className="absolute inset-0 w-full h-full" viewBox="0 0 100 70" preserveAspectRatio="none" aria-hidden="true">
-            <g stroke="currentColor" className="text-primary/25" strokeWidth="0.7" fill="none">
-              <path d="M18 40 L34 22 L52 18 L70 26 L82 42" />
-              <path d="M18 40 L28 58 L48 66 L68 60 L82 42" />
-              <path d="M34 22 L28 58" />
-              <path d="M52 18 L48 66" />
-              <path d="M70 26 L68 60" />
+        <div className="relative mx-auto w-full max-w-[360px] aspect-[2/1.12] rounded-xl bg-primary/[0.04] border border-primary/10 overflow-hidden">
+          <motion.svg
+            className="absolute inset-0 w-full h-full"
+            viewBox="0 0 100 70"
+            preserveAspectRatio="xMidYMid meet"
+            aria-hidden="true"
+            animate={{ scale: brainScale }}
+            transition={{ duration: 14, ease: "easeInOut" }}
+          >
+            <defs>
+              <radialGradient id="brainGlow" cx="50%" cy="48%" r="48%">
+                <stop offset="0%" stopColor="currentColor" stopOpacity="0.18" />
+                <stop offset="72%" stopColor="currentColor" stopOpacity="0.07" />
+                <stop offset="100%" stopColor="currentColor" stopOpacity="0" />
+              </radialGradient>
+            </defs>
+            <path
+              d="M20 42 C15 36 17 27 25 25 C27 16 39 13 47 18 C55 10 68 16 69 25 C80 25 87 35 83 46 C87 55 78 62 69 59 C64 67 51 66 47 59 C38 65 25 60 27 51 C21 51 17 47 20 42 Z"
+              className="text-primary"
+              fill="url(#brainGlow)"
+            />
+            <motion.path
+              d="M20 42 C15 36 17 27 25 25 C27 16 39 13 47 18 C55 10 68 16 69 25 C80 25 87 35 83 46 C87 55 78 62 69 59 C64 67 51 66 47 59 C38 65 25 60 27 51 C21 51 17 47 20 42 Z"
+              className="text-primary/45"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.1"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              initial={{ pathLength: 0 }}
+              animate={{ pathLength: Math.max(0.14, progressMultiplier) }}
+              transition={{ duration: 8, ease: "easeInOut" }}
+            />
+            <g stroke="currentColor" className="text-primary/25" strokeWidth="0.75" fill="none" strokeLinecap="round">
+              {foldPaths.map((path, idx) => (
+                <motion.path
+                  key={path}
+                  d={path}
+                  initial={{ pathLength: 0, opacity: 0.15 }}
+                  animate={{
+                    pathLength: Math.min(1, Math.max(0.08, progressMultiplier + idx * 0.025)),
+                    opacity: 0.22 + progressMultiplier * 0.32,
+                  }}
+                  transition={{ duration: 10 + idx * 0.6, ease: "easeInOut" }}
+                />
+              ))}
             </g>
-          </svg>
+            <g stroke="currentColor" className="text-primary/35" strokeWidth="0.65" fill="none" strokeLinecap="round">
+              {connectionPaths.map((path, idx) => (
+                <motion.path
+                  key={path}
+                  d={path}
+                  initial={{ pathLength: 0, opacity: 0.12 }}
+                  animate={{
+                    pathLength: Math.min(1, Math.max(0.1, (nodePower[idx] ?? 0.2) * progressMultiplier + 0.08)),
+                    opacity: 0.18 + Math.min(0.38, (nodePower[idx] ?? 0.2) * 0.38),
+                  }}
+                  transition={{ duration: 12 + idx * 0.7, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" }}
+                />
+              ))}
+            </g>
+          </motion.svg>
 
           {dotPositions.map((p, idx) => {
             const power = Math.max(0.08, Math.min(1, (nodePower[idx] ?? 0) * progressMultiplier));
@@ -1724,8 +1799,8 @@ function BrainCard({
                     ? "0 0 22px rgba(59,130,246,0.75)"
                     : `0 0 ${8 + power * 14}px rgba(59,130,246,${0.2 + power * 0.35})`,
                 }}
-                animate={{ scale: [1, 1 + power * 0.18, 1] }}
-                transition={{ duration: 2 + (1 - power), repeat: Infinity, ease: "easeInOut", delay: idx * 0.12 }}
+                animate={{ scale: [1, 1 + power * 0.16, 1], opacity: active ? 1 : [0.35 + power * 0.45, 0.5 + power * 0.5, 0.35 + power * 0.45] }}
+                transition={{ duration: 8 + idx * 0.7, repeat: Infinity, ease: "easeInOut", delay: idx * 0.35 }}
               />
             );
           })}
