@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
@@ -9,13 +9,14 @@ import { useAuth } from "@/lib/auth";
 import logo from "../assets/logo.png";
 
 type DemoMsg = { role: "user" | "assistant"; content: string };
-type PreviewFeature = "none" | "thinking" | "plan" | "vent";
+type PreviewFeature = "none" | "thinking" | "plan" | "vent" | "benefits";
 
-const MAX_GUEST_MESSAGES = 12;
+const MAX_GUEST_MESSAGES = 8;
 const FEATURE_LIMITS = {
-  thinking: 4,
-  plan: 4,
-  vent: 4,
+  thinking: 2,
+  plan: 2,
+  vent: 3,
+  benefits: 2,
 } as const;
 
 const HELP_TOPICS = [
@@ -26,22 +27,34 @@ const HELP_TOPICS = [
   "A Place to Vent",
 ] as const;
 
-const QUICK_STARTS = [
-  "Money stress",
-  "Landlord issue",
-  "Anxiety spiral",
-  "Need to vent",
+const QUICK_STARTS: Array<{ label: string; text: string; feature: PreviewFeature }> = [
+  { label: "Money stress", text: "I'm stressed about money and need one clear next step.", feature: "thinking" },
+  { label: "Landlord issue", text: "My landlord is ignoring repairs. What should I do first?", feature: "plan" },
+  { label: "Universal Credit help", text: "I need help preparing for a Universal Credit journal message.", feature: "benefits" },
+  { label: "Anxiety spiral", text: "I'm overthinking and feel stuck in a loop.", feature: "vent" },
 ] as const;
+
+const FEATURE_LABELS: Record<PreviewFeature, string> = {
+  none: "RealTalk",
+  thinking: "Deep Thinking",
+  plan: "Plan Mode",
+  vent: "Vent Mode",
+  benefits: "Benefits Helper",
+};
 
 const createDemoReply = (text: string, feature: PreviewFeature) => {
   const lower = text.toLowerCase();
 
   if (feature === "vent") {
-    return "I hear you. Thanks for letting it out here. If you want, we can keep this as a safe vent space, or you can sign up for deeper support.";
+    return "I hear how much pressure is sitting on you. Stay with the one part that feels loudest right now, and I'll help you untangle it without rushing you.";
   }
 
   if (feature === "plan") {
-    return "Quick plan preview: 1) Define the exact outcome you want this week, 2) Pick one action for today, 3) Review what worked tomorrow. Sign up to build full saved plans.";
+    return "Here's a first move: define the exact outcome you need by the end of the week, then pick the smallest action that proves progress today. If this were saved in RealTalk, I'd turn it into a follow-through plan.";
+  }
+
+  if (feature === "benefits") {
+    return "Benefits Helper preview: start by writing down the change, the date it happened, and any evidence you have. For Universal Credit, keep journal messages factual and ask for the exact action you need. This is guidance, not official DWP or legal advice.";
   }
 
   if (feature === "thinking") {
@@ -62,6 +75,7 @@ const createDemoReply = (text: string, feature: PreviewFeature) => {
 
 export function Landing() {
   const inputRef = useRef<HTMLInputElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const { user, session } = useAuth();
@@ -69,7 +83,7 @@ export function Landing() {
   const [landingCycle, setLandingCycle] = useState<"monthly" | "annual">("monthly");
   const [checkoutBusy, setCheckoutBusy] = useState(false);
   const [feature, setFeature] = useState<PreviewFeature>("none");
-  const [featureUses, setFeatureUses] = useState({ thinking: 0, plan: 0, vent: 0 });
+  const [featureUses, setFeatureUses] = useState({ thinking: 0, plan: 0, vent: 0, benefits: 0 });
   const [showFeatureMenu, setShowFeatureMenu] = useState(false);
   const [helpIndex, setHelpIndex] = useState(0);
   const [messages, setMessages] = useState<DemoMsg[]>([
@@ -85,7 +99,19 @@ export function Landing() {
   const thinkingRemaining = FEATURE_LIMITS.thinking - featureUses.thinking;
   const planRemaining = FEATURE_LIMITS.plan - featureUses.plan;
   const ventRemaining = FEATURE_LIMITS.vent - featureUses.vent;
+  const benefitsRemaining = FEATURE_LIMITS.benefits - featureUses.benefits;
+  const featureRemaining: Record<PreviewFeature, number | null> = {
+    none: null,
+    thinking: thinkingRemaining,
+    plan: planRemaining,
+    vent: ventRemaining,
+    benefits: benefitsRemaining,
+  };
   const currentHelpTopic = HELP_TOPICS[helpIndex];
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [messages, busy]);
 
   const trackEvent = (event: string, props?: Record<string, string | number | boolean>) => {
     const payload = { event, page: "landing", ...props };
@@ -139,6 +165,7 @@ export function Landing() {
     if (feature === "thinking" && thinkingRemaining <= 0) return;
     if (feature === "plan" && planRemaining <= 0) return;
     if (feature === "vent" && ventRemaining <= 0) return;
+    if (feature === "benefits" && benefitsRemaining <= 0) return;
 
     setInput("");
     setBusy(true);
@@ -164,10 +191,16 @@ export function Landing() {
         body: JSON.stringify({
           messages: outboundMessages,
           beReal: false,
+          emotionalMode: feature === "vent",
+          logicalMode: feature !== "vent",
           thinkDeeply: feature === "thinking",
           forcePlan: feature === "plan",
+          forceBenefits: feature === "benefits",
           forceVent: feature === "vent",
           ventAdviceMode: "advice",
+          userPlan: "free",
+          totalMessageCount: guestMessageCount,
+          memoryLimit: MAX_GUEST_MESSAGES,
         }),
       });
 
@@ -222,10 +255,10 @@ export function Landing() {
     }
   };
 
-  const quickStart = (text: string) => {
-    setFeature("none");
-    setInput(text);
-    trackEvent("quick_start_selected", { text });
+  const quickStart = (item: (typeof QUICK_STARTS)[number]) => {
+    setFeature(item.feature);
+    setInput(item.text);
+    trackEvent("quick_start_selected", { text: item.label, feature: item.feature });
     globalThis.scrollTo({ top: 0, behavior: "smooth" });
     setTimeout(() => inputRef.current?.focus(), 250);
   };
@@ -272,7 +305,7 @@ export function Landing() {
         <div className="rounded-2xl border border-border bg-surface/70 backdrop-blur text-left overflow-hidden">
           <div className="px-4 py-3 border-b border-border/60 text-xs text-muted-foreground flex items-center justify-between gap-3">
             <span>Guest preview chat</span>
-            <span>Limited mode: no saved chats + capped feature previews</span>
+            <span>{MAX_GUEST_MESSAGES - guestMessageCount} guest messages left</span>
           </div>
 
           <div className="px-4 py-4 space-y-3 max-h-72 overflow-y-auto">
@@ -292,6 +325,8 @@ export function Landing() {
             {busy && <p className="text-xs text-muted-foreground">Thinking…</p>}
           </div>
 
+          <div ref={messagesEndRef} />
+
           {feature !== "none" && (
             <div className="px-4 pt-2">
               <button
@@ -299,6 +334,7 @@ export function Landing() {
                 onClick={() => setFeature("none")}
                 className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-primary/20 text-primary text-xs rounded-full hover:bg-primary/30 transition-colors"
               >
+                {feature === "benefits" && "Benefits Helper"}
                 {feature === "thinking" && "💭 Deep Thinking (lite)"}
                 {feature === "plan" && "📋 Plan"}
                 {feature === "vent" && "🫶 Vent"}
@@ -371,6 +407,23 @@ export function Landing() {
                     } ${ventRemaining <= 0 ? "opacity-40 cursor-not-allowed" : ""}`}
                   >
                     🫶 Vent · {Math.max(0, ventRemaining)} left
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={benefitsRemaining <= 0}
+                    onClick={() => {
+                      setFeature("benefits");
+                      setShowFeatureMenu(false);
+                      trackEvent("feature_selected", { feature: "benefits" });
+                    }}
+                    className={`w-full text-left px-3 py-2 text-sm rounded-md transition-colors ${
+                      feature === "benefits"
+                        ? "bg-primary/20 text-primary"
+                        : "text-muted-foreground hover:bg-surface-elevated hover:text-foreground"
+                    } ${benefitsRemaining <= 0 ? "opacity-40 cursor-not-allowed" : ""}`}
+                  >
+                    Benefits Helper - {Math.max(0, benefitsRemaining)} left
                   </button>
                 </div>
               )}
@@ -628,12 +681,12 @@ export function Landing() {
           <div className="mt-3 flex flex-wrap gap-2">
             {QUICK_STARTS.map((topic) => (
               <button
-                key={topic}
+                key={topic.label}
                 type="button"
                 onClick={() => quickStart(topic)}
                 className="px-3 py-1.5 rounded-full text-xs sm:text-sm border border-border bg-background/70 hover:bg-primary/10 hover:border-primary/40 transition-colors"
               >
-                {topic}
+                {topic.label}
               </button>
             ))}
           </div>
