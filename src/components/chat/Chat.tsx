@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { Mic, ArrowUp, Bookmark, Trash2, ChevronDown, Plus, Pencil, Mail, RotateCcw, CalendarDays } from "lucide-react";
+import { Mic, ArrowUp, Bookmark, ChevronDown, Plus, Pencil, Mail, RotateCcw, CalendarDays } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { motion, AnimatePresence } from "framer-motion";
@@ -2027,23 +2027,6 @@ export function Chat() {
     }
   };
 
-  const deleteCurrentConversation = async () => {    if (!convId || !user) return;
-    const { error } = await supabase
-      .from("conversations")
-      .delete()
-      .eq("id", convId)
-      .eq("user_id", user.id);
-    if (error) {
-      toast.error("Failed to delete conversation");
-    } else {
-      setConvId(null);
-      setMessages([]);
-      navigate({ to: "/", search: {} as never, replace: true });
-      window.dispatchEvent(new Event("conversationDeleted"));
-      toast.success("Conversation deleted");
-    }
-  };
-
   const runEmailAiPrompt = async (instruction: string) => {
     const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
     const resp = await fetch(url, {
@@ -2752,14 +2735,6 @@ export function Chat() {
                   className="text-xs text-muted-foreground hover:text-foreground"
                 >
                   New chat
-                </button>
-                <button
-                  onClick={deleteCurrentConversation}
-                  className="text-xs text-muted-foreground hover:text-red-400 transition-colors flex items-center gap-1"
-                  title="Delete this conversation"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  Delete
                 </button>
               </div>
             )}

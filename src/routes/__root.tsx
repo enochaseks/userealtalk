@@ -16,7 +16,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { loadSubscriptionSnapshot } from "@/lib/subscriptions";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { BookOpen, Menu, NotebookPen, Plus, Settings, Trash2 } from "lucide-react";
+import { BookOpen, Menu, NotebookPen, Plus, Settings } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
 const ASSET_VERSION = appCss;
@@ -462,21 +462,6 @@ function TopNav() {
     };
   }, [user, loadConversations]);
 
-  const deleteConversation = async (convId: string) => {
-    if (!user) return;
-    const { error } = await supabase
-      .from("conversations")
-      .delete()
-      .eq("id", convId)
-      .eq("user_id", user.id);
-    if (error) {
-      toast.error("Failed to delete conversation");
-    } else {
-      setConversations((prev) => prev.filter((c) => c.id !== convId));
-      toast.success("Conversation deleted");
-    }
-  };
-
   const navigateToConversation = (convId: string) => {
     setOpen(false);
     navigate({ to: "/", search: { c: convId } as never });
@@ -542,13 +527,6 @@ function TopNav() {
                             className="flex-1 px-2 py-1 text-left text-sm text-muted-foreground hover:text-foreground truncate"
                           >
                             {conv.title}
-                          </button>
-                          <button
-                            onClick={() => deleteConversation(conv.id)}
-                            className="opacity-100 md:opacity-0 md:group-hover:opacity-100 p-2 text-muted-foreground hover:text-foreground transition-all"
-                            title="Delete conversation"
-                          >
-                            <Trash2 className="h-4 w-4" />
                           </button>
                         </div>
                       ))}
