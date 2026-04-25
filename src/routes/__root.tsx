@@ -545,7 +545,7 @@ function TopNav() {
                           </button>
                           <button
                             onClick={() => deleteConversation(conv.id)}
-                            className="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-foreground transition-all"
+                            className="opacity-100 md:opacity-0 md:group-hover:opacity-100 p-2 text-muted-foreground hover:text-foreground transition-all"
                             title="Delete conversation"
                           >
                             <Trash2 className="h-4 w-4" />

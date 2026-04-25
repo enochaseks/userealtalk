@@ -1115,8 +1115,13 @@ function ProfilePage() {
 
               {editingName ? (
                 <>
-                  <button type="button" onClick={() => void saveNameFromPencil()} title="Save name">
-                    <Check className="h-4 w-4 text-primary" />
+                  <button
+                    type="button"
+                    onClick={() => void saveNameFromPencil()}
+                    title="Save name"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-primary/40 bg-primary/15 text-primary hover:bg-primary/25 transition-colors"
+                  >
+                    <Check className="h-4 w-4" />
                   </button>
                   <button
                     type="button"
@@ -1125,8 +1130,9 @@ function ProfilePage() {
                       setEditingName(false);
                     }}
                     title="Cancel"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-background/70 text-muted-foreground hover:text-foreground hover:bg-surface transition-colors"
                   >
-                    <X className="h-4 w-4 text-muted-foreground" />
+                    <X className="h-4 w-4" />
                   </button>
                 </>
               ) : (
