@@ -1,6 +1,18 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
+import { Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -84,6 +96,7 @@ function AdvicePage() {
   const [editCategory, setEditCategory] = useState<Exclude<(typeof CATEGORIES)[number], "all">>("general");
   const [editTagInput, setEditTagInput] = useState("");
   const [editSubmitting, setEditSubmitting] = useState(false);
+  const [deletingPostId, setDeletingPostId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -266,19 +279,31 @@ function AdvicePage() {
 
   const deleteMyPost = async (postId: string) => {
     if (!user) return;
+    setDeletingPostId(postId);
     try {
       const client = supabase as any;
-      const { error } = await client
+      const { data: deletedPost, error } = await client
         .from("advice_posts")
         .delete()
         .eq("id", postId)
         .eq("author_user_id", user.id)
-        .eq("status", "pending");
+        .select("id")
+        .maybeSingle();
       if (error) throw error;
-      toast.success("Post withdrawn.");
+      if (!deletedPost) {
+        throw new Error("Could not delete this post. The database delete policy may not be applied yet.");
+      }
+      if (editingPostId === postId) {
+        cancelEdit();
+      }
+      setMyPosts((current) => current.filter((post) => post.id !== postId));
+      setPosts((current) => current.filter((post) => post.id !== postId));
+      toast.success("Advice post deleted.");
       await loadAdvice();
     } catch (e: any) {
       toast.error(e?.message || "Could not delete post");
+    } finally {
+      setDeletingPostId(null);
     }
   };
 
@@ -523,6 +548,39 @@ function AdvicePage() {
                     <span className={`text-[11px] px-2 py-0.5 rounded-full border font-medium ${statusMeta.classes}`}>
                       {statusMeta.label}
                     </span>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                          disabled={deletingPostId === post.id}
+                          aria-label={`Delete ${post.title}`}
+                          title="Delete advice post"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete advice post?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This will permanently delete this advice post from your submissions and remove it from the library if it was published.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel disabled={deletingPostId === post.id}>Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            disabled={deletingPostId === post.id}
+                            onClick={() => void deleteMyPost(post.id)}
+                          >
+                            Delete
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   </div>
                 </div>
                 {(post.status === "rejected" || post.status === "removed") && (post as any).moderation_notes && (
@@ -598,16 +656,6 @@ function AdvicePage() {
                         >
                           Edit &amp; Resubmit
                         </Button>
-                        {post.status === "pending" && (
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => void deleteMyPost(post.id)}
-                          >
-                            Withdraw
-                          </Button>
-                        )}
                       </>
                     )}
                   </div>
