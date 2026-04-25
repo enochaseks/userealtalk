@@ -483,25 +483,25 @@ function AdvicePage() {
           <div className="text-sm text-muted-foreground">No published advice yet in this category.</div>
         ) : (
           posts.map((post) => (
-            <article key={post.id} className="rounded-xl border border-border bg-surface/60 p-4 space-y-3">
+            <article key={post.id} className="rounded-xl border border-border bg-surface/60 p-4 space-y-3 overflow-hidden">
               <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h3 className="text-base font-semibold">{post.title}</h3>
+                <div className="min-w-0">
+                  <h3 className="text-base font-semibold break-words [overflow-wrap:anywhere]">{post.title}</h3>
                   <p className="text-xs text-muted-foreground mt-1">
                     {post.category} • {new Date(post.created_at).toLocaleDateString("en-GB")}
                   </p>
                 </div>
-                <span className="text-[11px] px-2 py-1 rounded-full border border-border/60 text-muted-foreground">
+                <span className="text-[11px] px-2 py-1 rounded-full border border-border/60 text-muted-foreground shrink-0">
                   {post.helpful_count} helpful
                 </span>
               </div>
 
-              <p className="text-sm whitespace-pre-wrap">{post.body}</p>
+              <p className="text-sm whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{post.body}</p>
 
               {Array.isArray(post.tags) && post.tags.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
                   {post.tags.slice(0, 8).map((tag) => (
-                    <span key={tag} className="text-[11px] px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+                    <span key={tag} className="max-w-full text-[11px] px-2 py-0.5 rounded-full bg-primary/10 text-primary break-words [overflow-wrap:anywhere]">
                       #{tag}
                     </span>
                   ))}
@@ -536,11 +536,11 @@ function AdvicePage() {
             }[post.status] ?? { label: post.status, classes: "bg-muted/50 text-muted-foreground border-border/60" };
 
             return (
-              <article key={post.id} className={`rounded-xl border p-4 space-y-2 ${
+              <article key={post.id} className={`rounded-xl border p-4 space-y-2 overflow-hidden ${
                 isNew ? "border-primary/40 bg-primary/5" : "border-border bg-background/40"
               }`}>
                 <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-medium truncate">{post.title}</p>
+                  <p className="min-w-0 text-sm font-medium truncate">{post.title}</p>
                   <div className="flex items-center gap-1.5 shrink-0">
                     {isNew && (
                       <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />
