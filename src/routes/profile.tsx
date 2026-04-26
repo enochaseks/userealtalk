@@ -1161,6 +1161,20 @@ function ProfilePage() {
         </div>
 
         <div className="relative flex items-center gap-2">
+          {subscriptionSnapshot && !hasFeatureAccess(subscriptionSnapshot.plan, "schedule") ? (
+            <div title="Schedule is available on Pro and Platinum plans" className="opacity-30 cursor-not-allowed">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 pointer-events-none"
+                tabIndex={-1}
+                aria-disabled="true"
+              >
+                <CalendarDays className="h-4 w-4" />
+              </Button>
+            </div>
+          ) : (
           <Button
             type="button"
             variant="ghost"
@@ -1171,6 +1185,7 @@ function ProfilePage() {
           >
             <CalendarDays className="h-4 w-4" />
           </Button>
+          )}
           <Button variant="ghost" size="sm" onClick={signOut} disabled={savingProfile}>
             Sign out
           </Button>
