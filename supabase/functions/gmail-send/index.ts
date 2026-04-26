@@ -9,8 +9,8 @@ const corsHeaders = {
 
 const GMAIL_SEND_LIMITS: Record<"free" | "pro" | "platinum", number | null> = {
   free: 5,
-  pro: 50,
-  platinum: null,
+  pro: 25,
+  platinum: 50,
 };
 
 const enforceGmailSendQuota = async (authHeader: string | null): Promise<{ userId: string } | { error: string; status: number }> => {
