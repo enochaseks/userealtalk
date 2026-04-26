@@ -38,7 +38,7 @@ export const PLAN_CATALOG: PlanCatalogItem[] = [
       "Insights, Brain, and Be Real included",
       "Deep Thinking: 5 per day",
       "Voice input: up to 20 minutes per day",
-      "Journal saves: 50 per day",
+      "Journal saves: 10 per day",
       "Plan Mode: 3 per month",
       "Gmail send: 5 per month",
       "Schedule: not included",
@@ -59,7 +59,7 @@ export const PLAN_CATALOG: PlanCatalogItem[] = [
       "Schedule included",
       "Deep Thinking: 50 per day",
       "Voice input: up to 60 minutes per day",
-      "Journal saves: 100 per day",
+      "Journal saves: 25 per day",
       "Plan Mode: 25 per month",
       "Gmail send: 50 per month",
       "Conversation Memory: up to 300 messages",
@@ -78,7 +78,7 @@ export const PLAN_CATALOG: PlanCatalogItem[] = [
       "Everything in Pro",
       "Deep Thinking: unlimited",
       "Voice input: up to 300 minutes per day",
-      "Journal saves: 150 per day",
+      "Journal saves: 40 per day",
       "Plan Mode: unlimited",
       "Gmail send: unlimited",
       "Schedule included",
@@ -95,7 +95,7 @@ const PLAN_LIMITS: Record<SubscriptionPlan, Record<AccessFeature, number | boole
     plan: 3,
     gmail_send: 5,
     voice_input: 20 * 60,
-    journal_save: 50,
+    journal_save: 10,
   },
   pro: {
     schedule: true,
@@ -103,7 +103,7 @@ const PLAN_LIMITS: Record<SubscriptionPlan, Record<AccessFeature, number | boole
     plan: 25,
     gmail_send: 50,
     voice_input: 60 * 60,
-    journal_save: 100,
+    journal_save: 25,
   },
   platinum: {
     schedule: true,
@@ -111,7 +111,7 @@ const PLAN_LIMITS: Record<SubscriptionPlan, Record<AccessFeature, number | boole
     plan: null,
     gmail_send: null,
     voice_input: 300 * 60,
-    journal_save: 150,
+    journal_save: 40,
   },
 };
 
