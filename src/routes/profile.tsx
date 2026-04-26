@@ -480,8 +480,16 @@ function ProfilePage() {
   useEffect(() => {
     if (!user || !session || !weeklyEmailEnabled || insights.length === 0 || !user.email) return;
 
+    const now = new Date();
+    const isFriday = now.getUTCDay() === 5;
+    if (!isFriday) return;
+
     const latest = insights[0];
     if (!latest?.week_start) return;
+
+    // Only send for the current week's insight, not stale ones
+    const currentWeekStart = getUtcWeekStart();
+    if (latest.week_start !== currentWeekStart) return;
 
     const sendKey = `weekly_insight_email_${user.id}_${latest.week_start}`;
     if (typeof window !== "undefined" && localStorage.getItem(sendKey) === "1") return;
@@ -503,22 +511,28 @@ function ProfilePage() {
           `How RealTalk helped: ${latest.ai_help_summary}`,
         ].join("\n");
 
-        const { error } = await supabase.functions.invoke("gmail-send", {
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-            apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "",
+        const resp = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gmail-send`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${session.access_token}`,
+              apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "",
+            },
+            body: JSON.stringify({
+              to: user.email,
+              subject: `Your RealTalk weekly insight (${latest.week_start})`,
+              body,
+              googleAccessToken: null, // Use platform email, not Gmail — avoids burning user's gmail_send quota
+              skipQuota: true,
+            }),
           },
-          body: {
-            to: user.email,
-            subject: `Your RealTalk weekly insight (${latest.week_start})`,
-            body,
-            googleAccessToken: session.provider_token ?? null,
-          },
-        });
+        );
 
-        if (error) {
-          const json = await error.context?.json?.().catch(() => ({}));
-          throw new Error(json?.error || error.message || "Failed to send weekly insight email");
+        if (!resp.ok) {
+          const json = await resp.json().catch(() => ({}));
+          throw new Error(json?.error || "Failed to send weekly insight email");
         }
 
         if (typeof window !== "undefined") {

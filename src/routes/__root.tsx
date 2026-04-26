@@ -286,6 +286,7 @@ function AppFrame() {
               subject,
               body,
               googleAccessToken: useGmailChannel ? session.provider_token : null,
+              skipQuota: true,
             }),
           });
 

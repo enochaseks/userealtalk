@@ -105,15 +105,17 @@ serve(async (req) => {
   }
 
   try {
-    const { to, subject, body, googleAccessToken, replyTo } = await req.json();
+    const { to, subject, body, googleAccessToken, replyTo, skipQuota } = await req.json();
 
-    // Enforce quota server-side before sending
-    const quotaResult = await enforceGmailSendQuota(req.headers.get("authorization"));
-    if ("error" in quotaResult) {
-      return new Response(JSON.stringify({ error: quotaResult.error }), {
-        status: quotaResult.status,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    // Enforce quota server-side before sending (skip for platform-initiated emails like weekly insights/reminders)
+    if (!skipQuota) {
+      const quotaResult = await enforceGmailSendQuota(req.headers.get("authorization"));
+      if ("error" in quotaResult) {
+        return new Response(JSON.stringify({ error: quotaResult.error }), {
+          status: quotaResult.status,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
 
     const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
