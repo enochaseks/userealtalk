@@ -495,7 +495,7 @@ function TopNav() {
                     onClick={() => setOpen(false)}
                     className="inline-flex items-center"
                   >
-                    <img src={logo} alt="RealTalk" className="h-[99px] w-auto" />
+                    <img src={logo} alt="RealTalk" className="h-[99px] w-auto logo-glow" />
                   </Link>
                 </div>
 

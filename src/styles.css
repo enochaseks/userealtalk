@@ -118,6 +118,11 @@
     var(--background);
 }
 
+/* Logo glow effect */
+.logo-glow {
+  filter: drop-shadow(0 0 12px rgba(4, 143, 253, 0.5)) drop-shadow(0 0 24px rgba(4, 143, 253, 0.25));
+}
+
 /* Markdown prose for AI replies */
 .prose-realtalk {
   color: var(--color-foreground);
