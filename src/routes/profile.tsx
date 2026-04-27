@@ -1402,31 +1402,45 @@ function ProfilePage() {
             initial={{ opacity: 0, scale: 0.98 }}
             animate={{ opacity: 1, scale: 1 }}
             onClick={(e) => e.stopPropagation()}
-            className="bg-surface border border-border rounded-2xl max-w-xl w-full max-h-[80vh] overflow-y-auto p-7"
+            className="bg-surface border border-border rounded-2xl max-w-2xl w-full max-h-[85vh] overflow-hidden"
           >
-            {isEditingPlan && planDraft ? (
-              <>
-                <input
-                  value={planDraft.title}
-                  onChange={(e) => setPlanDraft({ ...planDraft, title: e.target.value })}
-                  className="w-full bg-transparent font-serif text-2xl mb-4 outline-none border-b border-border/70 pb-2"
-                />
+            <div className="flex items-start justify-between gap-4 border-b border-border px-6 py-5">
+              <div className="min-w-0 flex-1">
+                {isEditingPlan && planDraft ? (
+                  <input
+                    value={planDraft.title}
+                    onChange={(e) => setPlanDraft({ ...planDraft, title: e.target.value })}
+                    className="w-full bg-transparent font-serif text-2xl outline-none border-b border-border/70 pb-2"
+                  />
+                ) : (
+                  <h2 className="font-serif text-2xl break-words">{openPlan.title}</h2>
+                )}
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={closePlanModal}
+                className="shrink-0 rounded-full text-muted-foreground hover:text-foreground"
+                aria-label="Close plan"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="max-h-[calc(85vh-144px)] overflow-y-auto px-6 py-5">
+              {isEditingPlan && planDraft ? (
                 <textarea
                   value={planDraft.content}
                   onChange={(e) => setPlanDraft({ ...planDraft, content: e.target.value })}
                   className="w-full min-h-[320px] resize-y rounded-xl border border-border bg-background/40 p-4 text-sm outline-none focus:border-primary/60"
                 />
-              </>
-            ) : (
-              <>
-                <h2 className="font-serif text-2xl mb-4">{openPlan.title}</h2>
-                <div className="prose-realtalk">
+              ) : (
+                <div className="prose-realtalk max-w-none break-words">
                   <ReactMarkdown>{openPlan.content}</ReactMarkdown>
                 </div>
-              </>
-            )}
-            <div className="flex justify-between mt-6 pt-4 border-t border-border">
-              <div className="flex gap-2">
+              )}
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-6 py-4">
+              <div className="flex flex-wrap gap-2">
                 <Button variant="ghost" size="sm" onClick={() => deletePlan(openPlan.id)}>
                   Delete
                 </Button>
@@ -1478,9 +1492,6 @@ function ProfilePage() {
                   Export Word
                 </Button>
               </div>
-              <Button variant="secondary" size="sm" onClick={closePlanModal}>
-                Close
-              </Button>
             </div>
           </motion.div>
         </div>

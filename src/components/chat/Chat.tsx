@@ -3,6 +3,17 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -11,7 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { Mic, ArrowUp, Bookmark, ChevronDown, Plus, Pencil, Mail, RotateCcw, CalendarDays } from "lucide-react";
+import { Mic, ArrowUp, Bookmark, ChevronDown, Plus, Pencil, Mail, RotateCcw, CalendarDays, Trash2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { motion, AnimatePresence } from "framer-motion";
@@ -177,6 +188,7 @@ export function Chat() {
   const [savedJournalIds, setSavedJournalIds] = useState<Set<string>>(new Set());
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [upgradeBusy, setUpgradeBusy] = useState(false);
+  const [isDeletingConversation, setIsDeletingConversation] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lastVoiceErrorToastRef = useRef<{ message: string; at: number } | null>(null);
@@ -737,6 +749,33 @@ export function Chat() {
     return data.id;
   };
 
+  const deleteCurrentConversation = async () => {
+    if (!user || !convId || isDeletingConversation) return;
+
+    setIsDeletingConversation(true);
+    try {
+      const { error } = await supabase
+        .from("conversations")
+        .delete()
+        .eq("id", convId)
+        .eq("user_id", user.id);
+
+      if (error) {
+        throw error;
+      }
+
+      setConvId(null);
+      setMessages([]);
+      navigate({ to: "/", search: {} as never, replace: true });
+      window.dispatchEvent(new Event("conversationDeleted"));
+      toast.success("Conversation deleted");
+    } catch (error: any) {
+      toast.error(error?.message || "Failed to delete conversation");
+    } finally {
+      setIsDeletingConversation(false);
+    }
+  };
+
   const isCodingRelated = (text: string): boolean => {
     const lowerText = text.toLowerCase();
     const codingPhrases = [
@@ -800,23 +839,23 @@ export function Chat() {
     return codingWordRegexes.some((regex) => regex.test(lowerText));
   };
 
-  const userAskedForPlan = (text: string): boolean => {
-    const lower = text.toLowerCase();
-    const planIntentKeywords = [
-      "plan",
-      "roadmap",
-      "steps",
-      "strategy",
-      "timeline",
-      "budget",
-      "how should i",
-      "what should i do",
-      "help me organize",
-      "action plan",
-      "next steps",
+  const isExplicitPlanRequest = (text: string): boolean => {
+    const normalized = text.toLowerCase().replace(/\s+/g, " ").trim();
+    if (!normalized) return false;
+
+    const explicitPlanPatterns = [
+      /\b(make|build|create|write|draft|outline|map(?:\s+out)?|lay\s+out|put\s+together)\s+(?:me\s+)?(?:a\s+)?(plan|roadmap|strategy|timeline|budget|action plan|launch plan|marketing plan)\b/i,
+      /\b(give|show|send)\s+(?:me\s+)?(?:a\s+)?(plan|roadmap|strategy|timeline|budget|action plan|launch plan|marketing plan)\b/i,
+      /\b(help me|can you|could you|would you|i need|i want)\s+(?:make|build|create|write|draft|outline|map(?:\s+out)?|plan)\b/i,
+      /\b(plan\s+(?:my|out)|map\s+out|lay\s+out)\b/i,
+      /\b(step[ -]?by[ -]?step|30[ -]?day|60[ -]?day|90[ -]?day)\s+plan\b/i,
+      /\b(i need|i want|help me with|give me|show me)\s+(?:a\s+)?(marketing plan|launch plan|action plan)\b/i,
     ];
-    return planIntentKeywords.some((keyword) => lower.includes(keyword));
+
+    return explicitPlanPatterns.some((pattern) => pattern.test(normalized));
   };
+
+  const userAskedForPlan = (text: string): boolean => isExplicitPlanRequest(text);
 
   const assistantMappedActualPlan = (text: string): boolean => {
     const lower = text.toLowerCase();
@@ -1190,7 +1229,7 @@ export function Chat() {
 
     const scheduleRequested = false;
     let thinkingRequested = forceThinking || shouldUseThinkingMode(text);
-    const planIntentFromText = /\b(plan|roadmap|strategy|steps|timeline|launch|start my|grow my|marketing plan|action plan|next steps)\b/i.test(text);
+    const planIntentFromText = isExplicitPlanRequest(text);
     const planIntentRequested = forcePlan || planIntentFromText;
     let planningRequested = planIntentRequested;
     const ventDetectedFromText = shouldUseVentMode(text);
@@ -2788,6 +2827,36 @@ export function Chat() {
             </div>
             {convId && (
               <div className="flex items-center gap-2">
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive disabled:opacity-60"
+                      disabled={isDeletingConversation}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      {isDeletingConversation ? "Deleting..." : "Delete chat"}
+                    </button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete this conversation?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This will permanently remove this chat from your recent conversations.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel disabled={isDeletingConversation}>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        disabled={isDeletingConversation}
+                        onClick={() => void deleteCurrentConversation()}
+                      >
+                        Delete
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
                 <button
                   onClick={() => { setConvId(null); setMessages([]); navigate({ to: "/", search: {} as never, replace: true }); }}
                   className="text-xs text-muted-foreground hover:text-foreground"
