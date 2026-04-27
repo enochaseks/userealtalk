@@ -122,6 +122,11 @@ const FEATURE_LABELS: Record<MeteredFeature, string> = {
   journal_save: "Journal saves",
 };
 
+const getJournalSaveKey = (messageId: string | null | undefined, content: string) => {
+  if (messageId) return `id:${messageId}`;
+  return `content:${content.trim()}`;
+};
+
 export function Chat() {
   const { user, session, connectGoogleForGmail } = useAuth();
   const navigate = useNavigate();
@@ -286,6 +291,52 @@ export function Chat() {
       setShareVentingWithDatabase(Boolean(data?.share_venting_with_database));
     })();
   }, [user]);
+
+  useEffect(() => {
+    if (!user) {
+      setSavedJournalIds(new Set());
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadSavedJournalEntries = async () => {
+      const { data } = await (supabase as any)
+        .from("journal_entries")
+        .select("source_message_id, content")
+        .eq("user_id", user.id)
+        .limit(2000);
+
+      if (cancelled || !data) return;
+
+      const next = new Set<string>();
+      (data as Array<{ source_message_id: string | null; content: string }>).forEach((entry) => {
+        next.add(getJournalSaveKey(entry.source_message_id, entry.content));
+      });
+      setSavedJournalIds(next);
+    };
+
+    void loadSavedJournalEntries();
+
+    const channel = supabase
+      .channel(`journal-entries-${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "journal_entries",
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => void loadSavedJournalEntries(),
+      )
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id]);
 
    // load + live-sync current conversation messages
    useEffect(() => {
@@ -2003,7 +2054,7 @@ export function Chat() {
 
   const saveToJournal = async (msg: Msg) => {
     if (!user) return;
-    const key = msg.id ?? msg.content.slice(0, 40);
+    const key = getJournalSaveKey(msg.id, msg.content);
     if (savedJournalIds.has(key)) return;
 
     try {
@@ -2022,7 +2073,12 @@ export function Chat() {
       if (error) throw error;
       setSavedJournalIds((prev) => new Set([...prev, key]));
       toast.success("Saved to journal");
-    } catch {
+    } catch (e: any) {
+      if (e?.code === "23505") {
+        setSavedJournalIds((prev) => new Set([...prev, key]));
+        toast.success("Already saved to journal");
+        return;
+      }
       toast.error("Could not save to journal");
     }
   };
@@ -2444,6 +2500,8 @@ export function Chat() {
                       const parsedMessage = parseScheduleCandidateFromText(m.content || "");
                       const visibleContent = parsedMessage.cleanContent;
                       const scheduleCandidate = m.scheduleCandidate ?? parsedMessage.candidate;
+                      const journalKey = getJournalSaveKey(m.id, m.content);
+                      const isJournalSaved = savedJournalIds.has(journalKey);
 
                       if (m.role === "user") {
                         return (
@@ -2555,11 +2613,11 @@ export function Chat() {
                               variant="ghost"
                               size="sm"
                               onClick={() => void saveToJournal(m)}
-                              disabled={savedJournalIds.has(m.id ?? m.content.slice(0, 40))}
+                              disabled={isJournalSaved}
                               className="text-xs text-muted-foreground hover:text-foreground h-7 px-2 gap-1.5"
                             >
                               <Bookmark className="h-3 w-3" />
-                              {savedJournalIds.has(m.id ?? m.content.slice(0, 40)) ? "Saved" : "Save to Journal"}
+                              {isJournalSaved ? "Saved" : "Save to Journal"}
                             </Button>
                           </div>
                         )}
