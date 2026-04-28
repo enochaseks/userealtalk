@@ -251,6 +251,99 @@ const fileToBase64 = (file: File): Promise<string> =>
 const attachmentToDataUrl = (attachment: Pick<ChatAttachment, "mimeType" | "base64">): string =>
   `data:${attachment.mimeType};base64,${attachment.base64}`;
 
+const messageAttachmentCacheKey = (messageId: string) => `message-attachments:${messageId}`;
+
+const chatMessageAttachmentSet = async (messageId: string, attachments: ChatAttachment[]): Promise<void> => {
+  const db = await openChatDraftDb();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(CHAT_DRAFT_STORE, "readwrite");
+      tx.objectStore(CHAT_DRAFT_STORE).put(attachments, messageAttachmentCacheKey(messageId));
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error ?? new Error("Failed to save message attachments"));
+    });
+  } finally {
+    db.close();
+  }
+};
+
+const chatMessageAttachmentGet = async (messageId: string): Promise<ChatAttachment[] | null> => {
+  const db = await openChatDraftDb();
+  try {
+    return await new Promise<ChatAttachment[] | null>((resolve, reject) => {
+      const tx = db.transaction(CHAT_DRAFT_STORE, "readonly");
+      const req = tx.objectStore(CHAT_DRAFT_STORE).get(messageAttachmentCacheKey(messageId));
+      req.onsuccess = () => {
+        const value = req.result;
+        if (!Array.isArray(value)) {
+          resolve(null);
+          return;
+        }
+        resolve(value as ChatAttachment[]);
+      };
+      req.onerror = () => reject(req.error ?? new Error("Failed to read message attachments"));
+    });
+  } finally {
+    db.close();
+  }
+};
+
+const ATTACHMENT_META_MARKER = "[ATTACHMENTS_META:";
+
+const appendAttachmentMetaMarker = (content: string, attachments: ChatAttachment[]): string => {
+  if (!attachments.length) return content;
+  const meta = attachments.map((item) => ({
+    id: item.id,
+    name: item.name,
+    mimeType: item.mimeType,
+    sizeBytes: item.sizeBytes,
+    kind: item.kind,
+  }));
+  return `${content}\n${ATTACHMENT_META_MARKER}${JSON.stringify(meta)}]`;
+};
+
+const parseAttachmentMetaFromText = (text: string): {
+  cleanContent: string;
+  attachmentsMeta: Array<Omit<ChatAttachment, "base64">>;
+} => {
+  const markerRegex = /\[ATTACHMENTS_META:(\[[\s\S]+?\])\]/;
+  const match = text.match(markerRegex);
+  const cleanContent = text.replace(/\[ATTACHMENTS_META:\[[\s\S]+?\]\]/g, "").trimEnd();
+  if (!match) {
+    return { cleanContent, attachmentsMeta: [] };
+  }
+
+  try {
+    const parsed = JSON.parse(match[1]) as Array<{
+      id?: string;
+      name?: string;
+      mimeType?: string;
+      sizeBytes?: number;
+      kind?: ChatAttachment["kind"];
+    }>;
+
+    const attachmentsMeta = (Array.isArray(parsed) ? parsed : [])
+      .map((item, index) => {
+        const kind: ChatAttachment["kind"] =
+          item.kind === "image" || item.kind === "pdf" || item.kind === "text" || item.kind === "other"
+            ? item.kind
+            : "other";
+        return {
+          id: String(item.id ?? `meta-${index}`),
+          name: String(item.name ?? "attachment"),
+          mimeType: String(item.mimeType ?? "application/octet-stream"),
+          sizeBytes: Number(item.sizeBytes ?? 0),
+          kind,
+        } as Omit<ChatAttachment, "base64">;
+      })
+      .filter((item) => Boolean(item.name));
+
+    return { cleanContent, attachmentsMeta };
+  } catch {
+    return { cleanContent, attachmentsMeta: [] };
+  }
+};
+
 const parseScheduleCandidateFromText = (text: string): {
   cleanContent: string;
   candidate?: NonNullable<Msg["scheduleCandidate"]>;
@@ -460,6 +553,11 @@ export function Chat() {
       };
 
       if (!payload.input.trim() && payload.pendingAttachments.length === 0) {
+        // Never clear drafts while a send is in flight. A refresh during this window
+        // should restore the just-sent text/files instead of losing them.
+        if (busy) {
+          return;
+        }
         void chatDraftDelete(composerDraftKey).catch(() => {
           // Ignore storage cleanup failures.
         });
@@ -492,6 +590,7 @@ export function Chat() {
     logicalMode,
     pendingAttachments,
     ventAdviceMode,
+    busy,
   ]);
 
   const refreshSubscription = async () => {
@@ -663,18 +762,45 @@ export function Chat() {
         .order("created_at");
 
       if (!cancelled && data && !isSendingRef.current) {
+        const incomingRows = data as Msg[];
+        const hydratedRows = await Promise.all(
+          incomingRows.map(async (incoming) => {
+            const parsedSchedule = parseScheduleCandidateFromText(incoming.content);
+            const parsedAttachment = parseAttachmentMetaFromText(parsedSchedule.cleanContent);
+
+            let restoredAttachments: ChatAttachment[] | undefined;
+            if (incoming.role === "user" && parsedAttachment.attachmentsMeta.length > 0) {
+              const cached = incoming.id ? await chatMessageAttachmentGet(incoming.id) : null;
+              if (Array.isArray(cached) && cached.length > 0) {
+                restoredAttachments = cached;
+              } else {
+                restoredAttachments = parsedAttachment.attachmentsMeta.map((item) => ({
+                  ...item,
+                  base64: "",
+                }));
+              }
+            }
+
+            return {
+              ...incoming,
+              content: parsedAttachment.cleanContent,
+              scheduleCandidate: parsedSchedule.candidate,
+              attachments: restoredAttachments,
+            };
+          }),
+        );
+
         setMessages((prev) =>
-          (data as Msg[]).map((incoming) => {
-            const parsed = parseScheduleCandidateFromText(incoming.content);
+          hydratedRows.map((incoming) => {
             const previousMatch = prev.find(
-              (item) => item.id === incoming.id || (item.role === incoming.role && item.content === parsed.cleanContent),
+              (item) => item.id === incoming.id || (item.role === incoming.role && item.content === incoming.content),
             );
 
             return {
               ...incoming,
-              content: parsed.cleanContent,
-              scheduleCandidate: previousMatch?.scheduleCandidate ?? parsed.candidate,
+              scheduleCandidate: previousMatch?.scheduleCandidate ?? incoming.scheduleCandidate,
               scheduleSaved: previousMatch?.scheduleSaved ?? false,
+              attachments: incoming.attachments ?? previousMatch?.attachments,
             };
           }),
         );
@@ -1605,6 +1731,29 @@ export function Chat() {
       attachmentsForRequest.some((a) => /\b(cv|resume)\b/i.test(a.name));
   const persistedUserContent = userVisibleText.trim();
 
+  if (composerDraftKey && latestComposerDraftKey) {
+    const outgoingDraft: ComposerDraft = {
+      input: text,
+      pendingAttachments: attachmentsForRequest,
+      beReal,
+      emotionalMode,
+      logicalMode,
+      forceThinking,
+      forcePlan,
+      forceBenefits,
+      forceVent,
+      ventAdviceMode,
+    };
+
+    // Save immediately so a fast refresh/reload cannot drop the outgoing payload.
+    void chatDraftSet(composerDraftKey, outgoingDraft).catch(() => {
+      // Ignore storage failures (quota/private mode/etc).
+    });
+    void chatDraftSet(latestComposerDraftKey, outgoingDraft).catch(() => {
+      // Ignore storage failures (quota/private mode/etc).
+    });
+  }
+
   setInput("");
   setBusy(true);
 
@@ -1634,12 +1783,38 @@ export function Chat() {
       const cid = await ensureConversation(userVisibleText);
       conversationId = cid;
 
-      await supabase.from("messages").insert({
-        conversation_id: cid,
-        user_id: user.id,
-        role: "user",
-        content: persistedUserContent,
-      });
+      const persistedUserContentWithAttachmentMeta = appendAttachmentMetaMarker(
+        persistedUserContent,
+        attachmentsForRequest,
+      );
+
+      const { data: savedUserMessage } = await supabase
+        .from("messages")
+        .insert({
+          conversation_id: cid,
+          user_id: user.id,
+          role: "user",
+          content: persistedUserContentWithAttachmentMeta,
+        })
+        .select("id")
+        .single();
+
+      if (savedUserMessage?.id && attachmentsForRequest.length > 0) {
+        void chatMessageAttachmentSet(savedUserMessage.id, attachmentsForRequest).catch(() => {
+          // Ignore local cache failures.
+        });
+
+        setMessages((prev) => {
+          const copy = [...prev];
+          for (let i = copy.length - 1; i >= 0; i--) {
+            if (copy[i].role === "user" && !copy[i].id && copy[i].content === persistedUserContent) {
+              copy[i] = { ...copy[i], id: savedUserMessage.id };
+              break;
+            }
+          }
+          return copy;
+        });
+      }
 
       await supabase
         .from("conversations")
@@ -2953,26 +3128,29 @@ export function Chat() {
                                 <div className="mt-2 grid grid-cols-1 gap-2">
                                   {m.attachments.map((attachment) => {
                                     const isImage = attachment.kind === "image";
-                                    const href = attachmentToDataUrl(attachment);
-                                    return (
-                                      <a
-                                        key={attachment.id}
-                                        href={href}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        download={attachment.name}
-                                        className="block rounded-xl border border-border/60 bg-surface/70 hover:bg-surface-elevated transition-colors overflow-hidden"
-                                      >
+                                    const href = attachment.base64 ? attachmentToDataUrl(attachment) : "";
+                                    const hasPayload = Boolean(href);
+                                    const cardContent = (
+                                      <>
                                         {isImage ? (
                                           <div className="flex items-center gap-3 p-2">
-                                            <img
-                                              src={href}
-                                              alt={attachment.name}
-                                              className="h-16 w-16 rounded-md object-cover border border-border/50"
-                                            />
+                                            {hasPayload ? (
+                                              <img
+                                                src={href}
+                                                alt={attachment.name}
+                                                className="h-16 w-16 rounded-md object-cover border border-border/50"
+                                              />
+                                            ) : (
+                                              <div className="h-16 w-16 rounded-md border border-border/50 bg-surface-elevated flex items-center justify-center text-[10px] text-muted-foreground text-center px-1">
+                                                Image
+                                              </div>
+                                            )}
                                             <div className="min-w-0">
                                               <p className="text-xs text-muted-foreground">Photo</p>
                                               <p className="text-sm truncate" title={attachment.name}>{attachment.name}</p>
+                                              {!hasPayload && (
+                                                <p className="text-[10px] text-muted-foreground">Preview unavailable after reload</p>
+                                              )}
                                             </div>
                                           </div>
                                         ) : (
@@ -2981,10 +3159,37 @@ export function Chat() {
                                             <div className="min-w-0">
                                               <p className="text-xs text-muted-foreground">File</p>
                                               <p className="text-sm truncate" title={attachment.name}>{attachment.name}</p>
+                                              {!hasPayload && (
+                                                <p className="text-[10px] text-muted-foreground">File content unavailable after reload</p>
+                                              )}
                                             </div>
                                           </div>
                                         )}
-                                      </a>
+                                      </>
+                                    );
+
+                                    if (hasPayload) {
+                                      return (
+                                        <a
+                                          key={attachment.id}
+                                          href={href}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          download={attachment.name}
+                                          className="block rounded-xl border border-border/60 bg-surface/70 hover:bg-surface-elevated transition-colors overflow-hidden"
+                                        >
+                                          {cardContent}
+                                        </a>
+                                      );
+                                    }
+
+                                    return (
+                                      <div
+                                        key={attachment.id}
+                                        className="block rounded-xl border border-border/60 bg-surface/70 overflow-hidden"
+                                      >
+                                        {cardContent}
+                                      </div>
                                     );
                                   })}
                                 </div>
