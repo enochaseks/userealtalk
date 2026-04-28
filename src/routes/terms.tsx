@@ -17,7 +17,7 @@ function TermsPage() {
         Back
       </button>
       <h1 className="font-serif text-3xl tracking-tight">Terms of Service</h1>
-      <p className="mt-3 text-sm text-muted-foreground">Last updated: April 2026</p>
+      <p className="mt-3 text-sm text-muted-foreground">Last updated: April 2026 (updated to cover CV Toolkit, voice input, and new subscription tiers)</p>
 
       <div className="mt-6 space-y-6 text-sm leading-relaxed text-foreground/90">
         <section>
@@ -31,6 +31,10 @@ function TermsPage() {
             <li>plan generation</li>
             <li>weekly insight summaries</li>
             <li>personalised profile learning</li>
+            <li>CV Toolkit (review, job matching, cover letter, rewrite, transferable skills, personal statement)</li>
+            <li>voice input</li>
+            <li>journal</li>
+            <li>schedule reminders</li>
           </ul>
           <p className="mt-2 text-muted-foreground">
             RealTalk is not a substitute for licensed medical, legal, financial, or psychological advice.
@@ -145,6 +149,53 @@ function TermsPage() {
           <p className="mt-2 text-muted-foreground">
             This feature is optional and can be disabled at any time.
           </p>
+        </section>
+
+        <section>
+          <h2 className="font-semibold text-base">9a. CV Toolkit</h2>
+          <p className="mt-2 text-muted-foreground">
+            The CV Toolkit allows you to upload a CV and receive AI-generated feedback, job matching, cover letters, and more.
+          </p>
+          <ul className="mt-2 list-disc pl-5 text-muted-foreground space-y-1">
+            <li>CV content is processed by AI and not permanently stored as raw files</li>
+            <li>You are responsible for ensuring the CV you upload belongs to you or you have permission to use it</li>
+            <li>AI-generated outputs (cover letters, rewrites, etc.) are drafts only — review before use</li>
+            <li>Usage is metered per plan. Unused daily allowances do not carry over</li>
+            <li>Do not upload CVs containing highly sensitive data such as passport or financial details</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2 className="font-semibold text-base">9b. Voice Input</h2>
+          <p className="mt-2 text-muted-foreground">
+            Voice input is an optional feature that uses your device microphone to transcribe speech to text.
+          </p>
+          <ul className="mt-2 list-disc pl-5 text-muted-foreground space-y-1">
+            <li>Audio is transcribed in real time and not stored as audio files</li>
+            <li>Voice input usage is metered in minutes per month based on your plan</li>
+            <li>You are responsible for any content spoken via voice input</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2 className="font-semibold text-base">9c. Subscription Plans &amp; Billing</h2>
+          <p className="mt-2 text-muted-foreground">
+            RealTalk offers the following plans: Free, Pro, Platinum, Student, and Professional.
+          </p>
+          <ul className="mt-2 list-disc pl-5 text-muted-foreground space-y-1">
+            <li>Paid plans are billed monthly or annually via Stripe</li>
+            <li>Plan features and usage limits are defined per plan and subject to change with notice</li>
+            <li>Feature usage limits (e.g. CV toolkit uses per day, voice input minutes per month) reset on a rolling basis</li>
+            <li>Unused allowances do not carry over between periods</li>
+            <li>Refunds are subject to our Refund Policy</li>
+          </ul>
+          <p className="mt-2 text-muted-foreground font-medium mt-3">Student Plan eligibility:</p>
+          <ul className="mt-2 list-disc pl-5 text-muted-foreground space-y-1">
+            <li>The Student plan is available only to users registered with a recognised academic email address (e.g. .ac.uk, .edu)</li>
+            <li>Eligibility is verified automatically based on your account email domain</li>
+            <li>Subscribing to the Student plan with a non-academic email, or continuing a Student subscription after losing academic status, constitutes a breach of these Terms</li>
+            <li>We reserve the right to revoke the Student plan and move affected accounts to an appropriate plan if misuse is detected</li>
+          </ul>
         </section>
 
         <section>

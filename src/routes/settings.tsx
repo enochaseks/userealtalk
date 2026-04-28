@@ -28,6 +28,7 @@ import {
   type SubscriptionPlan,
   type SubscriptionSnapshot,
 } from "@/lib/subscriptions";
+import { academicEmailError, isAcademicEmail } from "@/lib/academic-email";
 
 export const Route = createFileRoute("/settings")({
   component: SettingsPage,
@@ -42,6 +43,7 @@ const SUBSCRIPTION_FEATURE_LABELS: Record<MeteredFeature, string> = {
   gmail_send: "Gmail send",
   voice_input: "Voice input",
   journal_save: "Journal saves",
+  cv_toolkit: "CV Toolkit",
 };
 
 function SettingsPage() {
@@ -149,6 +151,13 @@ function SettingsPage() {
 
   const startCheckout = async (plan: SubscriptionPlan, cycle: BillingCycle) => {
     if (!user || !session || checkoutBusy) return;
+
+    // Client-side guard: student plan requires an academic email
+    if (plan === "student" && !isAcademicEmail(user.email ?? "")) {
+      toast.error(academicEmailError());
+      return;
+    }
+
     setCheckoutBusy(true);
     try {
       const resp = await fetch(
@@ -413,7 +422,7 @@ function SettingsPage() {
               <span>Schedule</span>
               <span>{subscriptionSnapshot ? (hasFeatureAccess(subscriptionSnapshot.plan, "schedule") ? "Included" : "Pro / Platinum") : "Loading..."}</span>
             </div>
-            {(["deep_thinking", "plan", "gmail_send", "voice_input", "journal_save"] as MeteredFeature[]).map((feature) => (
+            {(["deep_thinking", "plan", "gmail_send", "voice_input", "journal_save", "cv_toolkit"] as MeteredFeature[]).map((feature) => (
               <div key={feature} className="flex items-center justify-between gap-3">
                 <span>{SUBSCRIPTION_FEATURE_LABELS[feature]}</span>
                 <span>{formatUsageSummary(feature)}</span>
@@ -497,6 +506,13 @@ function SettingsPage() {
                         • {feature}
                       </div>
                     ))}
+                    {item.plan === "student" && (
+                      <div className={`mt-1.5 text-[11px] ${isAcademicEmail(user?.email ?? "") ? "text-green-500" : "text-amber-500"}`}>
+                        {isAcademicEmail(user?.email ?? "")
+                          ? "✓ Your email qualifies for the Student plan."
+                          : "⚠ Requires an academic email (e.g. .ac.uk, .edu)."}
+                      </div>
+                    )}
                   </div>
                 </div>
               );

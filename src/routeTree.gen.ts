@@ -18,6 +18,7 @@ import { Route as RecoverRouteImport } from './routes/recover'
 import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as JournalRouteImport } from './routes/journal'
+import { Route as CvReviewRouteImport } from './routes/cv-review'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AdviceAdminRouteImport } from './routes/advice-admin'
 import { Route as AdviceRouteImport } from './routes/advice'
@@ -69,6 +70,11 @@ const JournalRoute = JournalRouteImport.update({
   path: '/journal',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CvReviewRoute = CvReviewRouteImport.update({
+  id: '/cv-review',
+  path: '/cv-review',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
   path: '/auth',
@@ -101,6 +107,7 @@ export interface FileRoutesByFullPath {
   '/advice': typeof AdviceRoute
   '/advice-admin': typeof AdviceAdminRoute
   '/auth': typeof AuthRoute
+  '/cv-review': typeof CvReviewRoute
   '/journal': typeof JournalRoute
   '/privacy': typeof PrivacyRoute
   '/profile': typeof ProfileRoute
@@ -117,6 +124,7 @@ export interface FileRoutesByTo {
   '/advice': typeof AdviceRoute
   '/advice-admin': typeof AdviceAdminRoute
   '/auth': typeof AuthRoute
+  '/cv-review': typeof CvReviewRoute
   '/journal': typeof JournalRoute
   '/privacy': typeof PrivacyRoute
   '/profile': typeof ProfileRoute
@@ -134,6 +142,7 @@ export interface FileRoutesById {
   '/advice': typeof AdviceRoute
   '/advice-admin': typeof AdviceAdminRoute
   '/auth': typeof AuthRoute
+  '/cv-review': typeof CvReviewRoute
   '/journal': typeof JournalRoute
   '/privacy': typeof PrivacyRoute
   '/profile': typeof ProfileRoute
@@ -152,6 +161,7 @@ export interface FileRouteTypes {
     | '/advice'
     | '/advice-admin'
     | '/auth'
+    | '/cv-review'
     | '/journal'
     | '/privacy'
     | '/profile'
@@ -168,6 +178,7 @@ export interface FileRouteTypes {
     | '/advice'
     | '/advice-admin'
     | '/auth'
+    | '/cv-review'
     | '/journal'
     | '/privacy'
     | '/profile'
@@ -184,6 +195,7 @@ export interface FileRouteTypes {
     | '/advice'
     | '/advice-admin'
     | '/auth'
+    | '/cv-review'
     | '/journal'
     | '/privacy'
     | '/profile'
@@ -201,6 +213,7 @@ export interface RootRouteChildren {
   AdviceRoute: typeof AdviceRoute
   AdviceAdminRoute: typeof AdviceAdminRoute
   AuthRoute: typeof AuthRoute
+  CvReviewRoute: typeof CvReviewRoute
   JournalRoute: typeof JournalRoute
   PrivacyRoute: typeof PrivacyRoute
   ProfileRoute: typeof ProfileRoute
@@ -277,6 +290,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof JournalRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/cv-review': {
+      id: '/cv-review'
+      path: '/cv-review'
+      fullPath: '/cv-review'
+      preLoaderRoute: typeof CvReviewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/auth': {
       id: '/auth'
       path: '/auth'
@@ -321,6 +341,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdviceRoute: AdviceRoute,
   AdviceAdminRoute: AdviceAdminRoute,
   AuthRoute: AuthRoute,
+  CvReviewRoute: CvReviewRoute,
   JournalRoute: JournalRoute,
   PrivacyRoute: PrivacyRoute,
   ProfileRoute: ProfileRoute,

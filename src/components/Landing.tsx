@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import { ArrowUp, ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { PLAN_CATALOG, STRIPE_BILLING_ENABLED } from "@/lib/subscriptions";
+import { PLAN_CATALOG, STRIPE_BILLING_ENABLED, type SubscriptionPlan } from "@/lib/subscriptions";
 import { useAuth } from "@/lib/auth";
 import logo from "../assets/logo.png";
 
@@ -25,6 +25,8 @@ const HELP_TOPICS = [
   "Difficult Landlords",
   "Mental Health Guidance",
   "A Place to Vent",
+  "CV & Career Advice",
+  "Student Life Support",
 ] as const;
 
 const QUICK_STARTS: Array<{ label: string; text: string; feature: PreviewFeature }> = [
@@ -128,7 +130,7 @@ export function Landing() {
     }
   };
 
-  const landingCheckout = async (plan: "pro" | "platinum", cycle: "monthly" | "annual") => {
+  const landingCheckout = async (plan: SubscriptionPlan, cycle: "monthly" | "annual") => {
     if (checkoutBusy) return;
     if (!user || !session) {
       localStorage.setItem("realtalk_pending_checkout", JSON.stringify({ plan, cycle }));
@@ -527,6 +529,25 @@ export function Landing() {
         </div>
 
         <div className="mt-4 rounded-2xl border border-border/70 bg-surface/60 backdrop-blur px-4 py-4 text-left">
+          <h3 className="text-sm md:text-base font-semibold tracking-tight">Built for students &amp; professionals</h3>
+          <p className="mt-1 text-xs text-muted-foreground">RealTalk isn't just for personal clarity — it's a full toolkit for career growth and academic life.</p>
+          <div className="mt-3 grid gap-3">
+            <div className="rounded-xl border border-border/60 bg-background/40 p-3">
+              <p className="text-sm font-semibold">🎓 Student Plan</p>
+              <p className="mt-1 text-xs text-muted-foreground leading-relaxed">Designed for university students. Get CV reviews, cover letters, job matching, transferable skills analysis, and personal statements — all with deep thinking and unlimited planning. Requires an academic email (e.g. .ac.uk, .edu).</p>
+            </div>
+            <div className="rounded-xl border border-border/60 bg-background/40 p-3">
+              <p className="text-sm font-semibold">💼 Professional Plan</p>
+              <p className="mt-1 text-xs text-muted-foreground leading-relaxed">For working professionals who need more. Higher CV toolkit usage, more voice input, Gmail send, and unlimited planning — everything you need to stay sharp and move forward.</p>
+            </div>
+            <div className="rounded-xl border border-border/60 bg-background/40 p-3">
+              <p className="text-sm font-semibold">📄 CV Toolkit</p>
+              <p className="mt-1 text-xs text-muted-foreground leading-relaxed">Upload your CV and get an AI score, section-by-section feedback, job match analysis, a tailored cover letter, section rewrites, transferable skills breakdown, and a personal statement — all in one place.</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-2xl border border-border/70 bg-surface/60 backdrop-blur px-4 py-4 text-left">
           <h3 className="text-sm md:text-base font-semibold tracking-tight">What RealTalk can help with</h3>
           <div className="mt-3 flex items-center justify-center gap-2 sm:gap-3">
             <Button
@@ -625,15 +646,11 @@ export function Landing() {
                   className="w-[250px] shrink-0 rounded-xl border border-border/70 bg-background/50 p-3 flex flex-col"
                 >
                   <div className="text-sm font-semibold">{item.title}</div>
-                  {item.plan === "free" ? (
-                    <div className="mt-1 text-sm font-bold text-foreground">Free</div>
-                  ) : (
-                    <div className="mt-1 text-sm font-bold text-foreground">
-                      £{landingCycle === "monthly"
-                        ? `${item.pricing.monthlyGbp.toFixed(2)}/mo`
-                        : `${item.pricing.annualGbp.toFixed(2)}/yr`}
-                    </div>
-                  )}
+                  <div className="mt-1 text-sm font-bold text-foreground">
+                    {item.plan === "free" ? "£0.00/mo" : landingCycle === "monthly"
+                      ? `£${item.pricing.monthlyGbp.toFixed(2)}/mo`
+                      : `£${item.pricing.annualGbp.toFixed(2)}/yr`}
+                  </div>
                   <div className="mt-2 text-[11px] text-muted-foreground">{item.blurb}</div>
                   <div className="mt-2 space-y-1 flex-1">
                     {item.features.map((f) => (
@@ -654,7 +671,7 @@ export function Landing() {
                       <button
                         type="button"
                         disabled={checkoutBusy}
-                        onClick={() => void landingCheckout(item.plan as "pro" | "platinum", landingCycle)}
+                        onClick={() => void landingCheckout(item.plan as SubscriptionPlan, landingCycle)}
                         className="w-full rounded-lg bg-primary text-primary-foreground text-xs font-medium h-8 hover:bg-primary/90 transition-colors disabled:opacity-50"
                       >
                         {checkoutBusy ? "…" : `Subscribe ${landingCycle === "annual" ? "(Annual)" : "(Monthly)"}`}
@@ -743,6 +760,18 @@ export function Landing() {
               <AccordionTrigger>What are weekly insights?</AccordionTrigger>
               <AccordionContent>
                 Optional summaries that highlight emotional and overthinking patterns across your recent chats.
+              </AccordionContent>
+            </AccordionItem>
+            <AccordionItem value="q6">
+              <AccordionTrigger>What is the CV Toolkit?</AccordionTrigger>
+              <AccordionContent>
+                The CV Toolkit lets you upload your CV and get an AI-powered score, strengths, improvements, job match analysis, a tailored cover letter, section rewrites, transferable skills breakdown, and a personal statement. Available on all plans, with higher daily usage on Student and Professional.
+              </AccordionContent>
+            </AccordionItem>
+            <AccordionItem value="q7">
+              <AccordionTrigger>How do I get the Student plan?</AccordionTrigger>
+              <AccordionContent>
+                Sign up using your university email address (e.g. ending in .ac.uk or .edu). The Student plan is automatically available when your account email is recognised as academic.
               </AccordionContent>
             </AccordionItem>
           </Accordion>

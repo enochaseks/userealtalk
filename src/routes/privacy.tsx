@@ -18,7 +18,7 @@ function PrivacyPage() {
       </button>
       <h1 className="font-serif text-3xl tracking-tight">Privacy Policy</h1>
       <p className="mt-3 text-sm text-muted-foreground">
-        Last updated: April 2026
+        Last updated: April 2026 (updated to cover CV Toolkit, voice input, and new subscription tiers)
       </p>
 
       <div className="mt-6 space-y-6 text-sm leading-relaxed text-foreground/90">
@@ -46,6 +46,11 @@ function PrivacyPage() {
             <li>Weekly insight data (if enabled)</li>
             <li>Optional profile details (e.g. display name, avatar)</li>
             <li>Reminder settings and delivery logs (if enabled)</li>
+            <li>CV documents submitted to the CV Toolkit (processed in-session, not retained as raw files)</li>
+            <li>Voice input audio (processed in-session for transcription, not stored as audio)</li>
+            <li>Journal entries (if saved)</li>
+            <li>Feature usage counts (e.g. daily CV toolkit uses, voice input minutes)</li>
+            <li>Subscription plan and billing status (managed via Stripe)</li>
           </ul>
         </section>
 
@@ -128,6 +133,46 @@ function PrivacyPage() {
           <p className="mt-2 text-muted-foreground">
             Gmail integration is optional and not required for core features.
           </p>
+        </section>
+
+        <section>
+          <h2 className="font-semibold text-base">7a. CV Toolkit &amp; Document Processing</h2>
+          <p className="mt-2 text-muted-foreground">
+            When you use the CV Toolkit, you may upload a CV document (PDF, DOCX, or plain text). The following applies:
+          </p>
+          <ul className="mt-2 list-disc pl-5 text-muted-foreground space-y-1">
+            <li>CV text is extracted in your browser and sent to our AI processing service</li>
+            <li>CV content is used only to generate the requested output (review, job match, cover letter, etc.)</li>
+            <li>We do not permanently store the raw text of your CV on our servers</li>
+            <li>CV content is processed by third-party AI providers (Mistral AI, Cloudflare) under standard data processing terms</li>
+            <li>You should not upload CVs containing highly sensitive data such as passport numbers or financial details</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2 className="font-semibold text-base">7b. Voice Input</h2>
+          <p className="mt-2 text-muted-foreground">
+            RealTalk includes an optional voice input feature. The following applies:
+          </p>
+          <ul className="mt-2 list-disc pl-5 text-muted-foreground space-y-1">
+            <li>Audio is captured via your device microphone only when you actively use the feature</li>
+            <li>Audio is transcribed in real time and not stored as audio files</li>
+            <li>Transcribed text is handled the same as typed chat input</li>
+            <li>Voice input usage is metered per plan (minutes per month)</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2 className="font-semibold text-base">7c. Subscriptions &amp; Billing</h2>
+          <p className="mt-2 text-muted-foreground">
+            RealTalk offers Free, Pro, Platinum, Student, and Professional subscription plans.
+          </p>
+          <ul className="mt-2 list-disc pl-5 text-muted-foreground space-y-1">
+            <li>Payments are processed by Stripe. RealTalk does not store payment card details</li>
+            <li>Subscription status and plan tier are stored in your account</li>
+            <li>For the Student plan, your account email domain is checked to verify academic eligibility (e.g. .ac.uk, .edu). No identity documents are stored</li>
+            <li>Feature usage counts are recorded to enforce plan limits (e.g. daily CV toolkit uses, monthly voice input minutes)</li>
+          </ul>
         </section>
 
         <section>

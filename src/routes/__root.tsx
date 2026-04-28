@@ -16,7 +16,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { loadSubscriptionSnapshot } from "@/lib/subscriptions";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { BookOpen, Menu, NotebookPen, Plus, Settings } from "lucide-react";
+import { BookOpen, ChevronDown, FileText, Menu, NotebookPen, Plus, Settings } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
 const ASSET_VERSION = appCss;
@@ -341,6 +342,7 @@ function TopNav() {
   const navigate = useNavigate();
   const [conversations, setConversations] = useState<Array<{ id: string; title: string }>>([]);
   const [open, setOpen] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
   const [profileName, setProfileName] = useState("Profile");
   const [avatarUrl, setAvatarUrl] = useState("");
   const [subscriptionLabel, setSubscriptionLabel] = useState("Free");
@@ -535,26 +537,49 @@ function TopNav() {
                   )}
                 </div>
 
-                <div className="mx-2 mt-auto">
-                  <Link
-                    to="/advice"
-                    onClick={() => setOpen(false)}
-                    className="flex items-center gap-2 px-3 py-2 mb-1 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-surface-elevated transition-colors w-full"
-                  >
-                    <BookOpen className="h-4 w-4 shrink-0" />
-                    <span>Advice Library</span>
-                    {adviceNotif && (
-                      <span className="ml-auto h-2 w-2 rounded-full bg-primary shrink-0" />
-                    )}
-                  </Link>
-                  <Link
-                    to="/journal"
-                    onClick={() => setOpen(false)}
-                    className="flex items-center gap-2 px-3 py-2 mb-1 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-surface-elevated transition-colors w-full"
-                  >
-                    <NotebookPen className="h-4 w-4 shrink-0" />
-                    <span>Journal</span>
-                  </Link>
+                <div className="mx-2 mt-3 border-t border-border/70 pt-3">
+                  <Collapsible open={toolsOpen} onOpenChange={setToolsOpen}>
+                    <CollapsibleTrigger asChild>
+                      <button
+                        className="flex w-full items-center rounded-md border border-border/70 bg-surface px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-surface-elevated hover:text-foreground"
+                        aria-label="Toggle tools menu"
+                      >
+                        <span className="text-[11px] uppercase tracking-[0.08em]">Tools</span>
+                        <ChevronDown
+                          className={`ml-auto h-4 w-4 transition-transform ${toolsOpen ? "rotate-180" : ""}`}
+                        />
+                      </button>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="mt-2 space-y-2">
+                      <Link
+                        to="/cv-review"
+                        onClick={() => setOpen(false)}
+                        className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-surface-elevated hover:text-foreground"
+                      >
+                        <FileText className="h-4 w-4 shrink-0 text-primary" />
+                        <span>CV Reviewer</span>
+                      </Link>
+                      <Link
+                        to="/advice"
+                        onClick={() => setOpen(false)}
+                        className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-surface-elevated hover:text-foreground"
+                      >
+                        <BookOpen className="h-4 w-4 shrink-0 text-primary" />
+                        <span>Advice Library</span>
+                        {adviceNotif && (
+                          <span className="ml-auto h-2 w-2 rounded-full bg-primary shrink-0" />
+                        )}
+                      </Link>
+                      <Link
+                        to="/journal"
+                        onClick={() => setOpen(false)}
+                        className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-surface-elevated hover:text-foreground"
+                      >
+                        <NotebookPen className="h-4 w-4 shrink-0 text-primary" />
+                        <span>Journal</span>
+                      </Link>
+                    </CollapsibleContent>
+                  </Collapsible>
                 </div>
 
                 <div className="mx-2 pt-3 border-t border-border/70 flex items-center gap-2">

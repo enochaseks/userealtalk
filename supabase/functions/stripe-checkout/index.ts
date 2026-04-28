@@ -9,11 +9,30 @@ const corsHeaders = {
 };
 
 const PRICE_MAP: Record<string, string | undefined> = {
-  "pro:monthly":      Deno.env.get("STRIPE_PRO_MONTHLY_PRICE_ID"),
-  "pro:annual":       Deno.env.get("STRIPE_PRO_ANNUAL_PRICE_ID"),
-  "platinum:monthly": Deno.env.get("STRIPE_PLATINUM_MONTHLY_PRICE_ID"),
-  "platinum:annual":  Deno.env.get("STRIPE_PLATINUM_ANNUAL_PRICE_ID"),
+  "pro:monthly":          Deno.env.get("STRIPE_PRO_MONTHLY_PRICE_ID"),
+  "pro:annual":           Deno.env.get("STRIPE_PRO_ANNUAL_PRICE_ID"),
+  "platinum:monthly":     Deno.env.get("STRIPE_PLATINUM_MONTHLY_PRICE_ID"),
+  "platinum:annual":      Deno.env.get("STRIPE_PLATINUM_ANNUAL_PRICE_ID"),
+  "student:monthly":      Deno.env.get("STRIPE_STUDENT_MONTHLY_PRICE_ID"),
+  "student:annual":       Deno.env.get("STRIPE_STUDENT_ANNUAL_PRICE_ID"),
+  "professional:monthly": Deno.env.get("STRIPE_PROFESSIONAL_MONTHLY_PRICE_ID"),
+  "professional:annual":  Deno.env.get("STRIPE_PROFESSIONAL_ANNUAL_PRICE_ID"),
 };
+
+/** Academic email suffixes — must match src/lib/academic-email.ts */
+const ACADEMIC_SUFFIXES = [
+  ".ac.uk", ".edu", ".edu.au", ".ac.nz", ".edu.ca",
+  ".ac.at", ".ac.be", ".ac.cy", ".ac.il", ".ac.in", ".ac.jp",
+  ".ac.ke", ".ac.kr", ".ac.ng", ".ac.za",
+  ".edu.ar", ".edu.br", ".edu.cn", ".edu.co", ".edu.eg",
+  ".edu.gh", ".edu.hk", ".edu.mx", ".edu.my", ".edu.ng",
+  ".edu.pk", ".edu.ph", ".edu.sg", ".edu.tr", ".edu.tw", ".edu.vn",
+];
+
+function isAcademicEmail(email: string): boolean {
+  const lower = email.toLowerCase().trim();
+  return ACADEMIC_SUFFIXES.some((s) => lower.endsWith(s));
+}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -57,6 +76,20 @@ serve(async (req) => {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    // Student plan requires an academic email address
+    if (plan === "student") {
+      const email = user.email ?? "";
+      if (!isAcademicEmail(email)) {
+        return new Response(JSON.stringify({
+          error: "The Student plan is only available to users with an academic email address (e.g. .ac.uk, .edu). Please use your university email to subscribe.",
+          code: "ACADEMIC_EMAIL_REQUIRED",
+        }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
 
     const priceId = PRICE_MAP[`${plan}:${cycle}`];

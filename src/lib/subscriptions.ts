@@ -1,8 +1,8 @@
 import { supabase } from "@/integrations/supabase/client";
 
-export type SubscriptionPlan = "free" | "pro" | "platinum";
-export type MeteredFeature = "deep_thinking" | "plan" | "gmail_send" | "voice_input" | "journal_save";
-export type AccessFeature = MeteredFeature | "schedule";
+export type SubscriptionPlan = "free" | "pro" | "platinum" | "student" | "professional";
+export type MeteredFeature = "deep_thinking" | "plan" | "gmail_send" | "voice_input" | "journal_save" | "cv_toolkit";
+export type AccessFeature = MeteredFeature | "schedule" | "benefits_helper";
 export type UsagePeriodType = "day" | "month";
 
 export const STRIPE_BILLING_ENABLED = true;
@@ -29,61 +29,87 @@ export const PLAN_CATALOG: PlanCatalogItem[] = [
     plan: "free",
     title: "Free",
     blurb: "Core chat with starter limits for advanced features.",
-    pricing: {
-      monthlyGbp: 0,
-      annualGbp: 0,
-    },
+    pricing: { monthlyGbp: 0, annualGbp: 0 },
     features: [
       "Chat and Vent included",
       "Insights, Brain, and Be Real included",
       "Deep Thinking: 5 per day",
-      "Voice input: up to 20 minutes per day",
-      "Journal saves: 10 per day",
+      "Voice input: up to 20 minutes per month",
+      "Journal saves: 10 per month",
       "Plan Mode: 3 per month",
       "Gmail send: 5 per month",
       "Schedule: not included",
       "Conversation Memory: up to 100 messages",
-      "Benefits Helper (UC/DWP guidance): free",
+      "Benefits Helper (UC/DWP guidance): included",
+      "CV Toolkit: 2 uses per day (Review, Job Match, Rewrite only)",
     ],
   },
   {
     plan: "pro",
     title: "Pro",
-    blurb: "Higher monthly limits plus schedule access.",
-    pricing: {
-      monthlyGbp: 3.99,
-      annualGbp: 36,
-    },
+    blurb: "Higher limits plus schedule and cover letter access.",
+    pricing: { monthlyGbp: 3.99, annualGbp: 36 },
     features: [
       "Everything in Free",
       "Schedule included",
       "Deep Thinking: 50 per day",
-      "Voice input: up to 60 minutes per day",
-      "Journal saves: 25 per day",
+      "Voice input: up to 1 hour per month",
+      "Journal saves: 20 per month",
       "Plan Mode: 15 per month",
       "Gmail send: 25 per month",
       "Conversation Memory: up to 300 messages",
-      "Benefits Helper (UC/DWP guidance): free",
+      "Benefits Helper (UC/DWP guidance): included",
+      "CV Toolkit: 5 uses per day (Review, Job Match, Rewrite, Cover Letter)",
     ],
   },
   {
     plan: "platinum",
     title: "Platinum",
     blurb: "Unlimited advanced usage and full access.",
-    pricing: {
-      monthlyGbp: 11.99,
-      annualGbp: 75.99,
-    },
+    pricing: { monthlyGbp: 11.99, annualGbp: 75.99 },
     features: [
       "Everything in Pro",
       "Deep Thinking: unlimited",
-      "Voice input: up to 300 minutes per day",
-      "Journal saves: 40 per day",
+      "Voice input: up to 2 hours per month",
+      "Journal saves: 40 per month",
       "Plan Mode: 50 per month",
       "Gmail send: 50 per month",
       "Schedule included",
-      "Conversation Memory: unlimited messages",
-      "Benefits Helper (UC/DWP guidance): free",
+      "Conversation Memory: up to 300 messages",
+      "Benefits Helper (UC/DWP guidance): included",
+      "CV Toolkit: 8 uses per day (all tools)",
+    ],
+  },
+  {
+    plan: "student",
+    title: "Student",
+    blurb: "Built for students — CV tools, deep thinking, and planning with no cap on the essentials.",
+    pricing: { monthlyGbp: 5.99, annualGbp: 55 },
+    features: [
+      "Schedule: unlimited",
+      "Deep Thinking: unlimited",
+      "Voice input: up to 5 hours per month",
+      "Journal saves: 120 per month",
+      "Plan Mode: unlimited",
+      "Gmail send: 100 per month",
+      "Conversation Memory: up to 500 messages",
+      "CV Toolkit: 15 uses per day (all tools including Personal Statement)",
+    ],
+  },
+  {
+    plan: "professional",
+    title: "Professional",
+    blurb: "For professionals who need the full toolkit with higher limits.",
+    pricing: { monthlyGbp: 20, annualGbp: 120 },
+    features: [
+      "Schedule: unlimited",
+      "Deep Thinking: unlimited",
+      "Voice input: up to 10 hours per month",
+      "Journal saves: 200 per month",
+      "Plan Mode: unlimited",
+      "Gmail send: 200 per month",
+      "Conversation Memory: unlimited",
+      "CV Toolkit: 25 uses per day (all tools)",
     ],
   },
 ];
@@ -91,27 +117,53 @@ export const PLAN_CATALOG: PlanCatalogItem[] = [
 const PLAN_LIMITS: Record<SubscriptionPlan, Record<AccessFeature, number | boolean | null>> = {
   free: {
     schedule: false,
+    benefits_helper: true,
     deep_thinking: 5,
     plan: 3,
     gmail_send: 5,
-    voice_input: 20 * 60,
-    journal_save: 10,
+    voice_input: 20 * 60,            // 20 minutes/month in seconds
+    journal_save: 10,               // per month
+    cv_toolkit: 2,                  // per day
   },
   pro: {
     schedule: true,
+    benefits_helper: true,
     deep_thinking: 50,
     plan: 15,
     gmail_send: 25,
-    voice_input: 60 * 60,
-    journal_save: 25,
+    voice_input: 1 * 60 * 60,      // 1 hour/month in seconds
+    journal_save: 20,               // per month
+    cv_toolkit: 5,                  // per day
   },
   platinum: {
     schedule: true,
+    benefits_helper: true,
     deep_thinking: null,
     plan: 50,
     gmail_send: 50,
-    voice_input: 300 * 60,
-    journal_save: 40,
+    voice_input: 2 * 60 * 60,      // 2 hours/month in seconds
+    journal_save: 40,               // per month
+    cv_toolkit: 8,                  // per day
+  },
+  student: {
+    schedule: true,
+    benefits_helper: false,
+    deep_thinking: null,
+    plan: null,
+    gmail_send: 100,
+    voice_input: 5 * 60 * 60,      // 5 hours/month in seconds (student)
+    journal_save: 120,              // per month
+    cv_toolkit: 15,                 // per day
+  },
+  professional: {
+    schedule: true,
+    benefits_helper: false,
+    deep_thinking: null,
+    plan: null,
+    gmail_send: 200,
+    voice_input: 10 * 60 * 60,     // 10 hours/month in seconds (professional)
+    journal_save: 200,              // per month (unchanged)
+    cv_toolkit: 25,                 // per day
   },
 };
 
@@ -119,8 +171,9 @@ const FEATURE_PERIOD: Record<MeteredFeature, UsagePeriodType> = {
   deep_thinking: "day",
   plan: "month",
   gmail_send: "month",
-  voice_input: "day",
-  journal_save: "day",
+  voice_input: "month",
+  journal_save: "month",
+  cv_toolkit: "day",
 };
 
 export const getCurrentPeriodKey = (periodType: UsagePeriodType, now = new Date()): string => {
@@ -167,7 +220,10 @@ const ensureSubscriptionRow = async (userId: string) => {
 export const loadSubscriptionSnapshot = async (userId: string): Promise<SubscriptionSnapshot> => {
   const subscription = await ensureSubscriptionRow(userId);
   const rawPlan = String(subscription.plan || "free");
-  const plan: SubscriptionPlan = rawPlan === "pro" || rawPlan === "platinum" ? rawPlan : "free";
+  const validPlans: SubscriptionPlan[] = ["free", "pro", "platinum", "student", "professional"];
+  const plan: SubscriptionPlan = validPlans.includes(rawPlan as SubscriptionPlan)
+    ? (rawPlan as SubscriptionPlan)
+    : "free";
 
   const usageQueries = (Object.keys(FEATURE_PERIOD) as MeteredFeature[]).map((feature) => ({
     feature,
@@ -279,9 +335,11 @@ export const setSubscriptionPlan = async (userId: string, plan: SubscriptionPlan
 // These determine how many messages are retrieved from database for context
 export const getConversationMemoryLimit = (plan: SubscriptionPlan): number | null => {
   const limits: Record<SubscriptionPlan, number | null> = {
-    free: 100, // Free tier: up to 100 messages
-    pro: 300, // Pro tier: up to 300 messages
-    platinum: null, // Platinum: unlimited (null = no limit)
+    free: 100,
+    pro: 300,
+    platinum: 300,
+    student: 500,
+    professional: null,
   };
   return limits[plan];
 };
