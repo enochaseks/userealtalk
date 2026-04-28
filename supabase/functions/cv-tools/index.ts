@@ -272,6 +272,58 @@ serve(async (req) => {
       return respond({ result: parsed });
     }
 
+    // ── 6. Server-side PDF text extraction via Mistral OCR ─────────────────────
+    if (tool === "extract-text") {
+      const pdfBase64 = typeof body.pdfBase64 === "string" ? body.pdfBase64 : null;
+      if (!pdfBase64) return respond({ error: "pdfBase64 is required" }, 400);
+
+      const MISTRAL_API_KEY = Deno.env.get("MISTRAL_API_KEY");
+      if (!MISTRAL_API_KEY) return respond({ error: "PDF extraction not configured." }, 503);
+
+      try {
+        const ac = new AbortController();
+        const t = setTimeout(() => ac.abort(), 55000);
+        const resp = await fetch("https://api.mistral.ai/v1/ocr", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${MISTRAL_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "mistral-ocr-latest",
+            document: {
+              type: "document_url",
+              document_url: `data:application/pdf;base64,${pdfBase64}`,
+            },
+          }),
+          signal: ac.signal,
+        });
+        clearTimeout(t);
+
+        const rawBody = await resp.text();
+        if (!resp.ok) {
+          console.error(`[cv-tools] Mistral OCR HTTP ${resp.status}:`, rawBody.slice(0, 600));
+          return respond({ error: `PDF extraction failed (${resp.status}): ${rawBody.slice(0, 300)}` }, 502);
+        }
+
+        const json = JSON.parse(rawBody);
+        const text = Array.isArray(json?.pages)
+          ? json.pages.map((p: any) => String(p?.markdown ?? p?.text ?? "")).join("\n\n").trim()
+          : "";
+
+        if (text.length < 50) {
+          return respond({ error: "Could not extract enough text from the PDF. Please paste your CV as text instead." }, 422);
+        }
+
+        return respond({ text });
+      } catch (e: any) {
+        const msg = e?.name === "AbortError"
+          ? "PDF extraction timed out. Please paste your CV as text instead."
+          : "PDF extraction error: " + (e?.message ?? "unknown");
+        return respond({ error: msg }, 422);
+      }
+    }
+
     return respond({ error: `Unknown tool: ${tool}` }, 400);
   } catch (err: any) {
     return respond({ error: err?.message ?? "Unexpected error" }, 500);

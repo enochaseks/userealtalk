@@ -42,7 +42,6 @@ const CV_FILE_ACCEPT = ".txt,.md,.pdf,.docx,text/plain,application/pdf,applicati
 
 const readAsArrayBuffer = (file: File): Promise<ArrayBuffer> =>
   new Promise((resolve, reject) => {
-    // FileReader fallback improves compatibility with some mobile file providers.
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result as ArrayBuffer);
     reader.onerror = () => reject(new Error("Could not read file"));
@@ -56,6 +55,27 @@ const readAsText = (file: File): Promise<string> =>
     reader.onerror = () => reject(new Error("Could not read file"));
     reader.readAsText(file);
   });
+
+const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+};
+
+const extractPdfServerSide = async (file: File): Promise<string> => {
+  const arrayBuffer = await readAsArrayBuffer(file);
+  const pdfBase64 = arrayBufferToBase64(arrayBuffer);
+  const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/cv-tools`;
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}` },
+    body: JSON.stringify({ tool: "extract-text", pdfBase64 }),
+  });
+  const json = await resp.json().catch(() => ({}));
+  if (!resp.ok || !json.text) throw new Error(json.error ?? "PDF extraction failed on server");
+  return String(json.text);
+};
 
 const DEFAULT_SCHEMA_EXAMPLE = {
   score: 7.2,
@@ -265,32 +285,21 @@ function CvReviewPage() {
     setRawReply("");
     const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
     const mime = (file.type || "").toLowerCase();
+    const isPdf = ext === "pdf" || mime.includes("pdf");
+    const isDocx = ext === "docx" || mime.includes("wordprocessingml.document");
+    const isLegacyDoc = ext === "doc" || (mime.includes("msword") && !isDocx);
+
+    if (isLegacyDoc) {
+      toast.error("Legacy .doc files are not supported. Please convert to .docx, .pdf, or .txt.");
+      return;
+    }
+
     try {
       let extractedText = "";
-      const isPdf = ext === "pdf" || mime.includes("pdf");
-      const isDocx = ext === "docx" || mime.includes("wordprocessingml.document");
-      const isLegacyDoc = ext === "doc" || mime.includes("msword");
-
-      if (isLegacyDoc) {
-        toast.error("Legacy .doc files are not supported on mobile. Please convert to .docx, .pdf, or .txt.");
-        return;
-      }
 
       if (isPdf) {
-        const pdfjsLib = await import("pdfjs-dist");
-        pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-          "pdfjs-dist/build/pdf.worker.mjs",
-          import.meta.url,
-        ).toString();
-        const arrayBuffer = await readAsArrayBuffer(file);
-        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-        const pageTexts: string[] = [];
-        for (let i = 1; i <= pdf.numPages; i++) {
-          const page = await pdf.getPage(i);
-          const content = await page.getTextContent();
-          pageTexts.push(content.items.map((item) => ("str" in item ? item.str : "")).join(" "));
-        }
-        extractedText = pageTexts.join("\n");
+        // Always extract PDFs server-side — avoids all PDF.js mobile issues.
+        extractedText = await extractPdfServerSide(file);
       } else if (isDocx) {
         const mammoth = await import("mammoth");
         const arrayBuffer = await readAsArrayBuffer(file);
@@ -299,6 +308,7 @@ function CvReviewPage() {
       } else {
         extractedText = await readAsText(file);
       }
+
       const normalizedText = extractedText.replace(/\u0000/g, "").trim();
       if (normalizedText.length < 200) {
         toast.error("Could not extract enough text. Try a plain .txt export or paste below.");
@@ -306,8 +316,8 @@ function CvReviewPage() {
       }
       setCvText(normalizedText);
       toast.success("CV uploaded. You can edit before running any tool.");
-    } catch {
-      toast.error("Failed to read CV file. Try a plain .txt export or paste below.");
+    } catch (e: any) {
+      toast.error(e?.message ?? "Failed to read CV file. Try a plain .txt export or paste below.");
     }
   };
 
