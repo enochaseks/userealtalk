@@ -62,7 +62,7 @@ export const PLAN_CATALOG: PlanCatalogItem[] = [
       "Journal saves: 20 per month",
       "Plan Mode: 15 per month",
       "Gmail send: 25 per month",
-      "Conversation Memory: up to 300 messages",
+      "Conversation Memory: up to 200 messages",
       "Benefits Helper (UC/DWP guidance): included",
       "CV Toolkit: 5 uses per day (Review, Job Match, Rewrite, Cover Letter)",
     ],
@@ -351,7 +351,7 @@ export const setSubscriptionPlan = async (userId: string, plan: SubscriptionPlan
 export const getConversationMemoryLimit = (plan: SubscriptionPlan): number | null => {
   const limits: Record<SubscriptionPlan, number | null> = {
     free: 100,
-    pro: 300,
+    pro: 200,
     platinum: 300,
     student: 500,
     professional: null,

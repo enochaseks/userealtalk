@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useLayoutEffect } from "react";
+import { useCallback, useEffect, useRef, useState, useLayoutEffect, type ChangeEvent } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { Mic, ArrowUp, Bookmark, ChevronDown, Plus, Pencil, Mail, RotateCcw, CalendarDays, Trash2 } from "lucide-react";
+import { Mic, ArrowUp, Bookmark, ChevronDown, Plus, Pencil, Mail, RotateCcw, CalendarDays, Trash2, FileText } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { motion, AnimatePresence } from "framer-motion";
@@ -49,6 +49,7 @@ type Msg = {
   id?: string;
   role: "user" | "assistant";
   content: string;
+  attachments?: ChatAttachment[];
   thinking?: string;
   ventChoicePending?: boolean;
   features?: string[];
@@ -73,6 +74,182 @@ type ScheduleItem = {
 };
 
 type ChatMode = "logical" | "emotional" | "beReal";
+
+type ChatAttachment = {
+  id: string;
+  name: string;
+  mimeType: string;
+  base64: string;
+  sizeBytes: number;
+  kind: "image" | "pdf" | "text" | "other";
+};
+
+const MAX_CHAT_ATTACHMENTS = 3;
+const MAX_CHAT_ATTACHMENT_BYTES = 4 * 1024 * 1024;
+const CHAT_DRAFT_DB_NAME = "realtalk-chat-drafts";
+const CHAT_DRAFT_STORE = "kv";
+const USER_LOCATION_STORAGE_KEY = "realtalk_user_location";
+
+type UserLocationContext = {
+  countryCode: string;
+  label: string;
+  source?: "gps" | "locale" | "manual";
+  updatedAt?: string;
+};
+
+const readStoredUserLocation = (): UserLocationContext | null => {
+  if (typeof window === "undefined") return null;
+  const raw = localStorage.getItem(USER_LOCATION_STORAGE_KEY);
+  if (!raw) return null;
+
+  try {
+    const parsed = JSON.parse(raw) as Partial<UserLocationContext>;
+    const countryCode = String(parsed.countryCode ?? "").trim().toUpperCase();
+    const label = String(parsed.label ?? "").trim();
+    if (!countryCode || !label) return null;
+    return {
+      countryCode,
+      label,
+      source: parsed.source === "gps" || parsed.source === "manual" ? parsed.source : "locale",
+      updatedAt: parsed.updatedAt,
+    };
+  } catch {
+    return null;
+  }
+};
+
+type ComposerDraft = {
+  input: string;
+  pendingAttachments: ChatAttachment[];
+  beReal: boolean;
+  emotionalMode: boolean;
+  logicalMode: boolean;
+  forceThinking: boolean;
+  forcePlan: boolean;
+  forceBenefits: boolean;
+  forceVent: boolean;
+  ventAdviceMode: VentAdviceMode;
+};
+
+const openChatDraftDb = (): Promise<IDBDatabase> =>
+  new Promise((resolve, reject) => {
+    const req = indexedDB.open(CHAT_DRAFT_DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(CHAT_DRAFT_STORE)) {
+        db.createObjectStore(CHAT_DRAFT_STORE);
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error ?? new Error("Failed to open draft DB"));
+  });
+
+const chatDraftGet = async (key: string): Promise<ComposerDraft | null> => {
+  const db = await openChatDraftDb();
+  try {
+    return await new Promise<ComposerDraft | null>((resolve, reject) => {
+      const tx = db.transaction(CHAT_DRAFT_STORE, "readonly");
+      const store = tx.objectStore(CHAT_DRAFT_STORE);
+      const req = store.get(key);
+      req.onsuccess = () => {
+        const value = req.result;
+        if (!value || typeof value !== "object") {
+          resolve(null);
+          return;
+        }
+        const input = typeof value.input === "string" ? value.input : "";
+        const pendingAttachments = Array.isArray(value.pendingAttachments)
+          ? (value.pendingAttachments as ChatAttachment[])
+          : [];
+        const beReal = Boolean((value as any).beReal);
+        const emotionalMode = Boolean((value as any).emotionalMode);
+        const logicalMode = (value as any).logicalMode === false ? false : true;
+        const forceThinking = Boolean((value as any).forceThinking);
+        const forcePlan = Boolean((value as any).forcePlan);
+        const forceBenefits = Boolean((value as any).forceBenefits);
+        const forceVent = Boolean((value as any).forceVent);
+        const ventAdviceMode = (value as any).ventAdviceMode === "advice" ? "advice" : "none";
+        resolve({
+          input,
+          pendingAttachments,
+          beReal,
+          emotionalMode,
+          logicalMode,
+          forceThinking,
+          forcePlan,
+          forceBenefits,
+          forceVent,
+          ventAdviceMode,
+        });
+      };
+      req.onerror = () => reject(req.error ?? new Error("Failed to read draft"));
+    });
+  } finally {
+    db.close();
+  }
+};
+
+const chatDraftSet = async (key: string, value: ComposerDraft): Promise<void> => {
+  const db = await openChatDraftDb();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(CHAT_DRAFT_STORE, "readwrite");
+      const store = tx.objectStore(CHAT_DRAFT_STORE);
+      store.put(value, key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error ?? new Error("Failed to save draft"));
+    });
+  } finally {
+    db.close();
+  }
+};
+
+const chatDraftDelete = async (key: string): Promise<void> => {
+  const db = await openChatDraftDb();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(CHAT_DRAFT_STORE, "readwrite");
+      const store = tx.objectStore(CHAT_DRAFT_STORE);
+      store.delete(key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error ?? new Error("Failed to delete draft"));
+    });
+  } finally {
+    db.close();
+  }
+};
+
+const inferAttachmentKind = (file: File): ChatAttachment["kind"] => {
+  const mime = (file.type || "").toLowerCase();
+  const name = file.name.toLowerCase();
+  if (mime.startsWith("image/")) return "image";
+  if (mime === "application/pdf" || name.endsWith(".pdf")) return "pdf";
+  if (
+    mime.startsWith("text/") ||
+    name.endsWith(".txt") ||
+    name.endsWith(".md") ||
+    name.endsWith(".csv") ||
+    name.endsWith(".json")
+  ) {
+    return "text";
+  }
+  return "other";
+};
+
+const fileToBase64 = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error(`Failed to read file: ${file.name}`));
+    reader.onload = () => {
+      const result = String(reader.result || "");
+      const base64 = result.includes(",") ? result.split(",")[1] : result;
+      resolve(base64);
+    };
+    reader.readAsDataURL(file);
+  });
+
+const attachmentToDataUrl = (attachment: Pick<ChatAttachment, "mimeType" | "base64">): string =>
+  `data:${attachment.mimeType};base64,${attachment.base64}`;
 
 const parseScheduleCandidateFromText = (text: string): {
   cleanContent: string;
@@ -148,6 +325,8 @@ export function Chat() {
   const [messages, setMessages] = useState<Msg[]>([]);
   const isSendingRef = useRef(false);
   const [input, setInput] = useState("");
+  const [pendingAttachments, setPendingAttachments] = useState<ChatAttachment[]>([]);
+  const [draftHydrated, setDraftHydrated] = useState(false);
   const [busy, setBusy] = useState(false);
   const [beReal, setBeReal] = useState(false);
   const [emotionalMode, setEmotionalMode] = useState(false);
@@ -190,8 +369,10 @@ export function Chat() {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [upgradeBusy, setUpgradeBusy] = useState(false);
   const [isDeletingConversation, setIsDeletingConversation] = useState(false);
+  const [userLocation, setUserLocation] = useState<UserLocationContext | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
   const lastVoiceErrorToastRef = useRef<{ message: string; at: number } | null>(null);
   const voiceDraftBaseRef = useRef("");
   const previousVoiceListeningRef = useRef(false);
@@ -212,6 +393,106 @@ export function Chat() {
   useEffect(() => {
     setConvId(search?.c ?? null);
   }, [search?.c]);
+
+  const composerDraftKey = user?.id ? `composer:${user.id}:${convId ?? "new"}` : null;
+  const latestComposerDraftKey = user?.id ? `composer:${user.id}:latest` : null;
+
+  const applyComposerDraft = useCallback((draft: ComposerDraft) => {
+    setInput(draft.input || "");
+    setPendingAttachments(Array.isArray(draft.pendingAttachments) ? draft.pendingAttachments : []);
+    setBeReal(Boolean(draft.beReal));
+    setEmotionalMode(Boolean(draft.emotionalMode));
+    setLogicalMode(Boolean(draft.logicalMode));
+    modeRef.current = {
+      beReal: Boolean(draft.beReal),
+      emotionalMode: Boolean(draft.emotionalMode),
+      logicalMode: Boolean(draft.logicalMode),
+    };
+    setForceThinking(Boolean(draft.forceThinking));
+    setForcePlan(Boolean(draft.forcePlan));
+    setForceBenefits(Boolean(draft.forceBenefits));
+    setForceVent(Boolean(draft.forceVent));
+    setVentAdviceMode(draft.ventAdviceMode === "advice" ? "advice" : "none");
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!composerDraftKey || !latestComposerDraftKey) {
+      setDraftHydrated(true);
+      return;
+    }
+
+    setDraftHydrated(false);
+    void (async () => {
+      try {
+        const specificDraft = await chatDraftGet(composerDraftKey);
+        const latestDraft = specificDraft ? null : await chatDraftGet(latestComposerDraftKey);
+        const draft = specificDraft ?? latestDraft;
+        if (cancelled || !draft) return;
+        applyComposerDraft(draft);
+      } catch {
+        // Draft restore failures should never block chat usage.
+      } finally {
+        if (!cancelled) setDraftHydrated(true);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [applyComposerDraft, composerDraftKey, latestComposerDraftKey]);
+
+  useEffect(() => {
+    if (!composerDraftKey || !latestComposerDraftKey || !draftHydrated) return;
+
+    const timeout = window.setTimeout(() => {
+      const payload: ComposerDraft = {
+        input,
+        pendingAttachments,
+        beReal,
+        emotionalMode,
+        logicalMode,
+        forceThinking,
+        forcePlan,
+        forceBenefits,
+        forceVent,
+        ventAdviceMode,
+      };
+
+      if (!payload.input.trim() && payload.pendingAttachments.length === 0) {
+        void chatDraftDelete(composerDraftKey).catch(() => {
+          // Ignore storage cleanup failures.
+        });
+        void chatDraftDelete(latestComposerDraftKey).catch(() => {
+          // Ignore storage cleanup failures.
+        });
+        return;
+      }
+
+      void chatDraftSet(composerDraftKey, payload).catch(() => {
+        // Ignore storage failures (quota/private mode/etc).
+      });
+      void chatDraftSet(latestComposerDraftKey, payload).catch(() => {
+        // Ignore storage failures (quota/private mode/etc).
+      });
+    }, 250);
+
+    return () => window.clearTimeout(timeout);
+  }, [
+    beReal,
+    composerDraftKey,
+    draftHydrated,
+    emotionalMode,
+    forceBenefits,
+    forcePlan,
+    forceThinking,
+    forceVent,
+    input,
+    latestComposerDraftKey,
+    logicalMode,
+    pendingAttachments,
+    ventAdviceMode,
+  ]);
 
   const refreshSubscription = async () => {
     if (!user) {
@@ -304,6 +585,20 @@ export function Chat() {
       setShareVentingWithDatabase(Boolean(data?.share_venting_with_database));
     })();
   }, [user]);
+
+  useEffect(() => {
+    const syncLocation = () => {
+      setUserLocation(readStoredUserLocation());
+    };
+
+    syncLocation();
+    window.addEventListener("storage", syncLocation);
+    window.addEventListener("userLocationUpdated", syncLocation as EventListener);
+    return () => {
+      window.removeEventListener("storage", syncLocation);
+      window.removeEventListener("userLocationUpdated", syncLocation as EventListener);
+    };
+  }, []);
 
   useEffect(() => {
     if (!user) {
@@ -1070,6 +1365,23 @@ export function Chat() {
     return patterns.some((p) => lower.includes(p));
   };
 
+  const isCvHelpIntent = (text: string): boolean => {
+    const lower = text.toLowerCase();
+    const keys = [
+      "cv",
+      "resume",
+      "curriculum vitae",
+      "cover letter",
+      "job match",
+      "personal statement",
+      "review my cv",
+      "improve my cv",
+      "improve my resume",
+      "rewrite my cv",
+    ];
+    return keys.some((k) => lower.includes(k));
+  };
+
   const isLogicalExecutionPrompt = (text: string): boolean => {
     const lower = text.toLowerCase();
     
@@ -1213,7 +1525,8 @@ export function Chat() {
 
  const send = async (overrideText?: string, overrideVentAdviceMode?: VentAdviceMode) => {
   const text = (overrideText ?? input).trim();
-  if (!text || busy || !user) return;
+  const attachmentsForRequest = [...pendingAttachments];
+  if ((!text && attachmentsForRequest.length === 0) || busy || !user) return;
   const activeMode = modeRef.current;
 
   // If the user expresses email intent, open the Gmail panel instead of chatting
@@ -1286,10 +1599,21 @@ export function Chat() {
 
     isSendingRef.current = true;
 
+  const userVisibleText = text || `Please review my attached file${attachmentsForRequest.length > 1 ? "s" : ""}.`;
+    const cvHelpRequested =
+      isCvHelpIntent(userVisibleText) ||
+      attachmentsForRequest.some((a) => /\b(cv|resume)\b/i.test(a.name));
+  const persistedUserContent = userVisibleText.trim();
+
   setInput("");
   setBusy(true);
 
-  const userMsg: Msg = { role: "user", content: text, features: activeFeatures };
+  const userMsg: Msg = {
+    role: "user",
+    content: persistedUserContent,
+    features: activeFeatures,
+    attachments: attachmentsForRequest,
+  };
 
   // Add user message + a single assistant placeholder
   setMessages((prev) => [
@@ -1307,14 +1631,14 @@ export function Chat() {
 
   try {
     if (!isPrivateVenting) {
-      const cid = await ensureConversation(text);
+      const cid = await ensureConversation(userVisibleText);
       conversationId = cid;
 
       await supabase.from("messages").insert({
         conversation_id: cid,
         user_id: user.id,
         role: "user",
-        content: text,
+        content: persistedUserContent,
       });
 
       await supabase
@@ -1446,6 +1770,13 @@ export function Chat() {
         },
         body: JSON.stringify({
           messages: requestMessages,
+          attachments: attachmentsForRequest.map((item) => ({
+            name: item.name,
+            mimeType: item.mimeType,
+            base64: item.base64,
+            sizeBytes: item.sizeBytes,
+            kind: item.kind,
+          })),
           beReal: activeMode.beReal,
           emotionalMode: activeMode.emotionalMode,
           logicalMode: activeMode.logicalMode,
@@ -1458,6 +1789,7 @@ export function Chat() {
           userPlan: activePlan,
           totalMessageCount,
           memoryLimit,
+          userLocation,
         }),
         signal: chatAbort.signal,
       });
@@ -1599,6 +1931,9 @@ export function Chat() {
     const parsedAssistant = parseScheduleCandidateFromText(assistant);
     const cleanAssistant = parsedAssistant.cleanContent;
     const scheduleCandidate = parsedAssistant.candidate;
+    const assistantWithCvLink = cvHelpRequested && !cleanAssistant.includes("/cv-review")
+      ? `${cleanAssistant}\n\nNeed deeper CV help? [Open CV Toolkit](/cv-review)`
+      : cleanAssistant;
 
     // Strip the hidden marker from what gets displayed and stored
     setMessages((prev) => {
@@ -1607,7 +1942,7 @@ export function Chat() {
         if (copy[i].role === "assistant") {
           copy[i] = {
             ...copy[i],
-            content: cleanAssistant,
+            content: assistantWithCvLink,
             scheduleCandidate,
             scheduleSaved: false,
           };
@@ -1617,7 +1952,7 @@ export function Chat() {
       return copy;
     });
 
-    if (cleanAssistant) {
+    if (assistantWithCvLink) {
       if (!isPrivateVenting && conversationId) {
         const { data: saved } = await supabase
           .from("messages")
@@ -1625,7 +1960,7 @@ export function Chat() {
             conversation_id: conversationId,
             user_id: user.id,
             role: "assistant",
-            content: cleanAssistant,
+            content: assistantWithCvLink,
           })
           .select("id")
           .single();
@@ -1644,7 +1979,7 @@ export function Chat() {
         // Fire-and-forget: learn user preferences from conversation (does not block UI)
         void (async () => {
           try {
-            const recentMessages = [...messages, userMsg, { role: "assistant", content: cleanAssistant }]
+            const recentMessages = [...messages, userMsg, { role: "assistant", content: assistantWithCvLink }]
               .slice(-8)
               .map((m) => ({ role: m.role, content: m.content }));
             const learnUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/profile-learn`;
@@ -1680,6 +2015,10 @@ export function Chat() {
       }
 
       // Usage for thinking/plan is consumed before the request for strict enforcement.
+    }
+
+    if (attachmentsForRequest.length > 0) {
+      setPendingAttachments((prev) => prev.filter((item) => !attachmentsForRequest.some((sent) => sent.id === item.id)));
     }
 
     window.dispatchEvent(new Event("conversationCreated"));
@@ -2435,6 +2774,54 @@ export function Chat() {
     user?.identities?.some((identity) => identity.provider?.toLowerCase() === "google"),
   );
   const hasGmailAccess = Boolean(session?.provider_token);
+  const pickAttachments = () => attachmentInputRef.current?.click();
+
+  const removePendingAttachment = (id: string) => {
+    setPendingAttachments((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const handleAttachmentPick = async (event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = "";
+    if (files.length === 0) return;
+
+    const availableSlots = Math.max(0, MAX_CHAT_ATTACHMENTS - pendingAttachments.length);
+    if (availableSlots <= 0) {
+      toast.error(`You can attach up to ${MAX_CHAT_ATTACHMENTS} files per message.`);
+      return;
+    }
+
+    const toProcess = files.slice(0, availableSlots);
+    if (files.length > availableSlots) {
+      toast.error(`Only ${availableSlots} more file${availableSlots === 1 ? "" : "s"} can be attached.`);
+    }
+
+    const nextItems: ChatAttachment[] = [];
+    for (const file of toProcess) {
+      if (file.size > MAX_CHAT_ATTACHMENT_BYTES) {
+        toast.error(`${file.name} is too large. Max size is 4MB.`);
+        continue;
+      }
+
+      try {
+        const base64 = await fileToBase64(file);
+        nextItems.push({
+          id: `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2, 8)}`,
+          name: file.name,
+          mimeType: file.type || "application/octet-stream",
+          base64,
+          sizeBytes: file.size,
+          kind: inferAttachmentKind(file),
+        });
+      } catch {
+        toast.error(`Couldn't read ${file.name}.`);
+      }
+    }
+
+    if (nextItems.length > 0) {
+      setPendingAttachments((prev) => [...prev, ...nextItems].slice(0, MAX_CHAT_ATTACHMENTS));
+    }
+  };
   const userFullName =
     (user?.user_metadata?.full_name as string | undefined) ||
     (user?.user_metadata?.name as string | undefined) ||
@@ -2562,6 +2949,46 @@ export function Chat() {
                               <div className="bg-surface-elevated rounded-2xl rounded-tr-sm px-4 py-2.5 text-[0.95rem] whitespace-pre-wrap">
                                 {m.content}
                               </div>
+                              {m.attachments && m.attachments.length > 0 && (
+                                <div className="mt-2 grid grid-cols-1 gap-2">
+                                  {m.attachments.map((attachment) => {
+                                    const isImage = attachment.kind === "image";
+                                    const href = attachmentToDataUrl(attachment);
+                                    return (
+                                      <a
+                                        key={attachment.id}
+                                        href={href}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        download={attachment.name}
+                                        className="block rounded-xl border border-border/60 bg-surface/70 hover:bg-surface-elevated transition-colors overflow-hidden"
+                                      >
+                                        {isImage ? (
+                                          <div className="flex items-center gap-3 p-2">
+                                            <img
+                                              src={href}
+                                              alt={attachment.name}
+                                              className="h-16 w-16 rounded-md object-cover border border-border/50"
+                                            />
+                                            <div className="min-w-0">
+                                              <p className="text-xs text-muted-foreground">Photo</p>
+                                              <p className="text-sm truncate" title={attachment.name}>{attachment.name}</p>
+                                            </div>
+                                          </div>
+                                        ) : (
+                                          <div className="flex items-center gap-2 p-2.5">
+                                            <FileText className="h-4 w-4 text-primary shrink-0" />
+                                            <div className="min-w-0">
+                                              <p className="text-xs text-muted-foreground">File</p>
+                                              <p className="text-sm truncate" title={attachment.name}>{attachment.name}</p>
+                                            </div>
+                                          </div>
+                                        )}
+                                      </a>
+                                    );
+                                  })}
+                                </div>
+                              )}
                             </div>
                           </div>
                         );
@@ -2581,6 +3008,7 @@ export function Chat() {
                               remarkPlugins={[remarkGfm]}
                               components={{
                                 a: ({ node, href, children, ...props }) => {
+                                  const isInternalHref = typeof href === "string" && href.startsWith("/");
                                   // If the child text is the raw URL itself, shorten it to just the domain
                                   const childText = typeof children === "string" ? children : Array.isArray(children) ? children.join("") : "";
                                   const isRawUrl = href && (childText === href || childText.startsWith("http"));
@@ -2594,6 +3022,22 @@ export function Chat() {
                                       // fallback to children
                                     }
                                   }
+
+                                  if (isInternalHref && href) {
+                                    return (
+                                      <a
+                                        {...props}
+                                        href={href}
+                                        onClick={(event) => {
+                                          event.preventDefault();
+                                          navigate({ to: href as never });
+                                        }}
+                                      >
+                                        {label}
+                                      </a>
+                                    );
+                                  }
+
                                   return (
                                     <a {...props} href={href} target="_blank" rel="noopener noreferrer">
                                       {label}
@@ -3106,6 +3550,27 @@ export function Chat() {
               placeholder="Type what's on your mind…"
               className="w-full resize-none bg-transparent px-4 pt-3 pb-2 text-[0.97rem] outline-none placeholder:text-muted-foreground/70 max-h-[180px]"
             />
+            {pendingAttachments.length > 0 && (
+              <div className="px-4 pb-2 flex flex-wrap gap-2">
+                {pendingAttachments.map((item) => (
+                  <span
+                    key={item.id}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-primary/15 px-2.5 py-1 text-xs text-primary"
+                  >
+                    <FileText className="h-3.5 w-3.5" />
+                    <span className="max-w-[180px] truncate" title={item.name}>{item.name}</span>
+                    <button
+                      type="button"
+                      className="text-primary/80 hover:text-primary leading-none"
+                      onClick={() => removePendingAttachment(item.id)}
+                      aria-label={`Remove ${item.name}`}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
             {(isVoiceListening || !isVoiceSupported) && (
               <div className="px-4 pb-1 text-xs">
                 {isVoiceListening ? (
@@ -3119,6 +3584,26 @@ export function Chat() {
             )}
             <div className="flex items-center justify-between px-2 pb-2">
               <div className="flex items-center gap-1">
+                <input
+                  ref={attachmentInputRef}
+                  type="file"
+                  accept="image/*,.pdf,.txt,.md,.csv,.json"
+                  multiple
+                  className="hidden"
+                  onChange={handleAttachmentPick}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9 text-muted-foreground hover:text-foreground"
+                  onClick={pickAttachments}
+                  aria-label="Add files or photos"
+                  title="Add files or photos"
+                  disabled={busy}
+                >
+                  <FileText className="h-4 w-4" />
+                </Button>
                 <Button
                   type="button"
                   variant="ghost"
@@ -3294,7 +3779,7 @@ export function Chat() {
               </div>
               <Button
                 onClick={() => void send()}
-                disabled={!input.trim() || busy}
+                disabled={(!input.trim() && pendingAttachments.length === 0) || busy}
                 size="icon"
                 className="h-9 w-9 rounded-full"
                 aria-label="Send"

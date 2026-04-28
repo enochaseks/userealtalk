@@ -132,6 +132,7 @@ const SUBSCRIPTION_FEATURE_LABELS: Record<MeteredFeature, string> = {
   gmail_send: "Gmail send",
   voice_input: "Voice input",
   journal_save: "Journal saves",
+  cv_toolkit: "CV Toolkit",
 };
 
 const getUtcWeekStart = (): string => {

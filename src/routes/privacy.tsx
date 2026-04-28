@@ -18,7 +18,7 @@ function PrivacyPage() {
       </button>
       <h1 className="font-serif text-3xl tracking-tight">Privacy Policy</h1>
       <p className="mt-3 text-sm text-muted-foreground">
-        Last updated: April 2026 (updated to cover CV Toolkit, voice input, and new subscription tiers)
+        Last updated: April 2026 (updated to cover CV Toolkit, voice input, subscriptions, and location-based guidance)
       </p>
 
       <div className="mt-6 space-y-6 text-sm leading-relaxed text-foreground/90">
@@ -51,6 +51,7 @@ function PrivacyPage() {
             <li>Journal entries (if saved)</li>
             <li>Feature usage counts (e.g. daily CV toolkit uses, voice input minutes)</li>
             <li>Subscription plan and billing status (managed via Stripe)</li>
+            <li>Optional country/location context (from GPS, IP lookup, locale, or manual country selection)</li>
           </ul>
         </section>
 
@@ -119,6 +120,26 @@ function PrivacyPage() {
             <li>Only the content necessary for each request is shared</li>
             <li>We do not share identifying account information</li>
             <li>Data is used strictly for request processing</li>
+          </ul>
+          <p className="mt-2 text-muted-foreground">
+            For optional location-based guidance features, RealTalk may also use location lookup providers:
+          </p>
+          <ul className="mt-2 list-disc pl-5 text-muted-foreground space-y-1">
+            <li>BigDataCloud (reverse geocoding from device coordinates)</li>
+            <li>ipapi (country lookup fallback from network IP)</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2 className="font-semibold text-base">6a. Location-Based Guidance (Optional)</h2>
+          <p className="mt-2 text-muted-foreground">
+            RealTalk can use optional country/location context to provide region-specific links and guidance.
+          </p>
+          <ul className="mt-2 list-disc pl-5 text-muted-foreground space-y-1">
+            <li>Location features are optional and can be disabled by clearing your saved location</li>
+            <li>Country context may come from GPS, IP lookup fallback, locale inference, or your manual country selection</li>
+            <li>Location values are stored in your browser (localStorage) and can be changed or removed at any time</li>
+            <li>Location results are approximate and may not always be accurate</li>
           </ul>
         </section>
 

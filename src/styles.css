@@ -132,6 +132,23 @@
 .prose-realtalk p {
   margin: 0 0 0.85rem;
 }
+.prose-realtalk a {
+  color: var(--color-primary);
+  text-decoration-line: underline;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 0.18em;
+  text-decoration-color: color-mix(in oklab, var(--primary) 75%, transparent);
+  transition: color 0.18s ease, text-decoration-color 0.18s ease;
+}
+.prose-realtalk a:hover {
+  color: color-mix(in oklab, var(--primary) 85%, white 15%);
+  text-decoration-color: var(--primary);
+}
+.prose-realtalk a:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--primary) 55%, transparent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
 .prose-realtalk strong {
   color: var(--color-foreground);
   font-weight: 600;

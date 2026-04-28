@@ -68,7 +68,6 @@ const normalizeVoiceError = (errorCode: string) => {
     case "network":
       return "Speech recognition hit a network problem. Please try again.";
     case "aborted":
-    case "no-speech":
       return null;
     default:
       return "Voice input failed. Please try again.";

@@ -17,7 +17,7 @@ function TermsPage() {
         Back
       </button>
       <h1 className="font-serif text-3xl tracking-tight">Terms of Service</h1>
-      <p className="mt-3 text-sm text-muted-foreground">Last updated: April 2026 (updated to cover CV Toolkit, voice input, and new subscription tiers)</p>
+      <p className="mt-3 text-sm text-muted-foreground">Last updated: April 2026 (updated to cover CV Toolkit, voice input, subscriptions, and location-based guidance)</p>
 
       <div className="mt-6 space-y-6 text-sm leading-relaxed text-foreground/90">
         <section>
@@ -35,6 +35,7 @@ function TermsPage() {
             <li>voice input</li>
             <li>journal</li>
             <li>schedule reminders</li>
+            <li>optional location-aware guidance</li>
           </ul>
           <p className="mt-2 text-muted-foreground">
             RealTalk is not a substitute for licensed medical, legal, financial, or psychological advice.
@@ -205,6 +206,20 @@ function TermsPage() {
             <li>timing is controlled by user settings</li>
             <li>delivery may use Gmail or platform email systems</li>
             <li>reminders can be disabled at any time</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2 className="font-semibold text-base">10a. Location-Based Features</h2>
+          <p className="mt-2 text-muted-foreground">
+            RealTalk may offer optional country-aware responses to provide more relevant links and regional guidance.
+          </p>
+          <ul className="mt-2 list-disc pl-5 text-muted-foreground space-y-1">
+            <li>Location context may be derived from GPS permission, IP-based lookup fallback, locale inference, or manual country selection</li>
+            <li>Location lookups depend on third-party services and network availability</li>
+            <li>Location results may be approximate and are not guaranteed to be accurate</li>
+            <li>You are responsible for reviewing location-based guidance before relying on it</li>
+            <li>You can change or clear saved location context at any time in-app</li>
           </ul>
         </section>
 

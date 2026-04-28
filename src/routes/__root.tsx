@@ -12,12 +12,12 @@ import { AuthProvider, useAuth } from "@/lib/auth";
 import { Toaster } from "@/components/ui/sonner";
 import logo from "../assets/logo.png";
 import mjGreenScreenVideo from "../assets/video/Michael Jackson Moonwalking - Green Screen.mp4";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { loadSubscriptionSnapshot } from "@/lib/subscriptions";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { BookOpen, ChevronDown, FileText, Menu, NotebookPen, Plus, Settings } from "lucide-react";
+import { BookOpen, Check, ChevronDown, FileText, Globe2, LocateFixed, MapPin, Menu, NotebookPen, Plus, Settings, X } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
@@ -25,6 +25,91 @@ const ASSET_VERSION = appCss;
 const APP_CSS_HREF = appCss.includes("?")
   ? `${appCss}&v=${encodeURIComponent(ASSET_VERSION)}`
   : `${appCss}?v=${encodeURIComponent(ASSET_VERSION)}`;
+
+const USER_LOCATION_STORAGE_KEY = "realtalk_user_location";
+
+type StoredUserLocation = {
+  countryCode: string;
+  label: string;
+  source: "gps" | "locale" | "manual";
+  updatedAt: string;
+};
+
+type CountryOption = {
+  code: string;
+  label: string;
+};
+
+const FALLBACK_COUNTRY_CODES = [
+  "GB", "US", "CA", "AU", "NZ", "IE", "FR", "DE", "ES", "IT", "NL", "BE", "SE", "NO", "DK", "FI",
+  "CH", "AT", "PT", "PL", "CZ", "RO", "HU", "GR", "TR", "AE", "SA", "QA", "IN", "PK", "BD", "NG",
+  "KE", "ZA", "EG", "JP", "KR", "SG", "MY", "TH", "PH", "ID", "VN", "HK", "CN", "BR", "MX", "AR",
+  "CL", "CO",
+];
+
+const resolveCountryOptions = (): CountryOption[] => {
+  if (typeof window === "undefined") return [];
+  const locale = navigator.language || "en";
+  let display: Intl.DisplayNames | null = null;
+  try {
+    display = new Intl.DisplayNames([locale], { type: "region" });
+  } catch {
+    display = null;
+  }
+
+  const uniqueCodes = [
+    ...new Set(
+      FALLBACK_COUNTRY_CODES
+        .map((code) => String(code).toUpperCase())
+        .filter((code) => /^[A-Z]{2}$/.test(code)),
+    ),
+  ];
+
+  return uniqueCodes
+    .map((code) => ({ code, label: display?.of(code) || code }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+};
+
+const parseStoredUserLocation = (value: string | null): StoredUserLocation | null => {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value) as Partial<StoredUserLocation>;
+    const countryCode = String(parsed.countryCode ?? "").trim().toUpperCase();
+    const label = String(parsed.label ?? "").trim();
+    const source = parsed.source === "gps" || parsed.source === "manual" ? parsed.source : "locale";
+    if (!countryCode || !label) return null;
+    return {
+      countryCode,
+      label,
+      source,
+      updatedAt: String(parsed.updatedAt ?? new Date().toISOString()),
+    };
+  } catch {
+    return null;
+  }
+};
+
+const inferLocationFromLocale = (): StoredUserLocation | null => {
+  const locale = navigator.language || "";
+  const match = locale.match(/-([A-Za-z]{2})$/);
+  const countryCode = match?.[1]?.toUpperCase();
+  if (!countryCode) return null;
+
+  let label = countryCode;
+  try {
+    const display = new Intl.DisplayNames([locale], { type: "region" });
+    label = display.of(countryCode) || countryCode;
+  } catch {
+    // Leave label as the code.
+  }
+
+  return {
+    countryCode,
+    label,
+    source: "locale",
+    updatedAt: new Date().toISOString(),
+  };
+};
 
 export const Route = createRootRoute({
   head: () => ({
@@ -37,7 +122,7 @@ export const Route = createRootRoute({
       {
         httpEquiv: "Content-Security-Policy",
         content:
-          "default-src 'self'; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.mistral.ai https://fonts.googleapis.com https://gmail.googleapis.com; img-src 'self' data: https: blob:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; base-uri 'self'; form-action 'self'",
+          "default-src 'self'; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.mistral.ai https://fonts.googleapis.com https://gmail.googleapis.com https://api.bigdatacloud.net https://ipapi.co; img-src 'self' data: https: blob:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; base-uri 'self'; form-action 'self'",
       },
       { name: "referrer", content: "strict-origin-when-cross-origin" },
       { title: "RealTalk — Think clearly. Decide better." },
@@ -347,7 +432,12 @@ function TopNav() {
   const [profileName, setProfileName] = useState("Profile");
   const [avatarUrl, setAvatarUrl] = useState("");
   const [subscriptionLabel, setSubscriptionLabel] = useState("Free");
+  const [storedLocation, setStoredLocation] = useState<StoredUserLocation | null>(null);
+  const [locationBusy, setLocationBusy] = useState(false);
+  const [manualCountryCode, setManualCountryCode] = useState("");
+  const [showManualCountryPicker, setShowManualCountryPicker] = useState(false);
   const [isLogoTributePlaying, setIsLogoTributePlaying] = useState(false);
+  const countryOptions = useMemo(() => resolveCountryOptions(), []);
   const tributeVideoRef = useRef<HTMLVideoElement | null>(null);
   const tributeCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const tributeRafRef = useRef<number | null>(null);
@@ -422,6 +512,148 @@ function TopNav() {
       cancelled = true;
     };
   }, [user?.id]);
+
+  useEffect(() => {
+    const syncLocation = () => {
+      if (typeof window === "undefined") return;
+      const next = parseStoredUserLocation(localStorage.getItem(USER_LOCATION_STORAGE_KEY));
+      setStoredLocation(next);
+      setManualCountryCode(next?.countryCode ?? "");
+    };
+
+    syncLocation();
+    window.addEventListener("storage", syncLocation);
+    window.addEventListener("userLocationUpdated", syncLocation as EventListener);
+    return () => {
+      window.removeEventListener("storage", syncLocation);
+      window.removeEventListener("userLocationUpdated", syncLocation as EventListener);
+    };
+  }, []);
+
+  const saveLocation = useCallback((location: StoredUserLocation) => {
+    localStorage.setItem(USER_LOCATION_STORAGE_KEY, JSON.stringify(location));
+    setStoredLocation(location);
+    window.dispatchEvent(new Event("userLocationUpdated"));
+  }, []);
+
+  const clearLocation = useCallback(() => {
+    localStorage.removeItem(USER_LOCATION_STORAGE_KEY);
+    setStoredLocation(null);
+    window.dispatchEvent(new Event("userLocationUpdated"));
+  }, []);
+
+  const getCountryFromCoordinates = useCallback(async (lat: number, lon: number): Promise<{ countryCode: string; label: string } | null> => {
+    const reverseUrl = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${encodeURIComponent(String(lat))}&longitude=${encodeURIComponent(String(lon))}&localityLanguage=en`;
+    const response = await fetch(reverseUrl, {
+      headers: {
+        Accept: "application/json",
+      },
+    });
+
+    if (!response.ok) return null;
+    const json = await response.json().catch(() => ({}));
+    const countryCode = String(json?.countryCode ?? "").toUpperCase();
+    const label = String(json?.countryName ?? "").trim();
+    if (!countryCode || !label) return null;
+    return { countryCode, label };
+  }, []);
+
+  const getCountryFromIp = useCallback(async (): Promise<{ countryCode: string; label: string } | null> => {
+    const response = await fetch("https://ipapi.co/json/", {
+      headers: {
+        Accept: "application/json",
+      },
+    });
+
+    if (!response.ok) return null;
+    const json = await response.json().catch(() => ({}));
+    const countryCode = String(json?.country_code ?? "").toUpperCase();
+    const label = String(json?.country_name ?? "").trim();
+    if (!countryCode || !label) return null;
+    return { countryCode, label };
+  }, []);
+
+  const applyLocaleLocation = useCallback(() => {
+    const fallback = inferLocationFromLocale();
+    if (!fallback) {
+      toast.error("Could not infer your country from locale.");
+      return;
+    }
+    saveLocation(fallback);
+    toast.success(`Using locale country: ${fallback.label}`);
+  }, [saveLocation]);
+
+  const detectLocation = useCallback(async () => {
+    if (locationBusy) return;
+    setLocationBusy(true);
+
+    try {
+      const supportsGeolocation = typeof navigator !== "undefined" && "geolocation" in navigator;
+      if (supportsGeolocation) {
+        try {
+          const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, {
+              enableHighAccuracy: true,
+              timeout: 12000,
+              maximumAge: 5 * 60 * 1000,
+            });
+          });
+
+          const lat = position.coords.latitude;
+          const lon = position.coords.longitude;
+          const gpsCountry = await getCountryFromCoordinates(lat, lon);
+          if (gpsCountry) {
+            saveLocation({
+              countryCode: gpsCountry.countryCode,
+              label: gpsCountry.label,
+              source: "gps",
+              updatedAt: new Date().toISOString(),
+            });
+            toast.success(`Location set to ${gpsCountry.label}`);
+            return;
+          }
+        } catch {
+          // Continue to IP fallback.
+        }
+      }
+
+      const ipCountry = await getCountryFromIp();
+      if (ipCountry) {
+        saveLocation({
+          countryCode: ipCountry.countryCode,
+          label: ipCountry.label,
+          source: "locale",
+          updatedAt: new Date().toISOString(),
+        });
+        toast.success(`Location set to ${ipCountry.label}`);
+        return;
+      }
+
+      toast.error("Could not check location. Try manual country.");
+    } catch {
+      toast.error("Could not detect location right now.");
+    } finally {
+      setLocationBusy(false);
+    }
+  }, [getCountryFromCoordinates, getCountryFromIp, locationBusy, saveLocation]);
+
+  const applyManualLocation = useCallback(() => {
+    if (!manualCountryCode) {
+      toast.error("Choose a country first.");
+      return;
+    }
+
+    const selected = countryOptions.find((item) => item.code === manualCountryCode);
+    const nextLocation: StoredUserLocation = {
+      countryCode: manualCountryCode,
+      label: selected?.label || manualCountryCode,
+      source: "manual",
+      updatedAt: new Date().toISOString(),
+    };
+
+    saveLocation(nextLocation);
+    toast.success(`Location set to ${nextLocation.label}`);
+  }, [countryOptions, manualCountryCode, saveLocation]);
 
   const initials = profileName
     .split(" ")
@@ -696,6 +928,81 @@ function TopNav() {
                       </Link>
                     </CollapsibleContent>
                   </Collapsible>
+                </div>
+
+                <div className="mx-2 mt-2 px-1">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <MapPin className="h-3.5 w-3.5 text-primary" />
+                    <span className="truncate">
+                      {storedLocation ? `${storedLocation.label} (${storedLocation.countryCode})` : "Location not set"}
+                    </span>
+                  </div>
+                  <div className="mt-1.5 flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => void detectLocation()}
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border/70 text-muted-foreground hover:bg-surface-elevated hover:text-foreground transition-colors"
+                      disabled={locationBusy}
+                      title={locationBusy ? "Checking location..." : "Check location (GPS/IP)"}
+                      aria-label="Check location"
+                    >
+                      <LocateFixed className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowManualCountryPicker((prev) => !prev)}
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border/70 text-muted-foreground hover:bg-surface-elevated hover:text-foreground transition-colors"
+                      title="Pick country manually"
+                      aria-label="Pick country manually"
+                    >
+                      <MapPin className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={applyLocaleLocation}
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border/70 text-muted-foreground hover:bg-surface-elevated hover:text-foreground transition-colors"
+                      title="Use browser locale country"
+                      aria-label="Use browser locale country"
+                    >
+                      <Globe2 className="h-3.5 w-3.5" />
+                    </button>
+                    {storedLocation && (
+                      <button
+                        type="button"
+                        onClick={clearLocation}
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border/70 text-muted-foreground hover:bg-surface-elevated hover:text-foreground transition-colors"
+                        title="Clear location"
+                        aria-label="Clear location"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                  {showManualCountryPicker && (
+                    <div className="mt-1.5 flex items-center gap-1.5">
+                      <select
+                        value={manualCountryCode}
+                        onChange={(event) => setManualCountryCode(event.target.value)}
+                        className="min-w-0 flex-1 rounded-md border border-border/70 bg-background px-2 py-1.5 text-xs text-foreground outline-none focus:border-primary/60"
+                      >
+                        <option value="">Select country</option>
+                        {countryOptions.map((country) => (
+                          <option key={country.code} value={country.code}>
+                            {country.label} ({country.code})
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={applyManualLocation}
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border/70 text-muted-foreground hover:bg-surface-elevated hover:text-foreground transition-colors"
+                        title="Use selected country"
+                        aria-label="Use selected country"
+                      >
+                        <Check className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <div className="mx-2 pt-3 border-t border-border/70 flex items-center gap-2">

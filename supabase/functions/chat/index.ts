@@ -243,6 +243,18 @@ const PLATFORM_HELP_MODE = `\n\nPlatform Help Mode:
 - If the request sounds like onboarding, suggest the best first workflow in the app.
 - If the user asks for capabilities, explain what RealTalk can and cannot do right now.`;
 
+const ATTACHMENT_ANALYSIS_MODE = `\n\nAttachment analysis mode:
+- If attachment context is provided, treat it as already extracted evidence and analyze it directly.
+- Do NOT say "I will extract" or "I can't see files" when extracted context exists.
+- Quote specific details from the extracted attachment context when relevant.
+- If extraction failed for a file, state that clearly and ask for a re-upload or pasted text only for that file.`;
+
+const CV_NUDGE_MODE = `\n\nCV help mode:
+- If the user asks for CV/resume help, provide practical help immediately (feedback, edits, rewrite suggestions, or next steps).
+- Then add one short, natural nudge to use CV Toolkit for deeper analysis.
+- Keep the nudge lightweight and specific, e.g. mention opening Tools > CV Reviewer (CV Toolkit).
+- Do not make the whole reply about the nudge; solve the user's CV question first.`;
+
 const isPlanningRequest = (text: string): boolean => {
   const normalized = text.toLowerCase().replace(/\s+/g, " ").trim();
   if (!normalized) return false;
@@ -677,6 +689,31 @@ const isPlatformHelpConversation = (messages: Array<{ role: string; content: str
     "subscription",
     "billing",
   ];
+  return markers.some((k) => combined.includes(k));
+};
+
+const isCvHelpRequest = (text: string): boolean => {
+  const lower = String(text ?? "").toLowerCase();
+  if (!lower) return false;
+  const keys = [
+    "cv",
+    "resume",
+    "curriculum vitae",
+    "cover letter",
+    "job match",
+    "personal statement",
+    "rewrite my cv",
+    "review my cv",
+    "improve my cv",
+    "improve my resume",
+  ];
+  return keys.some((k) => lower.includes(k));
+};
+
+const isCvHelpConversation = (messages: Array<{ role: string; content: string }>): boolean => {
+  const recent = (messages ?? []).slice(-6);
+  const combined = recent.map((m) => String(m?.content ?? "").toLowerCase()).join("\n");
+  const markers = ["cv", "resume", "cover letter", "job match", "personal statement", "cv toolkit", "cv reviewer"];
   return markers.some((k) => combined.includes(k));
 };
 
@@ -1598,11 +1635,211 @@ const runWorkersFallback = async (
   }
 };
 
+type IncomingAttachment = {
+  name?: string;
+  mimeType?: string;
+  base64?: string;
+  sizeBytes?: number;
+  kind?: "image" | "pdf" | "text" | "other";
+};
+
+type IncomingUserLocation = {
+  countryCode?: string;
+  label?: string;
+  source?: "gps" | "locale" | "manual";
+  updatedAt?: string;
+};
+
+const buildLocationInstruction = (rawLocation: unknown): string => {
+  if (!rawLocation || typeof rawLocation !== "object") return "";
+
+  const location = rawLocation as IncomingUserLocation;
+  const countryCode = String(location.countryCode ?? "").trim().toUpperCase();
+  const label = String(location.label ?? "").trim();
+  if (!countryCode || !label) return "";
+
+  const source = location.source === "gps" || location.source === "manual" ? location.source : "locale";
+  return [
+    "User location context:",
+    `- Country: ${label} (${countryCode})`,
+    `- Source: ${source}`,
+    "Location behavior:",
+    "- Prefer country-specific guidance, laws, and links for this location.",
+    "- If sharing official resources, prioritize that country's official sites first.",
+    "- If the user asks for another country, follow the user's requested country instead.",
+    "- If location relevance is unclear, ask one short clarifying question.",
+  ].join("\n");
+};
+
+const decodeBase64ToBytes = (base64: string): Uint8Array => {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+};
+
+const normalizeAttachmentKind = (raw: IncomingAttachment): "image" | "pdf" | "text" | "other" => {
+  const mime = String(raw.mimeType ?? "").toLowerCase();
+  const name = String(raw.name ?? "").toLowerCase();
+  if (raw.kind === "image" || mime.startsWith("image/")) return "image";
+  if (raw.kind === "pdf" || mime === "application/pdf" || name.endsWith(".pdf")) return "pdf";
+  if (
+    raw.kind === "text" ||
+    mime.startsWith("text/") ||
+    name.endsWith(".txt") ||
+    name.endsWith(".md") ||
+    name.endsWith(".csv") ||
+    name.endsWith(".json")
+  ) {
+    return "text";
+  }
+  return "other";
+};
+
+const extractAttachmentText = async (
+  attachment: IncomingAttachment,
+  mistralApiKey: string | undefined,
+): Promise<string> => {
+  const name = String(attachment.name ?? "attachment").slice(0, 120);
+  const base64 = String(attachment.base64 ?? "").trim();
+  const mimeType = String(attachment.mimeType ?? "application/octet-stream");
+  const kind = normalizeAttachmentKind(attachment);
+
+  if (!base64) {
+    return `[${name}] Could not read this file content.`;
+  }
+
+  if (kind === "text") {
+    try {
+      const bytes = decodeBase64ToBytes(base64);
+      const text = new TextDecoder("utf-8", { fatal: false }).decode(bytes).trim();
+      if (!text) return `[${name}] Text file appears empty.`;
+      const clipped = text.length > 5000 ? `${text.slice(0, 5000)}\n...[truncated]` : text;
+      return `[${name}]\n${clipped}`;
+    } catch {
+      return `[${name}] Couldn't decode text file.`;
+    }
+  }
+
+  if ((kind === "image" || kind === "pdf") && mistralApiKey) {
+    const dataUrl = `data:${mimeType};base64,${base64}`;
+
+    const tryOcr = async (): Promise<string | null> => {
+      const ac = new AbortController();
+      const t = setTimeout(() => ac.abort(), 18000);
+      try {
+        const resp = await fetch("https://api.mistral.ai/v1/ocr", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${mistralApiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "mistral-ocr-latest",
+            document: {
+              type: "document_url",
+              document_url: dataUrl,
+            },
+          }),
+          signal: ac.signal,
+        });
+
+        if (!resp.ok) return null;
+        const json = await resp.json().catch(() => ({}));
+        const extracted = Array.isArray(json?.pages)
+          ? json.pages.map((p: any) => String(p?.markdown ?? p?.text ?? "")).join("\n\n").trim()
+          : "";
+        return extracted || null;
+      } catch {
+        return null;
+      } finally {
+        clearTimeout(t);
+      }
+    };
+
+    const tryVisionForImage = async (): Promise<string | null> => {
+      if (kind !== "image") return null;
+      const ac = new AbortController();
+      const t = setTimeout(() => ac.abort(), 18000);
+      try {
+        const resp = await fetch("https://api.mistral.ai/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${mistralApiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "pixtral-12b-latest",
+            messages: [
+              {
+                role: "user",
+                content: [
+                  { type: "text", text: "Extract all visible text from this image. If there is little/no text, describe the key visible details briefly." },
+                  { type: "image_url", image_url: dataUrl },
+                ],
+              },
+            ],
+            max_tokens: 1200,
+          }),
+          signal: ac.signal,
+        });
+
+        if (!resp.ok) return null;
+        const json = await resp.json().catch(() => ({}));
+        const content = json?.choices?.[0]?.message?.content;
+        return typeof content === "string" ? content.trim() || null : null;
+      } catch {
+        return null;
+      } finally {
+        clearTimeout(t);
+      }
+    };
+
+    const extracted = (await tryOcr()) ?? (await tryVisionForImage());
+    if (!extracted) {
+      return `[${name}] No readable content could be extracted from this ${kind}.`;
+    }
+
+    const clipped = extracted.length > 5000 ? `${extracted.slice(0, 5000)}\n...[truncated]` : extracted;
+    return `[${name}]\n${clipped}`;
+  }
+
+  if (kind === "image" || kind === "pdf") {
+    return `[${name}] ${kind.toUpperCase()} was uploaded, but OCR is unavailable right now.`;
+  }
+
+  return `[${name}] File uploaded. This format isn't directly readable yet, but the assistant can still discuss it based on your description.`;
+};
+
+const buildAttachmentContext = async (
+  rawAttachments: unknown,
+  mistralApiKey: string | undefined,
+): Promise<string> => {
+  if (!Array.isArray(rawAttachments) || rawAttachments.length === 0) return "";
+
+  const attachments = rawAttachments
+    .slice(0, 3)
+    .map((item) => (typeof item === "object" && item ? (item as IncomingAttachment) : null))
+    .filter(Boolean) as IncomingAttachment[];
+
+  if (attachments.length === 0) return "";
+
+  const extracted = await Promise.all(attachments.map((attachment) => extractAttachmentText(attachment, mistralApiKey)));
+  const succeeded = extracted.filter((entry) => !/No readable content|Could not read this file|isn't directly readable|OCR is unavailable|Couldn't decode|extraction failed|request failed/i.test(entry)).length;
+  const failed = extracted.length - succeeded;
+  return [
+    `User uploaded files/photos. Extraction summary: ${succeeded} succeeded, ${failed} failed. Use the extracted context in your answer now.`,
+    ...extracted.map((entry, index) => `${index + 1}. ${entry}`),
+  ].join("\n\n");
+};
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { messages, beReal, emotionalMode, logicalMode, thinkDeeply, forcePlan, forceBenefits, forceVent, ventAdviceMode, userId, userPlan, totalMessageCount, memoryLimit } = await req.json();
+    const { messages, attachments, beReal, emotionalMode, logicalMode, thinkDeeply, forcePlan, forceBenefits, forceVent, ventAdviceMode, userId, userPlan, totalMessageCount, memoryLimit, userLocation } = await req.json();
     const plan = userPlan ?? "free";
     const MISTRAL_API_KEY = Deno.env.get("MISTRAL_API_KEY");
     const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
@@ -1794,6 +2031,9 @@ Deno.serve(async (req) => {
     const platformHelpRequested =
       isPlatformHelpRequest(lastUserMessage) ||
       isPlatformHelpConversation(messages ?? []);
+    const cvHelpRequested =
+      isCvHelpRequest(lastUserMessage) ||
+      isCvHelpConversation(messages ?? []);
     const internetSearchRequested =
       !platformHelpRequested &&
       (
@@ -1844,6 +2084,7 @@ Deno.serve(async (req) => {
       (referencesRequested ? REFERENCES_REQUEST_MODE : "") +
       (internetSearchRequested ? INTERNET_SEARCH_MODE : "") +
       (platformHelpRequested ? PLATFORM_HELP_MODE : "") +
+      (cvHelpRequested ? CV_NUDGE_MODE : "") +
       (memoryInstruction ? `\n\nUser memory context:\n${memoryInstruction}` : "");
 
     // Add memory limit warning if user is approaching limit
@@ -1882,6 +2123,8 @@ Deno.serve(async (req) => {
       emotionalRequested,
       emotionalMode,
     });
+    const attachmentContext = await buildAttachmentContext(attachments, MISTRAL_API_KEY);
+    const locationInstruction = buildLocationInstruction(userLocation);
 
     const systemMessages = [
       {
@@ -1899,6 +2142,13 @@ Deno.serve(async (req) => {
     }
     if (adviceContext) {
       systemMessages.push({ role: "system", content: adviceContext });
+    }
+    if (attachmentContext) {
+      systemMessages.push({ role: "system", content: ATTACHMENT_ANALYSIS_MODE });
+      systemMessages.push({ role: "system", content: attachmentContext });
+    }
+    if (locationInstruction) {
+      systemMessages.push({ role: "system", content: locationInstruction });
     }
 
     // Create a writable stream encoder for custom event streaming
