@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { ClipboardCopy, Loader2, Sparkles, Upload, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -37,6 +37,25 @@ type CvReviewResult = {
   improvements: string[];
   sectionReviews: SectionReview[];
 };
+
+const CV_FILE_ACCEPT = ".txt,.md,.pdf,.docx,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+const readAsArrayBuffer = (file: File): Promise<ArrayBuffer> =>
+  new Promise((resolve, reject) => {
+    // FileReader fallback improves compatibility with some mobile file providers.
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as ArrayBuffer);
+    reader.onerror = () => reject(new Error("Could not read file"));
+    reader.readAsArrayBuffer(file);
+  });
+
+const readAsText = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(new Error("Could not read file"));
+    reader.readAsText(file);
+  });
 
 const DEFAULT_SCHEMA_EXAMPLE = {
   score: 7.2,
@@ -245,15 +264,25 @@ function CvReviewPage() {
     setReview(null);
     setRawReply("");
     const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+    const mime = (file.type || "").toLowerCase();
     try {
       let extractedText = "";
-      if (ext === "pdf") {
+      const isPdf = ext === "pdf" || mime.includes("pdf");
+      const isDocx = ext === "docx" || mime.includes("wordprocessingml.document");
+      const isLegacyDoc = ext === "doc" || mime.includes("msword");
+
+      if (isLegacyDoc) {
+        toast.error("Legacy .doc files are not supported on mobile. Please convert to .docx, .pdf, or .txt.");
+        return;
+      }
+
+      if (isPdf) {
         const pdfjsLib = await import("pdfjs-dist");
         pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
           "pdfjs-dist/build/pdf.worker.mjs",
           import.meta.url,
         ).toString();
-        const arrayBuffer = await file.arrayBuffer();
+        const arrayBuffer = await readAsArrayBuffer(file);
         const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
         const pageTexts: string[] = [];
         for (let i = 1; i <= pdf.numPages; i++) {
@@ -262,13 +291,13 @@ function CvReviewPage() {
           pageTexts.push(content.items.map((item) => ("str" in item ? item.str : "")).join(" "));
         }
         extractedText = pageTexts.join("\n");
-      } else if (ext === "docx") {
+      } else if (isDocx) {
         const mammoth = await import("mammoth");
-        const arrayBuffer = await file.arrayBuffer();
+        const arrayBuffer = await readAsArrayBuffer(file);
         const result = await mammoth.extractRawText({ arrayBuffer });
         extractedText = result.value;
       } else {
-        extractedText = await file.text();
+        extractedText = await readAsText(file);
       }
       const normalizedText = extractedText.replace(/\u0000/g, "").trim();
       if (normalizedText.length < 200) {
@@ -280,6 +309,13 @@ function CvReviewPage() {
     } catch {
       toast.error("Failed to read CV file. Try a plain .txt export or paste below.");
     }
+  };
+
+  const handleCvFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const selected = event.target.files?.[0];
+    void onUploadCv(selected);
+    // Allow re-selecting the same file on mobile browsers.
+    event.currentTarget.value = "";
   };
 
   // ── Tab 1: Run review ────────────────────────────────────────────────────────
@@ -416,11 +452,11 @@ function CvReviewPage() {
           <Input
             id="cv-file"
             type="file"
-            accept=".txt,.md,.pdf,.doc,.docx"
-            onChange={(e) => void onUploadCv(e.target.files?.[0])}
+            accept={CV_FILE_ACCEPT}
+            onChange={handleCvFileChange}
           />
           {fileName ? <p className="text-xs text-foreground">Loaded: {fileName}</p> : (
-            <p className="text-xs text-muted-foreground">PDF, DOCX, or plain text. Max 3 MB.</p>
+            <p className="text-xs text-muted-foreground">PDF, DOCX, or plain text. Max 3 MB. (.doc not supported)</p>
           )}
         </div>
         <Textarea
@@ -478,11 +514,11 @@ function CvReviewPage() {
                   <Input
                     id="cv-file-review"
                     type="file"
-                    accept=".txt,.md,.pdf,.doc,.docx"
-                    onChange={(e) => void onUploadCv(e.target.files?.[0])}
+                    accept={CV_FILE_ACCEPT}
+                    onChange={handleCvFileChange}
                   />
                   {fileName ? <p className="text-xs text-foreground">Loaded: {fileName}</p> : (
-                    <p className="text-xs text-muted-foreground">PDF, DOCX, or plain text. Max 3 MB.</p>
+                    <p className="text-xs text-muted-foreground">PDF, DOCX, or plain text. Max 3 MB. (.doc not supported)</p>
                   )}
                 </div>
                 <div className="space-y-2">
