@@ -7,6 +7,11 @@ export type UsagePeriodType = "day" | "month";
 
 export const STRIPE_BILLING_ENABLED = true;
 
+const PROFESSIONAL_DEFAULT_EMAILS = new Set([
+  "enochaseks@yahoo.co.uk",
+  "enochaseks@gmail.com",
+]);
+
 export type SubscriptionSnapshot = {
   plan: SubscriptionPlan;
   status: string;
@@ -207,9 +212,19 @@ const ensureSubscriptionRow = async (userId: string) => {
     return existing;
   }
 
+  let defaultPlan: SubscriptionPlan = "free";
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+  if (authError) throw authError;
+
+  const authUser = authData.user;
+  const normalizedEmail = authUser?.email?.trim().toLowerCase() ?? "";
+  if (authUser?.id === userId && PROFESSIONAL_DEFAULT_EMAILS.has(normalizedEmail)) {
+    defaultPlan = "professional";
+  }
+
   const { data: inserted, error: insertError } = await supabase
     .from("user_subscriptions")
-    .insert({ user_id: userId, plan: "free", status: "active" })
+    .insert({ user_id: userId, plan: defaultPlan, status: "active" })
     .select("user_id, plan, status")
     .single();
 
