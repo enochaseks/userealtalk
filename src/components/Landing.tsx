@@ -302,7 +302,7 @@ export function Landing() {
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.7, ease: "easeOut" }}
-          className="max-w-2xl w-full text-center"
+          className="max-w-3xl w-full text-center"
         >
         <div className="rounded-2xl border border-border bg-surface/70 backdrop-blur text-left overflow-hidden">
           <div className="px-4 py-3 border-b border-border/60 text-xs text-muted-foreground flex items-center justify-between gap-3">
@@ -310,7 +310,7 @@ export function Landing() {
             <span>{MAX_GUEST_MESSAGES - guestMessageCount} guest messages left</span>
           </div>
 
-          <div className="px-4 py-4 space-y-3 max-h-72 overflow-y-auto">
+          <div className="px-4 py-4 space-y-3 min-h-72 max-h-[28rem] overflow-y-auto">
             {messages.map((m, i) => (
               <div key={i} className={m.role === "user" ? "flex justify-end" : "flex justify-start"}>
                 <div
