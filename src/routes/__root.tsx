@@ -11,7 +11,8 @@ import appCss from "../styles.css?url";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { Toaster } from "@/components/ui/sonner";
 import logo from "../assets/logo.png";
-import { useCallback, useEffect, useState } from "react";
+import mjGreenScreenVideo from "../assets/video/Michael Jackson Moonwalking - Green Screen.mp4";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { loadSubscriptionSnapshot } from "@/lib/subscriptions";
 import { toast } from "sonner";
@@ -346,6 +347,11 @@ function TopNav() {
   const [profileName, setProfileName] = useState("Profile");
   const [avatarUrl, setAvatarUrl] = useState("");
   const [subscriptionLabel, setSubscriptionLabel] = useState("Free");
+  const [isLogoTributePlaying, setIsLogoTributePlaying] = useState(false);
+  const tributeVideoRef = useRef<HTMLVideoElement | null>(null);
+  const tributeCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const tributeRafRef = useRef<number | null>(null);
+  const tributeFallbackTimerRef = useRef<number | null>(null);
   const [adviceNotif, setAdviceNotif] = useState(() => {
     if (typeof window === "undefined") return false;
     const uid = (window as any).__advice_uid__ ?? "";
@@ -475,6 +481,99 @@ function TopNav() {
     navigate({ to: "/", search: {} as never, replace: true });
   };
 
+  const stopLogoTribute = useCallback((navigateToChat: boolean) => {
+    if (tributeRafRef.current !== null) {
+      cancelAnimationFrame(tributeRafRef.current);
+      tributeRafRef.current = null;
+    }
+
+    if (tributeFallbackTimerRef.current !== null) {
+      window.clearTimeout(tributeFallbackTimerRef.current);
+      tributeFallbackTimerRef.current = null;
+    }
+
+    const video = tributeVideoRef.current;
+    if (video) {
+      video.pause();
+      video.currentTime = 0;
+    }
+
+    setIsLogoTributePlaying(false);
+
+    if (navigateToChat) {
+      setOpen(false);
+      navigate({ to: "/", search: {} as never, replace: true });
+    }
+  }, [navigate]);
+
+  const drawTributeFrame = useCallback(() => {
+    const video = tributeVideoRef.current;
+    const canvas = tributeCanvasRef.current;
+    if (!video || !canvas) return;
+    if (video.paused || video.ended) return;
+
+    const width = video.videoWidth || 360;
+    const height = video.videoHeight || 640;
+    if (canvas.width !== width || canvas.height !== height) {
+      canvas.width = width;
+      canvas.height = height;
+    }
+
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return;
+
+    ctx.drawImage(video, 0, 0, width, height);
+    const frame = ctx.getImageData(0, 0, width, height);
+    const data = frame.data;
+
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+
+      const isStrongGreen = g > 95 && g > r * 1.25 && g > b * 1.25;
+      const isEdgeGreen = g > 80 && g > r * 1.1 && g > b * 1.1;
+
+      if (isStrongGreen) {
+        data[i + 3] = 0;
+      } else if (isEdgeGreen) {
+        data[i + 3] = Math.min(data[i + 3], 120);
+      }
+    }
+
+    ctx.putImageData(frame, 0, 0);
+    tributeRafRef.current = requestAnimationFrame(drawTributeFrame);
+  }, []);
+
+  const playLogoTributeThenNavigate = useCallback(async () => {
+    if (isLogoTributePlaying) return;
+    setIsLogoTributePlaying(true);
+
+    const video = tributeVideoRef.current;
+    if (!video) {
+      stopLogoTribute(true);
+      return;
+    }
+
+    video.currentTime = 0;
+    video.muted = true;
+    video.playsInline = true;
+
+    try {
+      await video.play();
+      tributeRafRef.current = requestAnimationFrame(drawTributeFrame);
+      tributeFallbackTimerRef.current = window.setTimeout(() => {
+        stopLogoTribute(true);
+      }, 3500);
+    } catch {
+      stopLogoTribute(true);
+    }
+  }, [drawTributeFrame, isLogoTributePlaying, stopLogoTribute]);
+
+  useEffect(() => {
+    return () => stopLogoTribute(false);
+  }, [stopLogoTribute]);
+
   return (
     <header className="border-b border-border/60 backdrop-blur supports-[backdrop-filter]:bg-background/70 sticky top-0 z-30">
       <div className="max-w-3xl mx-auto px-5 h-14 flex items-center relative">
@@ -492,14 +591,31 @@ function TopNav() {
             <SheetContent side="left" className="w-64 pt-2">
               <div className="pt-0 pb-3 h-full flex flex-col overflow-hidden">
                 <div className="px-3 pb-2 mb-1 border-b border-border/60 flex items-center justify-center">
-                  <Link
-                    to="/"
-                    search={{} as never}
-                    onClick={() => setOpen(false)}
+                  <button
+                    type="button"
+                    onClick={playLogoTributeThenNavigate}
                     className="inline-flex items-center"
+                    aria-label="Play MJ tribute and go to chat"
                   >
-                    <img src={logo} alt="RealTalk" className="h-[99px] w-auto logo-glow" />
-                  </Link>
+                    {isLogoTributePlaying ? (
+                      <canvas
+                        ref={tributeCanvasRef}
+                        className="h-[99px] w-auto"
+                        style={{ imageRendering: "pixelated" }}
+                      />
+                    ) : (
+                      <img src={logo} alt="RealTalk" className="h-[99px] w-auto logo-glow" />
+                    )}
+                    <video
+                      ref={tributeVideoRef}
+                      src={mjGreenScreenVideo}
+                      muted
+                      playsInline
+                      preload="auto"
+                      className="hidden"
+                      onEnded={() => stopLogoTribute(true)}
+                    />
+                  </button>
                 </div>
 
                 <button
