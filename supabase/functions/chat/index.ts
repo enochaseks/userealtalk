@@ -213,6 +213,36 @@ const INTERNET_SEARCH_MODE = `\n\nInternet search mode:
 - Do NOT say you cannot browse/search the internet.
 - If provider results are missing but fallback links are provided, use those links and still return a useful answer with Sources.`;
 
+const PLATFORM_KNOWLEDGE_CONTEXT = `RealTalk platform knowledge (authoritative in-app context):
+- Core product: RealTalk is a conversational support app for practical life help, emotional support, and decision clarity.
+- Main chat experience includes mode toggles: Be Real, Emotional Support, Logical Mode, Deep Thinking, Plan Mode, Vent Mode, and Benefits Helper.
+- Vent mode supports listen-only, reflection, or advice paths and is designed for private-feeling emotional expression.
+- Benefits Helper focuses on UK Universal Credit style guidance with practical next steps and clear disclaimers.
+- CV Toolkit supports CV review workflows, including CV rewrite, job-match analysis, cover-letter generation, transferable-skills extraction, personal statement support, and PDF CV text extraction.
+- Journal feature exists for saving important reflections and entries.
+- Advice Library exists with moderated community advice posts that can be used as supportive context.
+- Safety enforcement exists: violent/abusive threat language can trigger warnings, strikes, and temporary chat restrictions.
+- Scheduling assistance exists in chat for creating reminder-style events when the user provides activity, date, and time.
+- Account areas include auth, profile, settings, account data, and recovery/reset flows.
+- Billing exists via Stripe with plan-based usage limits (for example Deep Thinking and Plan Mode usage limits).
+
+Platform support behavior:
+- When user asks about app/platform/product features, answer as an in-product expert and explain exactly how to do it in RealTalk.
+- Prefer concrete, step-by-step in-app guidance over generic advice.
+- If a feature is plan-limited or conditional, say so clearly and suggest the fastest valid path.
+- If unsure on a detail, state uncertainty briefly and offer the best verified next step.`;
+
+const PLATFORM_HELP_MODE = `\n\nPlatform Help Mode:
+- The user is asking about RealTalk itself. Treat this as product support.
+- Use this response shape for platform-help replies:
+  Where: name the exact area/feature in RealTalk.
+  Steps: 2-5 concrete actions the user should take in-app.
+  Result: what they should see/expect after following the steps.
+- Give direct in-app guidance first: what feature to use, where to go, what to click/type, and what outcome to expect.
+- Keep instructions practical and concise; avoid generic motivational wording.
+- If the request sounds like onboarding, suggest the best first workflow in the app.
+- If the user asks for capabilities, explain what RealTalk can and cannot do right now.`;
+
 const isPlanningRequest = (text: string): boolean => {
   const normalized = text.toLowerCase().replace(/\s+/g, " ").trim();
   if (!normalized) return false;
@@ -595,6 +625,57 @@ const isInternetSearchConversation = (messages: Array<{ role: string; content: s
     "look this up",
     "find online",
     "google this",
+  ];
+  return markers.some((k) => combined.includes(k));
+};
+
+const isPlatformHelpRequest = (text: string): boolean => {
+  const lower = text.toLowerCase();
+  const keys = [
+    "realtalk",
+    "this platform",
+    "this app",
+    "how does this app",
+    "how does this platform",
+    "how do i use",
+    "where do i",
+    "where can i",
+    "feature",
+    "features",
+    "settings",
+    "profile",
+    "journal",
+    "advice library",
+    "cv toolkit",
+    "cv review",
+    "plan mode",
+    "deep thinking",
+    "vent mode",
+    "benefits helper",
+    "subscription",
+    "upgrade",
+    "billing",
+    "account",
+  ];
+  return keys.some((k) => lower.includes(k));
+};
+
+const isPlatformHelpConversation = (messages: Array<{ role: string; content: string }>): boolean => {
+  const recent = (messages ?? []).slice(-8);
+  const combined = recent.map((m) => String(m?.content ?? "").toLowerCase()).join("\n");
+  const markers = [
+    "realtalk",
+    "this app",
+    "platform",
+    "cv toolkit",
+    "plan mode",
+    "deep thinking",
+    "vent mode",
+    "benefits helper",
+    "advice library",
+    "journal",
+    "subscription",
+    "billing",
   ];
   return markers.some((k) => combined.includes(k));
 };
@@ -1709,12 +1790,18 @@ Deno.serve(async (req) => {
     }
 
     const memoryInstruction = buildMemoryInstruction(memoryProfile, messages ?? []);
-  const referencesRequested = isReferencesRequest(lastUserMessage);
-  const internetSearchRequested =
-    isInternetSearchRequest(lastUserMessage) ||
-    isInternetSearchConversation(messages ?? []) ||
-    isQueryRequiresWebSearch(lastUserMessage);
-  const deepThinkingRequested = thinkDeeply || emailRequested;
+    const referencesRequested = isReferencesRequest(lastUserMessage);
+    const platformHelpRequested =
+      isPlatformHelpRequest(lastUserMessage) ||
+      isPlatformHelpConversation(messages ?? []);
+    const internetSearchRequested =
+      !platformHelpRequested &&
+      (
+        isInternetSearchRequest(lastUserMessage) ||
+        isInternetSearchConversation(messages ?? []) ||
+        isQueryRequiresWebSearch(lastUserMessage)
+      );
+    const deepThinkingRequested = thinkDeeply || emailRequested;
     const ventMode = Boolean(forceVent) || isVentingRequest(lastUserMessage);
   const benefitsRequested = Boolean(forceBenefits) || isBenefitsSupportRequest(lastUserMessage);
   const emotionalRequested = !emailRequested && (ventMode || isEmotionalRequest(lastUserMessage));
@@ -1756,6 +1843,7 @@ Deno.serve(async (req) => {
       (beReal && ventMode ? `\n\nVent mode + Be Real: Listen and validate briefly, but prioritize honest feedback over endless sympathy. Be empathetic but not coddling.` : ventAdviceInstruction) +
       (referencesRequested ? REFERENCES_REQUEST_MODE : "") +
       (internetSearchRequested ? INTERNET_SEARCH_MODE : "") +
+      (platformHelpRequested ? PLATFORM_HELP_MODE : "") +
       (memoryInstruction ? `\n\nUser memory context:\n${memoryInstruction}` : "");
 
     // Add memory limit warning if user is approaching limit
@@ -1770,6 +1858,7 @@ Deno.serve(async (req) => {
     })();
 
     const shouldUseResearch =
+      !platformHelpRequested &&
       !emotionalMode &&
       !emotionalRequested &&
       (
@@ -1799,6 +1888,10 @@ Deno.serve(async (req) => {
         role: "system",
         content:
           system + REFERENCES_GUARDRAIL_MODE + (planningRequested ? DETAILED_PLAN_OUTPUT_MODE : "") + (deepThinkingRequested ? DEEP_THINKING_DETAILED_MODE : "") + memoryWarningInstruction,
+      },
+      {
+        role: "system",
+        content: PLATFORM_KNOWLEDGE_CONTEXT,
       },
     ];
     if (researchContext) {
