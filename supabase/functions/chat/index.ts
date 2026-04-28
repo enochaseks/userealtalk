@@ -1931,13 +1931,20 @@ Deno.serve(async (req) => {
         .maybeSingle();
 
       const rawPlan = String(subRow?.plan || "free");
-      const verifiedPlan: "free" | "pro" | "platinum" =
-        rawPlan === "pro" || rawPlan === "platinum" ? rawPlan : "free";
+      const verifiedPlan: "free" | "pro" | "platinum" | "student" | "professional" =
+        rawPlan === "pro" ||
+        rawPlan === "platinum" ||
+        rawPlan === "student" ||
+        rawPlan === "professional"
+          ? rawPlan
+          : "free";
 
-      const serverPlanLimits: Record<"free" | "pro" | "platinum", { deep_thinking: number | null; plan: number | null }> = {
-        free:     { deep_thinking: 5,    plan: 3    },
-        pro:      { deep_thinking: 50,   plan: 25   },
-        platinum: { deep_thinking: null, plan: null },
+      const serverPlanLimits: Record<"free" | "pro" | "platinum" | "student" | "professional", { deep_thinking: number | null; plan: number | null }> = {
+        free:         { deep_thinking: 5,    plan: 3  },
+        pro:          { deep_thinking: 50,   plan: 15 },
+        platinum:     { deep_thinking: null, plan: 50 },
+        student:      { deep_thinking: null, plan: null },
+        professional: { deep_thinking: null, plan: null },
       };
       const limits = serverPlanLimits[verifiedPlan];
 

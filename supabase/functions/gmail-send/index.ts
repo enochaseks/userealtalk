@@ -7,10 +7,12 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const GMAIL_SEND_LIMITS: Record<"free" | "pro" | "platinum", number | null> = {
+const GMAIL_SEND_LIMITS: Record<"free" | "pro" | "platinum" | "student" | "professional", number | null> = {
   free: 5,
   pro: 25,
   platinum: 50,
+  student: 100,
+  professional: 200,
 };
 
 const enforceGmailSendQuota = async (authHeader: string | null): Promise<{ userId: string } | { error: string; status: number }> => {
@@ -33,7 +35,13 @@ const enforceGmailSendQuota = async (authHeader: string | null): Promise<{ userI
     .maybeSingle();
 
   const rawPlan = String(subRow?.plan || "free");
-  const plan: "free" | "pro" | "platinum" = rawPlan === "pro" || rawPlan === "platinum" ? rawPlan : "free";
+  const plan: "free" | "pro" | "platinum" | "student" | "professional" =
+    rawPlan === "pro" ||
+    rawPlan === "platinum" ||
+    rawPlan === "student" ||
+    rawPlan === "professional"
+      ? rawPlan
+      : "free";
   const limit = GMAIL_SEND_LIMITS[plan];
 
   if (limit !== null) {
