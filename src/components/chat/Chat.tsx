@@ -1265,16 +1265,8 @@ export function Chat() {
     const normalized = text.toLowerCase().replace(/\s+/g, " ").trim();
     if (!normalized) return false;
 
-    const explicitPlanPatterns = [
-      /\b(make|build|create|write|draft|outline|map(?:\s+out)?|lay\s+out|put\s+together)\s+(?:me\s+)?(?:a\s+)?(plan|roadmap|strategy|timeline|budget|action plan|launch plan|marketing plan)\b/i,
-      /\b(give|show|send)\s+(?:me\s+)?(?:a\s+)?(plan|roadmap|strategy|timeline|budget|action plan|launch plan|marketing plan)\b/i,
-      /\b(help me|can you|could you|would you|i need|i want)\s+(?:make|build|create|write|draft|outline|map(?:\s+out)?|plan)\b/i,
-      /\b(plan\s+(?:my|out)|map\s+out|lay\s+out)\b/i,
-      /\b(step[ -]?by[ -]?step|30[ -]?day|60[ -]?day|90[ -]?day)\s+plan\b/i,
-      /\b(i need|i want|help me with|give me|show me)\s+(?:a\s+)?(marketing plan|launch plan|action plan)\b/i,
-    ];
-
-    return explicitPlanPatterns.some((pattern) => pattern.test(normalized));
+    // Keep auto-plan intent strict to avoid false positives like "write an email".
+    return /\bplan\b/i.test(normalized);
   };
 
   const userAskedForPlan = (text: string): boolean => isExplicitPlanRequest(text);
