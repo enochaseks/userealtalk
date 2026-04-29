@@ -508,6 +508,12 @@ export function Landing() {
           One quiet space. No noise. No notifications.
         </p>
 
+        <div className="mt-4 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs text-muted-foreground/80">
+          <span className="flex items-center gap-1.5">🔒 Private by default</span>
+          <span className="flex items-center gap-1.5">🚫 No ads. No data selling.</span>
+          <span className="flex items-center gap-1.5">👤 You control your data</span>
+        </div>
+
         <div className="mt-4 rounded-2xl border border-border/70 bg-surface/60 backdrop-blur px-4 py-4 text-left">
           <h2 className="text-base md:text-lg font-semibold tracking-tight">About RealTalk</h2>
           <p className="mt-2 text-sm text-muted-foreground leading-relaxed">
@@ -709,14 +715,51 @@ export function Landing() {
           </div>
         </div>
 
-        <div className="mt-4 rounded-2xl border border-border/70 bg-surface/60 backdrop-blur px-4 py-4 text-left">
-          <h3 className="text-sm md:text-base font-semibold tracking-tight">Safety & trust</h3>
-          <div className="mt-2 grid gap-2 text-sm text-muted-foreground">
-            <p>• You control what you share and can choose whether monitoring/insights are enabled.</p>
-            <p>• Gmail send access is optional and only used when you choose to send email from RealTalk.</p>
-            <p>• RealTalk is designed for clarity and support, not judgment.</p>
-            <p>• In emergencies or crisis situations, contact local emergency or crisis services immediately.</p>
+        <div className="mt-4 rounded-2xl border border-primary/30 bg-primary/5 backdrop-blur px-4 py-5 text-left">
+          <h3 className="text-sm md:text-base font-semibold tracking-tight">🔒 Your privacy, your control</h3>
+          <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
+            We know sharing personal thoughts with an AI takes trust. Here's exactly how RealTalk handles your data.
+          </p>
+          <div className="mt-4 grid gap-3">
+            <div className="flex gap-3 items-start">
+              <span className="text-base mt-0.5">🚫</span>
+              <div>
+                <p className="text-sm font-semibold">We never sell your data</p>
+                <p className="text-xs text-muted-foreground leading-relaxed">Your conversations and personal details are never sold to third parties, used for advertising, or shared with data brokers. Ever.</p>
+              </div>
+            </div>
+            <div className="flex gap-3 items-start">
+              <span className="text-base mt-0.5">🧠</span>
+              <div>
+                <p className="text-sm font-semibold">AI learning is opt-in</p>
+                <p className="text-xs text-muted-foreground leading-relaxed">Weekly insights and pattern tracking are optional. You choose whether RealTalk learns from your conversations to give better support over time.</p>
+              </div>
+            </div>
+            <div className="flex gap-3 items-start">
+              <span className="text-base mt-0.5">👤</span>
+              <div>
+                <p className="text-sm font-semibold">Your account, your data</p>
+                <p className="text-xs text-muted-foreground leading-relaxed">Your conversations belong to you. You can export or delete your account and all associated data at any time from your settings.</p>
+              </div>
+            </div>
+            <div className="flex gap-3 items-start">
+              <span className="text-base mt-0.5">📧</span>
+              <div>
+                <p className="text-sm font-semibold">Gmail access is entirely optional</p>
+                <p className="text-xs text-muted-foreground leading-relaxed">Gmail send is a feature you activate yourself. RealTalk only sends email when you explicitly ask it to — it does not read your inbox.</p>
+              </div>
+            </div>
+            <div className="flex gap-3 items-start">
+              <span className="text-base mt-0.5">🛡️</span>
+              <div>
+                <p className="text-sm font-semibold">No judgment. No surveillance.</p>
+                <p className="text-xs text-muted-foreground leading-relaxed">RealTalk is a support tool, not a monitoring service. It's designed for clarity and wellbeing — not to track, judge, or report on you.</p>
+              </div>
+            </div>
           </div>
+          <p className="mt-4 text-xs text-muted-foreground">
+            Read our full <a href="/privacy" className="underline hover:text-foreground transition-colors">Privacy Policy</a> for complete details.
+          </p>
         </div>
 
         <div className="mt-4 rounded-2xl border border-primary/25 bg-primary/10 px-4 py-5 text-center">

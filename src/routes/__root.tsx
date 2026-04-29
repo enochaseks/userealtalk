@@ -125,6 +125,7 @@ export const Route = createRootRoute({
           "default-src 'self'; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.mistral.ai https://fonts.googleapis.com https://gmail.googleapis.com https://api.bigdatacloud.net https://ipapi.co; img-src 'self' data: https: blob:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; base-uri 'self'; form-action 'self'",
       },
       { name: "referrer", content: "strict-origin-when-cross-origin" },
+      { name: "robots", content: "index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" },
       { title: "RealTalk — Think clearly. Decide better." },
       {
         name: "description",
@@ -137,15 +138,15 @@ export const Route = createRootRoute({
         property: "og:description",
         content: "A calm AI companion for clarity and better decisions.",
       },
+      { property: "og:url", content: "https://userealtalk.co.uk/" },
       { property: "og:type", content: "website" },
       { name: "twitter:title", content: "RealTalk — Think clearly. Decide better." },
-      { name: "description", content: "RealTalk is an AI-powered web app that guides users to reduce overthinking and make better decisions." },
-      { property: "og:description", content: "RealTalk is an AI-powered web app that guides users to reduce overthinking and make better decisions." },
-      { name: "twitter:description", content: "RealTalk is an AI-powered web app that guides users to reduce overthinking and make better decisions." },
+      { name: "twitter:description", content: "A calm AI companion for clarity and better decisions." },
       { name: "twitter:card", content: "summary" },
     ],
     links: [
       { rel: "stylesheet", href: APP_CSS_HREF },
+      { rel: "canonical", href: "https://userealtalk.co.uk/" },
       { rel: "privacy-policy", href: "https://userealtalk.co.uk/privacy" },
       { rel: "terms-of-service", href: "https://userealtalk.co.uk/terms" },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
@@ -163,6 +164,22 @@ export const Route = createRootRoute({
 });
 
 function RootShell({ children }: { children: React.ReactNode }) {
+  const structuredDataScript = JSON.stringify({
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    name: "RealTalk",
+    url: "https://userealtalk.co.uk/",
+    applicationCategory: "HealthApplication",
+    operatingSystem: "Web",
+    description:
+      "RealTalk is a calm AI companion that helps you reduce overthinking, find clarity, and turn your thoughts into clear plans.",
+    offers: {
+      "@type": "Offer",
+      price: "0",
+      priceCurrency: "GBP",
+    },
+  });
+
   const forceUpdateScript = `
     (() => {
       if (typeof window === "undefined") return;
@@ -230,6 +247,7 @@ function RootShell({ children }: { children: React.ReactNode }) {
     <html lang="en" className="dark" suppressHydrationWarning>
       <head>
         <HeadContent />
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: structuredDataScript }} />
         <script dangerouslySetInnerHTML={{ __html: forceUpdateScript }} />
         <script dangerouslySetInnerHTML={{ __html: chunkRecoveryScript }} />
       </head>
