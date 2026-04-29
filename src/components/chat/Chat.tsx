@@ -827,7 +827,7 @@ export function Chat() {
       cancelled = true;
       supabase.removeChannel(channel);
     };
-  }, [convId, user]);
+  }, [convId, user?.id]);
 
   useLayoutEffect(() => {
     const scrollContainer = scrollRef.current;
