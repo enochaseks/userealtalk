@@ -103,7 +103,11 @@ type Insight = {
 };
 
 type EditablePlanDraft = { title: string; content: string };
-type MemoryProfile = { preference_notes: string | null; comfort_boundaries: string[] | null };
+type MemoryProfile = {
+  preference_notes: string | null;
+  comfort_boundaries: string[] | null;
+  brain_score: number | null;
+};
 type BillingCycle = "monthly" | "annual";
 type ScheduleItem = {
   id: string;
@@ -346,9 +350,9 @@ function ProfilePage() {
     };
 
     const loadMemoryProfile = async () => {
-      const { data } = await supabase
+      const { data } = await (supabase as any)
         .from("user_memory_profiles")
-        .select("preference_notes,comfort_boundaries")
+        .select("preference_notes,comfort_boundaries,brain_score")
         .eq("user_id", user.id)
         .maybeSingle();
       if (data) setMemoryProfile(data as MemoryProfile);
@@ -1251,10 +1255,10 @@ function ProfilePage() {
             {brainOpen && (
                 <div className="px-5 pb-5 space-y-4 border-t border-border/50">
                   <BrainCard
-                    userId={user.id}
                     profile={{
                       preference_notes: memoryProfile?.preference_notes ?? null,
                       comfort_boundaries: memoryProfile?.comfort_boundaries ?? null,
+                      brain_score: memoryProfile?.brain_score ?? null,
                     }}
                   />
                   <LearningAttemptLog attempts={learningAttempts} />
@@ -1486,11 +1490,9 @@ function parsePreferenceNotes(notes: string | null): Record<string, string> {
 }
 
 function BrainCard({
-  userId,
   profile,
 }: {
-  userId: string;
-  profile: { preference_notes: string | null; comfort_boundaries: string[] | null };
+  profile: { preference_notes: string | null; comfort_boundaries: string[] | null; brain_score: number | null };
 }) {
   const fields = parsePreferenceNotes(profile.preference_notes);
   const interests = fields.interests ? fields.interests.split(",").map((s) => s.trim()).filter(Boolean) : [];
@@ -1506,53 +1508,10 @@ function BrainCard({
   const scoreSignals = Math.min(positiveSignals.length / 6, 1);
   const scoreBoundaries = Math.min(boundaries.length / 5, 1);
 
-  const rawGrowth = Math.round(
-    ((scoreInterests + scoreStyle + scoreContext + scoreSignals + scoreBoundaries) / 5) * 100,
-  );
-
-  const [growth, setGrowth] = useState(0.5);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const storageKey = `brain_growth_v3_${userId}`;
-    const signatureKey = `brain_growth_sig_v3_${userId}`;
-
-    const signature = JSON.stringify({
-      i: interests,
-      s: fields.communication_style ?? "",
-      c: fields.life_context ?? "",
-      p: positiveSignals,
-      b: boundaries,
-    });
-
-    const previous = Number(localStorage.getItem(storageKey) || "0.5");
-    const previousSig = localStorage.getItem(signatureKey) || "";
-    const hasMeaningfulUpdate = previousSig !== signature;
-    const clampedPrevious = Number.isFinite(previous) ? Math.max(0.5, previous) : 0.5;
-
-    let next = clampedPrevious;
-    if (rawGrowth > clampedPrevious && hasMeaningfulUpdate) {
-      // Grow very slowly: only when new profile signals are learned, with small fractional steps.
-      const gap = rawGrowth - clampedPrevious;
-      const step = Math.min(1.2, Math.max(0.5, gap / 120));
-      next = Math.min(rawGrowth, clampedPrevious + step);
-    }
-
-    const roundedNext = Number(next.toFixed(1));
-
-    localStorage.setItem(storageKey, String(roundedNext));
-    localStorage.setItem(signatureKey, signature);
-    setGrowth(roundedNext);
-  }, [
-    userId,
-    rawGrowth,
-    fields.communication_style,
-    fields.life_context,
-    interests,
-    positiveSignals,
-    boundaries,
-  ]);
+  const storedGrowth = Number(profile.brain_score ?? 2);
+  const growth = Number.isFinite(storedGrowth)
+    ? Number(Math.min(100, Math.max(2, storedGrowth)).toFixed(1))
+    : 2.0;
 
   const growthDrivers = [
     {

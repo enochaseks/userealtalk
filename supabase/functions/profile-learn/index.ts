@@ -7,6 +7,11 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+const BRAIN_BASE_SCORE = 2.0;
+const BRAIN_MAX_SCORE = 100.0;
+const BRAIN_INCREMENT_PER_CHANGE = 0.5;
+const BRAIN_INCREMENT_WINDOW_MS = 24 * 60 * 60 * 1000;
+
 const LEARN_SYSTEM = `You are a memory extractor. Given a short conversation between a user and RealTalk, extract key facts about the user.
 
 Return ONLY strict JSON with these keys:
@@ -307,7 +312,7 @@ serve(async (req) => {
     // Load existing memory profile
     const { data: existing } = await admin
       .from("user_memory_profiles")
-      .select("preference_notes, comfort_boundaries")
+      .select("preference_notes, comfort_boundaries, brain_score, brain_changed_attempts, brain_last_increment_at")
       .eq("user_id", userId)
       .maybeSingle();
 
@@ -360,11 +365,38 @@ serve(async (req) => {
       });
     }
 
+    const now = new Date();
+    const previousScoreRaw = Number((existing as any)?.brain_score ?? BRAIN_BASE_SCORE);
+    const previousScore = Number.isFinite(previousScoreRaw)
+      ? Math.min(BRAIN_MAX_SCORE, Math.max(BRAIN_BASE_SCORE, previousScoreRaw))
+      : BRAIN_BASE_SCORE;
+
+    const previousChangedAttempts = Number((existing as any)?.brain_changed_attempts ?? 0);
+    const safeChangedAttempts = Number.isFinite(previousChangedAttempts)
+      ? Math.max(0, Math.floor(previousChangedAttempts))
+      : 0;
+
+    const previousIncrementAt = (existing as any)?.brain_last_increment_at
+      ? new Date(String((existing as any).brain_last_increment_at))
+      : null;
+
+    const canIncrement =
+      !previousIncrementAt ||
+      Number.isNaN(previousIncrementAt.getTime()) ||
+      now.getTime() - previousIncrementAt.getTime() >= BRAIN_INCREMENT_WINDOW_MS;
+
+    const nextScore = canIncrement
+      ? Number(Math.min(BRAIN_MAX_SCORE, previousScore + BRAIN_INCREMENT_PER_CHANGE).toFixed(1))
+      : previousScore;
+
     await admin.from("user_memory_profiles").upsert({
       user_id: userId,
       preference_notes: nextNotes,
       comfort_boundaries: existing?.comfort_boundaries ?? [],
-      updated_at: new Date().toISOString(),
+      brain_score: nextScore,
+      brain_changed_attempts: safeChangedAttempts + 1,
+      brain_last_increment_at: canIncrement ? now.toISOString() : (existing as any)?.brain_last_increment_at ?? null,
+      updated_at: now.toISOString(),
     });
 
     await logAttempt(admin, userId, "changed", { confidence, extracted_summary: extracted, message_count: recentMessages.length });
