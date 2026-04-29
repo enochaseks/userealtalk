@@ -24,6 +24,7 @@ import { Route as AdviceAdminRouteImport } from './routes/advice-admin'
 import { Route as AdviceRouteImport } from './routes/advice'
 import { Route as AccountDataRouteImport } from './routes/account-data'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AdviceSlugRouteImport } from './routes/advice.$slug'
 
 const TermsRoute = TermsRouteImport.update({
   id: '/terms',
@@ -100,11 +101,16 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdviceSlugRoute = AdviceSlugRouteImport.update({
+  id: '/$slug',
+  path: '/$slug',
+  getParentRoute: () => AdviceRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/account-data': typeof AccountDataRoute
-  '/advice': typeof AdviceRoute
+  '/advice': typeof AdviceRouteWithChildren
   '/advice-admin': typeof AdviceAdminRoute
   '/auth': typeof AuthRoute
   '/cv-review': typeof CvReviewRoute
@@ -117,11 +123,12 @@ export interface FileRoutesByFullPath {
   '/safety-admin': typeof SafetyAdminRoute
   '/settings': typeof SettingsRoute
   '/terms': typeof TermsRoute
+  '/advice/$slug': typeof AdviceSlugRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/account-data': typeof AccountDataRoute
-  '/advice': typeof AdviceRoute
+  '/advice': typeof AdviceRouteWithChildren
   '/advice-admin': typeof AdviceAdminRoute
   '/auth': typeof AuthRoute
   '/cv-review': typeof CvReviewRoute
@@ -134,12 +141,13 @@ export interface FileRoutesByTo {
   '/safety-admin': typeof SafetyAdminRoute
   '/settings': typeof SettingsRoute
   '/terms': typeof TermsRoute
+  '/advice/$slug': typeof AdviceSlugRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/account-data': typeof AccountDataRoute
-  '/advice': typeof AdviceRoute
+  '/advice': typeof AdviceRouteWithChildren
   '/advice-admin': typeof AdviceAdminRoute
   '/auth': typeof AuthRoute
   '/cv-review': typeof CvReviewRoute
@@ -152,6 +160,7 @@ export interface FileRoutesById {
   '/safety-admin': typeof SafetyAdminRoute
   '/settings': typeof SettingsRoute
   '/terms': typeof TermsRoute
+  '/advice/$slug': typeof AdviceSlugRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -171,6 +180,7 @@ export interface FileRouteTypes {
     | '/safety-admin'
     | '/settings'
     | '/terms'
+    | '/advice/$slug'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -188,6 +198,7 @@ export interface FileRouteTypes {
     | '/safety-admin'
     | '/settings'
     | '/terms'
+    | '/advice/$slug'
   id:
     | '__root__'
     | '/'
@@ -205,12 +216,13 @@ export interface FileRouteTypes {
     | '/safety-admin'
     | '/settings'
     | '/terms'
+    | '/advice/$slug'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AccountDataRoute: typeof AccountDataRoute
-  AdviceRoute: typeof AdviceRoute
+  AdviceRoute: typeof AdviceRouteWithChildren
   AdviceAdminRoute: typeof AdviceAdminRoute
   AuthRoute: typeof AuthRoute
   CvReviewRoute: typeof CvReviewRoute
@@ -332,13 +344,31 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/advice/$slug': {
+      id: '/advice/$slug'
+      path: '/$slug'
+      fullPath: '/advice/$slug'
+      preLoaderRoute: typeof AdviceSlugRouteImport
+      parentRoute: typeof AdviceRoute
+    }
   }
 }
+
+interface AdviceRouteChildren {
+  AdviceSlugRoute: typeof AdviceSlugRoute
+}
+
+const AdviceRouteChildren: AdviceRouteChildren = {
+  AdviceSlugRoute: AdviceSlugRoute,
+}
+
+const AdviceRouteWithChildren =
+  AdviceRoute._addFileChildren(AdviceRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AccountDataRoute: AccountDataRoute,
-  AdviceRoute: AdviceRoute,
+  AdviceRoute: AdviceRouteWithChildren,
   AdviceAdminRoute: AdviceAdminRoute,
   AuthRoute: AuthRoute,
   CvReviewRoute: CvReviewRoute,
