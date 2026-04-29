@@ -2281,6 +2281,14 @@ export function Chat() {
   } finally {
     isSendingRef.current = false;
     setBusy(false);
+    // Eagerly clear drafts so navigating away immediately after a send does not
+    // restore the just-sent text in a new or different conversation.
+    if (composerDraftKey) {
+      void chatDraftDelete(composerDraftKey).catch(() => {});
+    }
+    if (latestComposerDraftKey) {
+      void chatDraftDelete(latestComposerDraftKey).catch(() => {});
+    }
   }
 };
 
