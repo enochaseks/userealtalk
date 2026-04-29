@@ -11,6 +11,10 @@ const buildPriceToplan = (): Record<string, string> => {
     ["STRIPE_PRO_ANNUAL_PRICE_ID",       "pro"],
     ["STRIPE_PLATINUM_MONTHLY_PRICE_ID", "platinum"],
     ["STRIPE_PLATINUM_ANNUAL_PRICE_ID",  "platinum"],
+    ["STRIPE_STUDENT_MONTHLY_PRICE_ID",  "student"],
+    ["STRIPE_STUDENT_ANNUAL_PRICE_ID",   "student"],
+    ["STRIPE_PROFESSIONAL_MONTHLY_PRICE_ID", "professional"],
+    ["STRIPE_PROFESSIONAL_ANNUAL_PRICE_ID",  "professional"],
   ];
   for (const [envKey, plan] of keys) {
     const id = Deno.env.get(envKey);

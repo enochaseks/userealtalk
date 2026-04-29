@@ -639,7 +639,7 @@ export function Chat() {
     const snapshot = await refreshSubscription();
     if (!snapshot) return false;
     if (!hasFeatureAccess(snapshot.plan, "schedule")) {
-      toast.error("Schedule is available on Pro and Platinum.");
+      toast.error("Schedule is available on Pro, Platinum, Student, and Professional.");
       return false;
     }
     return true;
@@ -1854,7 +1854,7 @@ export function Chat() {
         currentMessages = currentMessages.slice(-memoryLimit);
 
         if (warningThreshold !== null && totalMessageCount >= warningThreshold) {
-          toast.warning(`You're approaching your conversation memory limit (${totalMessageCount}/${memoryLimit} messages). Upgrade to Pro or Platinum for more memory.`, {
+          toast.warning(`You're approaching your conversation memory limit (${totalMessageCount}/${memoryLimit} messages). Upgrade to Student or Professional for higher memory.`, {
             duration: 5000,
           });
         }
@@ -3593,7 +3593,7 @@ export function Chat() {
                 </div>
                 {subscriptionSnapshot && (
                   <div className="text-[11px] text-muted-foreground">
-                    Plan: {subscriptionSnapshot.plan}. Schedule is {hasFeatureAccess(subscriptionSnapshot.plan, "schedule") ? "included" : "available on Pro and Platinum"}.
+                    Plan: {subscriptionSnapshot.plan}. Schedule is {hasFeatureAccess(subscriptionSnapshot.plan, "schedule") ? "included" : "available on Pro, Platinum, Student, and Professional"}.
                   </div>
                 )}
                 <input
@@ -3929,6 +3929,7 @@ export function Chat() {
                       >
                         📋 Plan Mode
                       </button>
+                      {hasFeatureAccess(subscriptionSnapshot?.plan ?? "free", "benefits_helper") && (
                       <button
                         onClick={() => {
                           setForceBenefits((prev) => !prev);
@@ -3942,6 +3943,7 @@ export function Chat() {
                       >
                         🧾 Benefits Helper
                       </button>
+                      )}
                       <button
                         onClick={() => {
                           setForceVent(true);

@@ -952,7 +952,7 @@ function ProfilePage() {
     if (!user) return;
     const snapshot = await refreshSubscription();
     if (snapshot && !hasFeatureAccess(snapshot.plan, "schedule")) {
-      toast.error("Schedule is available on Pro and Platinum.");
+      toast.error("Schedule is available on Pro, Platinum, Student, and Professional.");
       return;
     }
     const title = scheduleTitle.trim();
@@ -1163,7 +1163,7 @@ function ProfilePage() {
 
         <div className="relative flex items-center gap-2">
           {subscriptionSnapshot && !hasFeatureAccess(subscriptionSnapshot.plan, "schedule") ? (
-            <div title="Schedule is available on Pro and Platinum plans" className="opacity-30 cursor-not-allowed">
+            <div title="Schedule is available on Pro, Platinum, Student, and Professional plans" className="opacity-30 cursor-not-allowed">
               <Button
                 type="button"
                 variant="ghost"
