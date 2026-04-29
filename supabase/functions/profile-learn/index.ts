@@ -75,6 +75,57 @@ const buildWorkersPrompt = (systemText: string, userPrompt: string): string => {
   return `${systemText}\n\nUSER: ${userPrompt}\n\nASSISTANT:`.trim();
 };
 
+const extractJsonObject = (raw: string): Record<string, unknown> | null => {
+  const cleaned = raw.replace(/```(?:json)?/gi, "").replace(/```/g, "").trim();
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    // Fall through to balanced-brace extraction.
+  }
+
+  const start = cleaned.indexOf("{");
+  if (start === -1) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = start; i < cleaned.length; i++) {
+    const char = cleaned[i];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (char === "{") depth += 1;
+    if (char === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        const candidate = cleaned.slice(start, i + 1);
+        try {
+          return JSON.parse(candidate);
+        } catch {
+          return null;
+        }
+      }
+    }
+  }
+
+  return null;
+};
+
 const callAiWithFallback = async (systemText: string, userPrompt: string): Promise<string | null> => {
   const MISTRAL_API_KEY = Deno.env.get("MISTRAL_API_KEY");
   const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
@@ -280,17 +331,15 @@ serve(async (req) => {
       });
     }
 
-    let extracted: Record<string, string> = {};
-    try {
-      // Strip markdown code fences if present
-      const cleaned = raw.replace(/```(?:json)?/g, "").replace(/```/g, "").trim();
-      extracted = JSON.parse(cleaned);
-    } catch {
+    const extractedRaw = extractJsonObject(raw);
+    if (!extractedRaw) {
       await logAttempt(admin, userId, "skipped", { skip_reason: "parse_error", message_count: recentMessages.length });
       return new Response(JSON.stringify({ skipped: true, reason: "parse_error" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    const extracted = extractedRaw as Record<string, string>;
 
     const confidenceRaw = Number((extracted as any)?.confidence);
     const confidence = Number.isFinite(confidenceRaw) ? confidenceRaw : 0;

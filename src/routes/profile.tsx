@@ -478,79 +478,11 @@ function ProfilePage() {
     void run();
   }, [user, insightMonitoringEnabled, tab]);
 
-  useEffect(() => {
-    if (!user || !session || !weeklyEmailEnabled || insights.length === 0 || !user.email) return;
-
-    const now = new Date();
-    const isFriday = now.getUTCDay() === 5;
-    if (!isFriday) return;
-
-    const latest = insights[0];
-    if (!latest?.week_start) return;
-
-    // Only send for the current week's insight, not stale ones
-    const currentWeekStart = getUtcWeekStart();
-    if (latest.week_start !== currentWeekStart) return;
-
-    const sendKey = `weekly_insight_email_${user.id}_${latest.week_start}`;
-    if (typeof window !== "undefined" && localStorage.getItem(sendKey) === "1") return;
-
-    const run = async () => {
-      try {
-        const body = [
-          `Weekly RealTalk insight for week of ${new Date(latest.week_start).toLocaleDateString()}`,
-          "",
-          `What worked: ${latest.what_worked}`,
-          `What didn't work: ${latest.what_didnt}`,
-          `Your response pattern: ${latest.response_patterns}`,
-          `Boundary comfort check: ${latest.boundary_respect}`,
-          "",
-          `Emotion trend: ${latest.emotion_trend}`,
-          `Thought patterns: ${latest.thought_patterns}`,
-          `Calm progress: ${latest.calm_progress}`,
-          `Overthinking reduction: ${latest.overthinking_reduction}`,
-          `How RealTalk helped: ${latest.ai_help_summary}`,
-        ].join("\n");
-
-        const resp = await fetch(
-          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gmail-send`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${session.access_token}`,
-              apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "",
-            },
-            body: JSON.stringify({
-              to: user.email,
-              subject: `Your RealTalk weekly insight (${latest.week_start})`,
-              body,
-              googleAccessToken: null, // Use platform email, not Gmail — avoids burning user's gmail_send quota
-              skipQuota: true,
-            }),
-          },
-        );
-
-        if (!resp.ok) {
-          const json = await resp.json().catch(() => ({}));
-          throw new Error(json?.error || "Failed to send weekly insight email");
-        }
-
-        if (typeof window !== "undefined") {
-          localStorage.setItem(sendKey, "1");
-        }
-      } catch {
-        // Silent fail: insights remain available in-app.
-      }
-    };
-
-    void run();
-  }, [user, session, weeklyEmailEnabled, insights]);
-
   if (!user) return null;
 
   const generateEarlyInsight = async () => {
     if (!user || !session) return;
+    const isRegeneration = alreadyGeneratedEarlyInsight;
     setEarlyInsightBusy(true);
     try {
       const resp = await fetch(
@@ -561,10 +493,11 @@ function ProfilePage() {
             "Content-Type": "application/json",
             Authorization: `Bearer ${session.access_token}`,
           },
-          body: JSON.stringify({ userId: user.id, force: true }),
+          body: JSON.stringify({ userId: user.id, force: true, sendEmail: true }),
         },
       );
       if (!resp.ok) throw new Error("Failed to generate early insight");
+      const result = await resp.json().catch(() => ({}));
 
       // Fetch the freshly generated row
       const { data } = await supabase
@@ -579,7 +512,13 @@ function ProfilePage() {
       if (typeof window !== "undefined") {
         localStorage.setItem(`early_insight_${user.id}_${getUtcWeekStart()}`, "1");
       }
-      toast.success("Early insight generated");
+      toast.success(isRegeneration ? "Early insight regenerated" : "Early insight generated");
+
+      if (result?.emailed) {
+        toast.success("Insight email sent");
+      } else if (typeof result?.emailReason === "string" && result.emailReason.length > 0) {
+        toast.error(`Insight generated, but email failed: ${result.emailReason}`);
+      }
     } catch {
       toast.error("Could not generate early insight. Try again later.");
     } finally {
@@ -1332,7 +1271,7 @@ function ProfilePage() {
                   <div className="text-xs text-muted-foreground mt-0.5">
                     {isWednesdayUtc()
                       ? alreadyGeneratedEarlyInsight
-                        ? "Already generated this week"
+                        ? "You can regenerate this week's snapshot"
                         : "Available every Wednesday — partial snapshot"
                       : "Available on Wednesdays only"}
                   </div>
@@ -1340,11 +1279,11 @@ function ProfilePage() {
                 <Button
                   size="sm"
                   variant="outline"
-                  disabled={!isWednesdayUtc() || alreadyGeneratedEarlyInsight || earlyInsightBusy}
+                  disabled={!isWednesdayUtc() || earlyInsightBusy}
                   onClick={generateEarlyInsight}
                   className="shrink-0"
                 >
-                  {earlyInsightBusy ? "Generating…" : "Get early insight"}
+                  {earlyInsightBusy ? "Generating…" : alreadyGeneratedEarlyInsight ? "Regenerate early insight" : "Get early insight"}
                 </Button>
               </div>
               {earlyInsight && (

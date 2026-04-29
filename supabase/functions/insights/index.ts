@@ -44,6 +44,111 @@ const buildWorkersPrompt = (systemText: string, userPrompt: string): string => {
   return `${systemText}\n\nUSER: ${userPrompt}\n\nASSISTANT:`.trim();
 };
 
+const extractJsonObject = (raw: string): Record<string, unknown> | null => {
+  const cleaned = raw.replace(/```(?:json)?/gi, "").replace(/```/g, "").trim();
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    // Fall through to balanced-brace extraction.
+  }
+
+  const start = cleaned.indexOf("{");
+  if (start === -1) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = start; i < cleaned.length; i++) {
+    const char = cleaned[i];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (char === "{") depth += 1;
+    if (char === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        const candidate = cleaned.slice(start, i + 1);
+        try {
+          return JSON.parse(candidate);
+        } catch {
+          return null;
+        }
+      }
+    }
+  }
+
+  return null;
+};
+
+const buildInsightEmailBody = (weekStart: string, insight: Record<string, unknown>): string => {
+  return [
+    `Weekly RealTalk insight for week of ${new Date(weekStart).toLocaleDateString("en-GB", { timeZone: "UTC" })}`,
+    "",
+    `What worked: ${String(insight.what_worked ?? "No clear pattern this week.")}`,
+    `What didn't work: ${String(insight.what_didnt ?? "No clear pattern this week.")}`,
+    `Your response pattern: ${String(insight.response_patterns ?? "No clear pattern this week.")}`,
+    `Boundary comfort check: ${String(insight.boundary_respect ?? "No clear pattern this week.")}`,
+    "",
+    `Emotion trend: ${String(insight.emotion_trend ?? "No clear pattern this week.")}`,
+    `Thought patterns: ${String(insight.thought_patterns ?? "No clear pattern this week.")}`,
+    `Calm progress: ${String(insight.calm_progress ?? "No clear pattern this week.")}`,
+    `Overthinking reduction: ${String(insight.overthinking_reduction ?? "No clear pattern this week.")}`,
+    `How RealTalk helped: ${String(insight.ai_help_summary ?? "No clear pattern this week.")}`,
+  ].join("\n");
+};
+
+const sendInsightEmail = async (
+  to: string,
+  weekStart: string,
+  insight: Record<string, unknown>,
+): Promise<{ ok: true } | { ok: false; reason: string }> => {
+  const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
+  const RESEND_FROM_EMAIL = Deno.env.get("RESEND_FROM_EMAIL");
+
+  if (!RESEND_API_KEY || !RESEND_FROM_EMAIL) {
+    return { ok: false, reason: "missing_email_provider_credentials" };
+  }
+
+  const resp = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${RESEND_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from: RESEND_FROM_EMAIL,
+      to: [to],
+      subject: `Your RealTalk weekly insight (${weekStart})`,
+      text: buildInsightEmailBody(weekStart, insight),
+    }),
+  });
+
+  if (!resp.ok) {
+    const resendJson = await resp.json().catch(() => ({}));
+    return {
+      ok: false,
+      reason: String(resendJson?.message || resendJson?.error || "email_send_failed"),
+    };
+  }
+
+  return { ok: true };
+};
+
 const callAiWithFallback = async (
   systemText: string,
   userPrompt: string,
@@ -161,14 +266,14 @@ serve(async (req) => {
       throw new Error("Missing required environment variables.");
     }
 
-    const { userId, force } = await req.json();
+    const { userId, force, sendEmail } = await req.json();
     if (!userId) throw new Error("userId is required");
 
     const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
     const { data: setting } = await admin
       .from("user_insight_settings")
-      .select("monitor_enabled")
+      .select("monitor_enabled, weekly_email_enabled")
       .eq("user_id", userId)
       .maybeSingle();
 
@@ -186,6 +291,52 @@ serve(async (req) => {
 
     const weekStart = getWeekStartIso();
     const weekStartIso = new Date(weekStart + "T00:00:00Z").toISOString();
+
+    const { data: existingInsight } = await admin
+      .from("user_weekly_insights")
+      .select("week_start, emotion_trend, thought_patterns, calm_progress, overthinking_reduction, ai_help_summary, what_worked, what_didnt, response_patterns, boundary_respect, source_message_count, emailed_at")
+      .eq("user_id", userId)
+      .eq("week_start", weekStart)
+      .maybeSingle();
+
+    const maybeSendExistingEmail = async () => {
+      if ((!setting?.weekly_email_enabled && !sendEmail) || existingInsight?.emailed_at) {
+        return { emailed: false, emailReason: existingInsight?.emailed_at ? "already_emailed" : "disabled" };
+      }
+
+      const { data: authUser } = await admin.auth.admin.getUserById(userId);
+      const email = authUser?.user?.email?.trim();
+      if (!email) {
+        return { emailed: false, emailReason: "missing_user_email" };
+      }
+
+      const emailResult = await sendInsightEmail(email, weekStart, existingInsight as Record<string, unknown>);
+      if (!emailResult.ok) {
+        console.error("weekly insight email failed", emailResult.reason);
+        return { emailed: false, emailReason: emailResult.reason };
+      }
+
+      await admin
+        .from("user_weekly_insights")
+        .update({ emailed_at: new Date().toISOString() })
+        .eq("user_id", userId)
+        .eq("week_start", weekStart);
+
+      return { emailed: true, emailReason: null };
+    };
+
+    if (!force && existingInsight) {
+      const emailStatus = await maybeSendExistingEmail();
+      return new Response(JSON.stringify({
+        ok: true,
+        reused: true,
+        weekStart,
+        source_message_count: existingInsight.source_message_count,
+        ...emailStatus,
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     const { data: memoryProfile } = await admin
       .from("user_memory_profiles")
@@ -249,12 +400,7 @@ serve(async (req) => {
 
     const raw = (await callAiWithFallback(INSIGHT_SYSTEM, insightPrompt)) || "{}";
 
-    let parsed;
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      parsed = {};
-    }
+    const parsed = extractJsonObject(raw) ?? {};
 
     const row = {
       user_id: userId,
@@ -269,6 +415,7 @@ serve(async (req) => {
       response_patterns: String(parsed.response_patterns || "No clear pattern this week."),
       boundary_respect: String(parsed.boundary_respect || "No clear pattern this week."),
       source_message_count: msgs.length,
+      emailed_at: existingInsight?.emailed_at ?? null,
       updated_at: new Date().toISOString(),
     };
 
@@ -296,7 +443,31 @@ serve(async (req) => {
         .eq("week_start", weekStart);
     }
 
-    return new Response(JSON.stringify({ ok: true, weekStart, source_message_count: msgs.length }), {
+    let emailed = false;
+    let emailReason: string | null = null;
+    const shouldAttemptEmail = Boolean(sendEmail) || (Boolean(setting?.weekly_email_enabled) && !force);
+    if (shouldAttemptEmail) {
+      const { data: authUser } = await admin.auth.admin.getUserById(userId);
+      const email = authUser?.user?.email?.trim();
+      if (!email) {
+        emailReason = "missing_user_email";
+      } else {
+        const emailResult = await sendInsightEmail(email, weekStart, row as Record<string, unknown>);
+        if (emailResult.ok) {
+          emailed = true;
+          await admin
+            .from("user_weekly_insights")
+            .update({ emailed_at: new Date().toISOString() })
+            .eq("user_id", userId)
+            .eq("week_start", weekStart);
+        } else {
+          emailReason = emailResult.reason;
+          console.error("weekly insight email failed", emailResult.reason);
+        }
+      }
+    }
+
+    return new Response(JSON.stringify({ ok: true, weekStart, source_message_count: msgs.length, emailed, emailReason }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
