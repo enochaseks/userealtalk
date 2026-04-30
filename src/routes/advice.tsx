@@ -343,13 +343,15 @@ function AdvicePage() {
       toast("Sign in to react to advice.");
       return;
     }
-    // Optimistic update — new reaction increments total, switching keeps total unchanged.
+    // Optimistic update — same reaction toggles off; switching moves between icons.
     const prevReaction = userReactions[postId];
     setPosts((prev) =>
       prev.map((p) => {
         if (p.id !== postId) return p;
         if (prevReaction === reaction) {
-          return p;
+          const updated = { ...p } as AdvicePost & Record<string, number>;
+          updated[`${reaction}_count`] = Math.max(0, ((p[`${reaction}_count` as keyof AdvicePost] as number) || 0) - 1);
+          return updated;
         }
 
         const updated = { ...p } as AdvicePost & Record<string, number>;
@@ -365,7 +367,14 @@ function AdvicePage() {
         return updated;
       })
     );
-    setUserReactions((prev) => ({ ...prev, [postId]: reaction }));
+    setUserReactions((prev) => {
+      if (prevReaction === reaction) {
+        const next = { ...prev };
+        delete next[postId];
+        return next;
+      }
+      return { ...prev, [postId]: reaction };
+    });
     try {
       const { data, error } = await supabase.functions.invoke("advice-admin", {
         body: {

@@ -363,11 +363,22 @@ Deno.serve(async (req) => {
 
       const { data: existingFeedback, error: existingErr } = await admin
         .from("advice_feedback")
-        .select("id")
+        .select("id, reaction")
         .eq("advice_post_id", postId)
         .eq("user_id", reactorUserId)
         .maybeSingle();
       if (existingErr) throw existingErr;
+
+      // Toggle off when the user clicks the same reaction again.
+      if (existingFeedback && String(existingFeedback.reaction) === reaction) {
+        const { error: deleteErr } = await admin
+          .from("advice_feedback")
+          .delete()
+          .eq("advice_post_id", postId)
+          .eq("user_id", reactorUserId);
+        if (deleteErr) throw deleteErr;
+        return toJsonResponse({ ok: true, removed: true });
+      }
 
       const { error: upsertErr } = await admin
         .from("advice_feedback")
@@ -402,7 +413,7 @@ Deno.serve(async (req) => {
         }
       }
 
-      return toJsonResponse({ ok: true });
+      return toJsonResponse({ ok: true, removed: false });
     }
 
     if (action === "create_report") {
@@ -943,6 +954,192 @@ Deno.serve(async (req) => {
         flags: result.flags,
         summary: result.summary,
       });
+    }
+
+    if (action === "add_comment") {
+      const postId = String(body?.postId ?? "").trim();
+      const commentBody = String(body?.body ?? "").trim();
+      const parentCommentId = body?.parentCommentId ? String(body.parentCommentId).trim() : null;
+      if (!postId) return toJsonResponse({ error: "postId is required" }, 400);
+      if (commentBody.length < 1 || commentBody.length > 800) {
+        return toJsonResponse({ error: "Comment should be 1-800 characters." }, 400);
+      }
+
+      const commenterUserId = String(authData.user.id);
+
+      const { data: post, error: postErr } = await admin
+        .from("advice_posts")
+        .select("id, title, slug, author_user_id")
+        .eq("id", postId)
+        .eq("status", "approved")
+        .maybeSingle();
+      if (postErr) throw postErr;
+      if (!post) return toJsonResponse({ error: "Post not found" }, 404);
+
+      // Validate parent comment if replying
+      let parentAuthorUserId: string | null = null;
+      if (parentCommentId) {
+        const { data: parentComment } = await admin
+          .from("advice_comments")
+          .select("id, author_user_id, advice_post_id")
+          .eq("id", parentCommentId)
+          .maybeSingle();
+        if (!parentComment || String(parentComment.advice_post_id) !== postId) {
+          return toJsonResponse({ error: "Invalid parent comment" }, 400);
+        }
+        parentAuthorUserId = String(parentComment.author_user_id);
+      }
+
+      const insertPayload: Record<string, unknown> = {
+        advice_post_id: postId,
+        author_user_id: commenterUserId,
+        body: commentBody,
+      };
+      if (parentCommentId) insertPayload.parent_comment_id = parentCommentId;
+
+      const { data: comment, error: insertErr } = await admin
+        .from("advice_comments")
+        .insert(insertPayload)
+        .select("id, advice_post_id, author_user_id, body, created_at, parent_comment_id")
+        .single();
+      if (insertErr) throw insertErr;
+
+      const postRef = String(post.slug ?? post.id);
+      const postTitle = String(post.title ?? "Untitled");
+      const authorUserId = String(post.author_user_id ?? "");
+
+      if (parentCommentId && parentAuthorUserId) {
+        // Reply: notify the parent comment's author
+        if (parentAuthorUserId !== commenterUserId) {
+          const parentAuthorEmail = await getUserEmailById(admin, parentAuthorUserId);
+          if (parentAuthorEmail) {
+            await sendEmailViaResend(parentAuthorEmail, `Someone replied to your comment`, [
+              "Someone replied to your comment on an advice post.",
+              "",
+              `Post: ${postTitle}`,
+              `Link: ${postUrl(postRef)}`,
+              "",
+              "RealTalk",
+            ].join("\n"));
+          }
+        }
+      } else {
+        // Top-level comment: notify post author
+        if (authorUserId && authorUserId !== commenterUserId) {
+          const authorEmail = await getUserEmailById(admin, authorUserId);
+          if (authorEmail) {
+            await sendEmailViaResend(authorEmail, `New comment on your advice post`, [
+              "Someone commented on your advice post.",
+              "",
+              `Post: ${postTitle}`,
+              `Link: ${postUrl(postRef)}`,
+              "",
+              "RealTalk",
+            ].join("\n"));
+          }
+        }
+      }
+
+      return toJsonResponse({ ok: true, comment });
+    }
+
+    if (action === "react_comment") {
+      const commentId = String(body?.commentId ?? "").trim();
+      if (!commentId) return toJsonResponse({ error: "commentId is required" }, 400);
+
+      const reactorUserId = String(authData.user.id);
+
+      const { data: comment, error: commentErr } = await admin
+        .from("advice_comments")
+        .select("id, advice_post_id")
+        .eq("id", commentId)
+        .maybeSingle();
+      if (commentErr) throw commentErr;
+      if (!comment) return toJsonResponse({ error: "Comment not found" }, 404);
+
+      const { data: existing } = await admin
+        .from("advice_comment_reactions")
+        .select("id")
+        .eq("comment_id", commentId)
+        .eq("user_id", reactorUserId)
+        .maybeSingle();
+
+      if (existing) {
+        const { error: deleteErr } = await admin
+          .from("advice_comment_reactions")
+          .delete()
+          .eq("comment_id", commentId)
+          .eq("user_id", reactorUserId);
+        if (deleteErr) throw deleteErr;
+        return toJsonResponse({ ok: true, removed: true });
+      } else {
+        const { error: insertErr } = await admin
+          .from("advice_comment_reactions")
+          .insert({ comment_id: commentId, user_id: reactorUserId });
+        if (insertErr) throw insertErr;
+        return toJsonResponse({ ok: true, removed: false });
+      }
+    }
+
+    if (action === "report_comment") {
+      const commentId = String(body?.commentId ?? "").trim();
+      const reason = String(body?.reason ?? "Inappropriate or offensive").trim().slice(0, 120);
+      const details = String(body?.details ?? "").trim().slice(0, 1000);
+      if (!commentId) return toJsonResponse({ error: "commentId is required" }, 400);
+
+      const reporterUserId = String(authData.user.id);
+      const reporterEmail = String(authData.user.email ?? "").trim();
+
+      const { data: comment, error: commentErr } = await admin
+        .from("advice_comments")
+        .select("id, body, author_user_id, advice_post_id")
+        .eq("id", commentId)
+        .maybeSingle();
+      if (commentErr) throw commentErr;
+      if (!comment) return toJsonResponse({ error: "Comment not found" }, 404);
+
+      const { data: post } = await admin
+        .from("advice_posts")
+        .select("id, title, slug")
+        .eq("id", String(comment.advice_post_id))
+        .maybeSingle();
+
+      const postRef = String(post?.slug ?? post?.id ?? comment.advice_post_id);
+      const publicUrl = postUrl(postRef);
+      const postTitle = String(post?.title ?? "Untitled");
+      const commentExcerpt = String(comment.body ?? "").slice(0, 200);
+
+      if (reporterEmail) {
+        await sendEmailViaResend(reporterEmail, `Comment report received`, [
+          "Thanks for reporting this comment.",
+          "",
+          `Post: ${postTitle}`,
+          `Link: ${publicUrl}`,
+          `Reason: ${reason}`,
+          "",
+          "Our moderation team will review it shortly.",
+          "",
+          "RealTalk",
+        ].join("\n"));
+      }
+
+      if (adminNotificationRecipients.length > 0) {
+        await sendEmailViaResend(adminNotificationRecipients, `[Comment Report] ${postTitle}`, [
+          "A comment was reported.",
+          "",
+          `Post: ${postTitle}`,
+          `Link: ${publicUrl}`,
+          `Comment: ${commentExcerpt}`,
+          `Reason: ${reason}`,
+          `Details: ${details || "(none)"}`,
+          `Reporter: ${reporterEmail || reporterUserId}`,
+          `Comment id: ${commentId}`,
+          "",
+          "Action: Review and delete the comment if necessary.",
+        ].join("\n"));
+      }
+
+      return toJsonResponse({ ok: true });
     }
 
     if (adminEmails.size === 0) return toJsonResponse({ error: "No admins configured." }, 403);
