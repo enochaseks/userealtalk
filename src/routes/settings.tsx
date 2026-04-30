@@ -44,6 +44,7 @@ const SUBSCRIPTION_FEATURE_LABELS: Record<MeteredFeature, string> = {
   voice_input: "Voice input",
   journal_save: "Journal saves",
   cv_toolkit: "CV Toolkit",
+  advice_clarify: "AI advice clarification",
 };
 
 function SettingsPage() {
@@ -422,7 +423,7 @@ function SettingsPage() {
               <span>Schedule</span>
               <span>{subscriptionSnapshot ? (hasFeatureAccess(subscriptionSnapshot.plan, "schedule") ? "Included" : "Pro / Platinum") : "Loading..."}</span>
             </div>
-            {(["deep_thinking", "plan", "gmail_send", "voice_input", "journal_save", "cv_toolkit"] as MeteredFeature[]).map((feature) => (
+            {(["deep_thinking", "plan", "gmail_send", "voice_input", "journal_save", "cv_toolkit", "advice_clarify"] as MeteredFeature[]).map((feature) => (
               <div key={feature} className="flex items-center justify-between gap-3">
                 <span>{SUBSCRIPTION_FEATURE_LABELS[feature]}</span>
                 <span>{formatUsageSummary(feature)}</span>

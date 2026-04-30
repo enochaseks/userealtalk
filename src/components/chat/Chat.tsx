@@ -402,6 +402,7 @@ const FEATURE_LABELS: Record<MeteredFeature, string> = {
   voice_input: "Voice input",
   journal_save: "Journal saves",
   cv_toolkit: "CV Toolkit",
+  advice_clarify: "AI advice clarification",
 };
 
 const getJournalSaveKey = (messageId: string | null | undefined, content: string) => {

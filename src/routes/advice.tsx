@@ -144,6 +144,11 @@ function AdvicePage() {
   const [reportDetails, setReportDetails] = useState("");
   const [reportSubmitting, setReportSubmitting] = useState(false);
 
+  // AI clarification state
+  const [clarifyPost, setClarifyPost] = useState<AdvicePost | null>(null);
+  const [clarifyText, setClarifyText] = useState("");
+  const [clarifyLoading, setClarifyLoading] = useState(false);
+
   const REPORT_REASONS = [
     "Potentially unsafe or misleading",
     "Inappropriate or offensive content",
@@ -343,6 +348,25 @@ function AdvicePage() {
       toast.success("Link copied to clipboard");
     } catch {
       toast.error("Could not copy link");
+    }
+  };
+
+  const askAIClarification = async (post: AdvicePost) => {
+    setClarifyPost(post);
+    setClarifyText("");
+    setClarifyLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("advice-clarify", {
+        body: { postId: post.id },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(String(data.error));
+      setClarifyText(String(data?.text ?? ""));
+    } catch (e: any) {
+      toast.error(e?.message || "Could not get AI clarification");
+      setClarifyPost(null);
+    } finally {
+      setClarifyLoading(false);
     }
   };
 
@@ -579,6 +603,15 @@ function AdvicePage() {
                   onClick={() => void sharePost(post)}
                 >
                   🔗 Share
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="text-xs px-2 h-7 gap-1"
+                  onClick={() => void askAIClarification(post)}
+                >
+                  ✨ Ask RealTalk
                 </Button>
                 <Button
                   type="button"
@@ -822,6 +855,28 @@ function AdvicePage() {
           Want to submit your own advice or vote on posts? <Link to="/auth" className="text-primary hover:underline">Sign in</Link>.
         </section>
       )}
+
+      {/* AI clarification dialog */}
+      <Dialog open={!!clarifyPost} onOpenChange={(open) => { if (!open) { setClarifyPost(null); setClarifyText(""); } }}>
+        <DialogContent className="max-w-lg flex flex-col max-h-[85vh]">
+          <DialogHeader className="shrink-0">
+            <DialogTitle>RealTalk clarification</DialogTitle>
+            <DialogDescription className="line-clamp-2">{clarifyPost?.title}</DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto py-2 min-h-16">
+            {clarifyLoading ? (
+              <p className="text-sm text-muted-foreground animate-pulse">Thinking…</p>
+            ) : (
+              <p className="text-sm leading-relaxed whitespace-pre-wrap">{clarifyText}</p>
+            )}
+          </div>
+          <DialogFooter className="shrink-0 pt-2">
+            <Button type="button" variant="ghost" onClick={() => { setClarifyPost(null); setClarifyText(""); }}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Report confirmation dialog */}
       <Dialog open={!!reportingPostId} onOpenChange={(open) => { if (!open) { setReportingPostId(null); setReportDetails(""); setReportReason("Potentially unsafe or misleading"); } }}>

@@ -1,7 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 
 export type SubscriptionPlan = "free" | "pro" | "platinum" | "student" | "professional";
-export type MeteredFeature = "deep_thinking" | "plan" | "gmail_send" | "voice_input" | "journal_save" | "cv_toolkit";
+export type MeteredFeature = "deep_thinking" | "plan" | "gmail_send" | "voice_input" | "journal_save" | "cv_toolkit" | "advice_clarify";
 export type AccessFeature = MeteredFeature | "schedule" | "benefits_helper";
 export type UsagePeriodType = "day" | "month";
 
@@ -42,6 +42,7 @@ export const PLAN_CATALOG: PlanCatalogItem[] = [
       "Voice input: up to 20 minutes per month",
       "Journal saves: 10 per month",
       "Plan Mode: 3 per month",
+      "AI advice clarification: 10 per month",
       "Gmail send: 5 per month",
       "Schedule: not included",
       "Conversation Memory: up to 100 messages",
@@ -61,6 +62,7 @@ export const PLAN_CATALOG: PlanCatalogItem[] = [
       "Voice input: up to 1 hour per month",
       "Journal saves: 20 per month",
       "Plan Mode: 15 per month",
+      "AI advice clarification: 50 per month",
       "Gmail send: 25 per month",
       "Conversation Memory: up to 200 messages",
       "Benefits Helper (UC/DWP guidance): included",
@@ -78,6 +80,7 @@ export const PLAN_CATALOG: PlanCatalogItem[] = [
       "Voice input: up to 2 hours per month",
       "Journal saves: 40 per month",
       "Plan Mode: 50 per month",
+      "AI advice clarification: unlimited",
       "Gmail send: 50 per month",
       "Schedule included",
       "Conversation Memory: up to 300 messages",
@@ -96,6 +99,7 @@ export const PLAN_CATALOG: PlanCatalogItem[] = [
       "Voice input: up to 5 hours per month",
       "Journal saves: 120 per month",
       "Plan Mode: unlimited",
+      "AI advice clarification: unlimited",
       "Gmail send: 100 per month",
       "Conversation Memory: up to 500 messages",
       "CV Toolkit: 15 uses per day (all tools including Personal Statement)",
@@ -112,6 +116,7 @@ export const PLAN_CATALOG: PlanCatalogItem[] = [
       "Voice input: up to 10 hours per month",
       "Journal saves: 200 per month",
       "Plan Mode: unlimited",
+      "AI advice clarification: unlimited",
       "Gmail send: 200 per month",
       "Conversation Memory: unlimited",
       "CV Toolkit: 25 uses per day (all tools)",
@@ -129,6 +134,7 @@ const PLAN_LIMITS: Record<SubscriptionPlan, Record<AccessFeature, number | boole
     voice_input: 20 * 60,            // 20 minutes/month in seconds
     journal_save: 10,               // per month
     cv_toolkit: 2,                  // per day
+    advice_clarify: 10,             // per month
   },
   pro: {
     schedule: true,
@@ -139,6 +145,7 @@ const PLAN_LIMITS: Record<SubscriptionPlan, Record<AccessFeature, number | boole
     voice_input: 1 * 60 * 60,      // 1 hour/month in seconds
     journal_save: 20,               // per month
     cv_toolkit: 5,                  // per day
+    advice_clarify: 50,             // per month
   },
   platinum: {
     schedule: true,
@@ -149,6 +156,7 @@ const PLAN_LIMITS: Record<SubscriptionPlan, Record<AccessFeature, number | boole
     voice_input: 2 * 60 * 60,      // 2 hours/month in seconds
     journal_save: 40,               // per month
     cv_toolkit: 8,                  // per day
+    advice_clarify: null,           // unlimited
   },
   student: {
     schedule: true,
@@ -159,6 +167,7 @@ const PLAN_LIMITS: Record<SubscriptionPlan, Record<AccessFeature, number | boole
     voice_input: 5 * 60 * 60,      // 5 hours/month in seconds (student)
     journal_save: 120,              // per month
     cv_toolkit: 15,                 // per day
+    advice_clarify: null,           // unlimited
   },
   professional: {
     schedule: true,
@@ -169,6 +178,7 @@ const PLAN_LIMITS: Record<SubscriptionPlan, Record<AccessFeature, number | boole
     voice_input: 10 * 60 * 60,     // 10 hours/month in seconds (professional)
     journal_save: 200,              // per month (unchanged)
     cv_toolkit: 25,                 // per day
+    advice_clarify: null,           // unlimited
   },
 };
 
@@ -179,6 +189,7 @@ const FEATURE_PERIOD: Record<MeteredFeature, UsagePeriodType> = {
   voice_input: "month",
   journal_save: "month",
   cv_toolkit: "day",
+  advice_clarify: "month",
 };
 
 export const getCurrentPeriodKey = (periodType: UsagePeriodType, now = new Date()): string => {
