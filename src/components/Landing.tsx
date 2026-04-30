@@ -10,6 +10,9 @@ import { useAuth } from "@/lib/auth";
 import {
   QUICK_START_STRUGGLE_OPTIONS,
   QUICK_START_WIN_OPTIONS,
+  isQuickStartDone,
+  loadQuickStartProfile,
+  markQuickStartDone,
   saveQuickStartProfile,
   type QuickStartPayload,
   type QuickStartSupportType,
@@ -100,6 +103,7 @@ export function Landing() {
   const [quickStartStruggle, setQuickStartStruggle] = useState("");
   const [quickStartWin, setQuickStartWin] = useState("");
   const [quickStartSupport, setQuickStartSupport] = useState<QuickStartSupportType>("clarity");
+  const [alreadyOnboarded, setAlreadyOnboarded] = useState(false);
   const [helpIndex, setHelpIndex] = useState(0);
   const [messages, setMessages] = useState<DemoMsg[]>([
     {
@@ -123,6 +127,15 @@ export function Landing() {
     benefits: benefitsRemaining,
   };
   const currentHelpTopic = HELP_TOPICS[helpIndex];
+
+  useEffect(() => {
+    // Synchronous localStorage check first — survives even if DB data is absent
+    if (isQuickStartDone()) { setAlreadyOnboarded(true); return; }
+    if (!user) return;
+    void loadQuickStartProfile(user.id).then(({ payload }) => {
+      if (payload) { markQuickStartDone(); setAlreadyOnboarded(true); }
+    }).catch(() => { /* ignore network errors — button stays visible */ });
+  }, [user?.id]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -291,6 +304,7 @@ export function Landing() {
     };
 
     writeQuickStartPayload(payload);
+    markQuickStartDone();
     trackEvent("quick_start_onboarding_started", { support: quickStartSupport });
     setShowQuickStartDialog(false);
 
@@ -540,6 +554,7 @@ export function Landing() {
           turn what's on your mind into clear plans.
         </p>
         <div className="mt-6 flex items-center justify-center gap-3">
+          {!alreadyOnboarded && (
           <Button
             size="lg"
             variant="outline"
@@ -551,6 +566,7 @@ export function Landing() {
           >
             Quick Start
           </Button>
+          )}
           <Link to="/auth">
             <Button
               size="lg"
@@ -762,6 +778,7 @@ export function Landing() {
           <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
             Or answer three quick questions and RealTalk will tailor your first full session automatically.
           </p>
+          {!alreadyOnboarded && (
           <Button
             type="button"
             variant="outline"
@@ -774,6 +791,7 @@ export function Landing() {
           >
             Start tailored onboarding
           </Button>
+          )}
           <div className="mt-3 flex flex-wrap gap-2">
             {QUICK_STARTS.map((topic) => (
               <button

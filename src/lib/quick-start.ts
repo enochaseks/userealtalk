@@ -9,6 +9,12 @@ export type QuickStartPayload = {
   createdAt: string;
 };
 
+export type QuickStartToolRecommendation = {
+  id: string;
+  label: string;
+  reason: string;
+};
+
 export const QUICK_START_STRUGGLE_OPTIONS = [
   "Overthinking everything",
   "Stress and burnout",
@@ -41,6 +47,16 @@ type QuickStartProfileRow = {
 
 export const QUICK_START_STORAGE_KEY = "realtalk_quick_start_pending";
 const QUICK_START_LEGACY_STORAGE_KEY = "realtalk_quick_start";
+const QUICK_START_DONE_KEY = "realtalk_qs_done";
+
+export const markQuickStartDone = () => {
+  if (typeof window !== "undefined") localStorage.setItem(QUICK_START_DONE_KEY, "1");
+};
+
+export const isQuickStartDone = () => {
+  if (typeof window === "undefined") return false;
+  return localStorage.getItem(QUICK_START_DONE_KEY) === "1";
+};
 
 const SUPPORT_LABELS: Record<QuickStartSupportType, string> = {
   clarity: "clear thinking and perspective",
@@ -118,18 +134,27 @@ export const loadQuickStartProfile = async (userId: string): Promise<{ payload: 
   return { payload, hasPendingApply };
 };
 
-export const saveQuickStartProfile = async (userId: string, payload: QuickStartPayload) => {
+export const saveQuickStartProfile = async (
+  userId: string,
+  payload: QuickStartPayload,
+  options?: { resetPending?: boolean },
+) => {
   const client = supabase as any;
   const now = new Date().toISOString();
-  await client.from("user_memory_profiles").upsert({
+  const update: Record<string, unknown> = {
     user_id: userId,
     quick_start_top_struggle: payload.topStruggle,
     quick_start_weekly_win: payload.weeklyWin,
     quick_start_support_type: payload.supportType,
     quick_start_updated_at: now,
-    quick_start_last_applied_at: null,
     updated_at: now,
-  });
+  };
+
+  if (options?.resetPending) {
+    update.quick_start_last_applied_at = null;
+  }
+
+  await client.from("user_memory_profiles").upsert(update);
 };
 
 export const markQuickStartApplied = async (userId: string) => {
@@ -146,5 +171,46 @@ export const buildQuickStartPrompt = (payload: QuickStartPayload) =>
     `My top struggle right now is: ${payload.topStruggle}.`,
     `One small win I want this week is: ${payload.weeklyWin}.`,
     `The kind of support I need most is: ${SUPPORT_LABELS[payload.supportType]}.`,
+    `Platform tools likely to help: ${getQuickStartToolRecommendations(payload).map((tool) => tool.label).join(", ")}.`,
+    "When relevant, suggest which RealTalk feature to use and why.",
     "Please tailor this first session to that context, help me get clear quickly, and end with the best first step for today.",
   ].join(" ");
+
+export const getQuickStartToolRecommendations = (payload: QuickStartPayload): QuickStartToolRecommendation[] => {
+  const context = `${payload.topStruggle} ${payload.weeklyWin}`.toLowerCase();
+  const recommendations: QuickStartToolRecommendation[] = [];
+
+  const add = (id: string, label: string, reason: string) => {
+    if (!recommendations.some((item) => item.id === id)) {
+      recommendations.push({ id, label, reason });
+    }
+  };
+
+  add("deep-thinking", "Deep Thinking", "Unpack the core issue and reduce mental noise.");
+
+  if (payload.supportType === "plan" || context.includes("plan") || context.includes("stuck") || context.includes("decision")) {
+    add("plan-mode", "Plan Mode", "Turn the situation into actionable next steps.");
+  }
+
+  if (payload.supportType === "encouragement" || context.includes("stress") || context.includes("anxiety") || context.includes("overthinking")) {
+    add("vent-mode", "Vent Mode", "Release pressure first, then decide next moves.");
+  }
+
+  if (payload.supportType === "accountability" || context.includes("follow through") || context.includes("task") || context.includes("week")) {
+    add("schedule", "Schedule", "Set a concrete commitment so the next step happens.");
+  }
+
+  if (context.includes("money") || context.includes("benefit") || context.includes("universal credit")) {
+    add("benefits-helper", "Benefits Helper", "Get structured help for money and benefits issues.");
+  }
+
+  if (context.includes("work") || context.includes("study") || context.includes("career") || context.includes("cv")) {
+    add("cv-toolkit", "CV Toolkit", "Improve applications and career outcomes faster.");
+  }
+
+  if (recommendations.length < 3) {
+    add("advice-library", "Advice Library", "See practical examples from similar situations.");
+  }
+
+  return recommendations.slice(0, 4);
+};

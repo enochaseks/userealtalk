@@ -46,8 +46,10 @@ import {
 import {
   buildQuickStartPrompt,
   clearQuickStartPayload,
+  getQuickStartToolRecommendations,
   loadQuickStartProfile,
   markQuickStartApplied,
+  markQuickStartDone,
   QUICK_START_STRUGGLE_OPTIONS,
   QUICK_START_WIN_OPTIONS,
   readQuickStartPayload,
@@ -55,6 +57,7 @@ import {
   writeQuickStartPayload,
   type QuickStartPayload,
   type QuickStartSupportType,
+  type QuickStartToolRecommendation,
 } from "@/lib/quick-start";
 import logo from "../../assets/logo.png";
 
@@ -484,6 +487,7 @@ export function Chat() {
   const [quickStartStruggle, setQuickStartStruggle] = useState("");
   const [quickStartWin, setQuickStartWin] = useState("");
   const [quickStartSupport, setQuickStartSupport] = useState<QuickStartSupportType>("clarity");
+  const [quickStartTools, setQuickStartTools] = useState<QuickStartToolRecommendation[]>([]);
   const quickStartConsumedRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -513,28 +517,37 @@ export function Chat() {
     if (!user || convId || messages.length > 0) return;
 
     let cancelled = false;
-    const localPayload = readQuickStartPayload();
-
-    if (localPayload) {
-      setQuickStartProfile(localPayload);
-      setQuickStartPending(true);
-      setQuickStartDismissed(false);
-      setQuickStartStruggle(localPayload.topStruggle);
-      setQuickStartWin(localPayload.weeklyWin);
-      setQuickStartSupport(localPayload.supportType);
-      void saveQuickStartProfile(user.id, localPayload);
-      return;
-    }
 
     void (async () => {
       const profile = await loadQuickStartProfile(user.id);
-      if (cancelled || !profile.payload) return;
+      if (cancelled) return;
+
+      const localPayload = readQuickStartPayload();
+      if (localPayload) {
+        const shouldQueueApply = profile.hasPendingApply || !profile.payload;
+        setQuickStartProfile(localPayload);
+        setQuickStartPending(shouldQueueApply);
+        setQuickStartDismissed(!shouldQueueApply);
+        setQuickStartStruggle(localPayload.topStruggle);
+        setQuickStartWin(localPayload.weeklyWin);
+        setQuickStartSupport(localPayload.supportType);
+        setQuickStartTools(getQuickStartToolRecommendations(localPayload));
+        await saveQuickStartProfile(user.id, localPayload, { resetPending: shouldQueueApply });
+        if (!shouldQueueApply) {
+          clearQuickStartPayload();
+        }
+        return;
+      }
+
+      if (!profile.payload) return;
+
       setQuickStartProfile(profile.payload);
       setQuickStartPending(profile.hasPendingApply);
-      setQuickStartDismissed(false);
+      setQuickStartDismissed(!profile.hasPendingApply);
       setQuickStartStruggle(profile.payload.topStruggle);
       setQuickStartWin(profile.payload.weeklyWin);
       setQuickStartSupport(profile.payload.supportType);
+      setQuickStartTools(getQuickStartToolRecommendations(profile.payload));
     })();
 
     return () => {
@@ -550,6 +563,7 @@ export function Chat() {
     quickStartConsumedRef.current = true;
     const timer = window.setTimeout(() => {
       void send(buildQuickStartPrompt(quickStartProfile)).then(async () => {
+        markQuickStartDone();
         clearQuickStartPayload();
         setQuickStartPending(false);
         setQuickStartDismissed(true);
@@ -569,6 +583,7 @@ export function Chat() {
     quickStartConsumedRef.current = true;
     try {
       await send(buildQuickStartPrompt(quickStartProfile));
+      markQuickStartDone();
       clearQuickStartPayload();
       setQuickStartPending(false);
       setQuickStartDismissed(true);
@@ -579,6 +594,7 @@ export function Chat() {
   };
 
   const skipQuickStart = async () => {
+    markQuickStartDone();
     clearQuickStartPayload();
     setQuickStartPending(false);
     setQuickStartDismissed(true);
@@ -604,9 +620,10 @@ export function Chat() {
     setQuickStartProfile(payload);
     setQuickStartPending(true);
     setQuickStartDismissed(false);
+    setQuickStartTools(getQuickStartToolRecommendations(payload));
     setShowQuickStartEditor(false);
     quickStartConsumedRef.current = false;
-    await saveQuickStartProfile(user.id, payload);
+    await saveQuickStartProfile(user.id, payload, { resetPending: true });
   };
 
   const composerDraftKey = user?.id ? `composer:${user.id}:${convId ?? "new"}` : null;
@@ -3547,9 +3564,7 @@ export function Chat() {
                 <div>
                   <p className="font-medium text-foreground">Quick Start ready</p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {quickStartPending
-                      ? "Starting your tailored first session shortly unless you change it."
-                      : "Your saved Quick Start answers are available for this chat."}
+                    Starting your tailored first session shortly unless you change it.
                   </p>
                   <p className="mt-2 text-xs text-muted-foreground">
                     Struggle: {quickStartProfile.topStruggle}
@@ -3557,6 +3572,19 @@ export function Chat() {
                   <p className="mt-1 text-xs text-muted-foreground">
                     This week: {quickStartProfile.weeklyWin}
                   </p>
+                  {quickStartTools.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {quickStartTools.map((tool) => (
+                        <span
+                          key={tool.id}
+                          title={tool.reason}
+                          className="inline-flex items-center rounded-full border border-border/70 bg-background/70 px-2 py-0.5 text-[11px] text-muted-foreground"
+                        >
+                          {tool.label}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   <Button type="button" size="sm" variant="outline" onClick={() => setShowQuickStartEditor(true)}>
@@ -3566,7 +3594,7 @@ export function Chat() {
                     Skip
                   </Button>
                   <Button type="button" size="sm" onClick={() => void startQuickStartSession()} disabled={busy}>
-                    {quickStartPending ? "Start now" : "Use Quick Start"}
+                    Start now
                   </Button>
                 </div>
               </div>
