@@ -24,7 +24,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
@@ -124,8 +123,6 @@ function AdvicePage() {
   const [body, setBody] = useState("");
   const [category, setCategory] = useState<Exclude<(typeof CATEGORIES)[number], "all">>("general");
   const [tagInput, setTagInput] = useState("");
-  const [anonymous, setAnonymous] = useState(true);
-
   // Edit state for own posts
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
@@ -286,7 +283,7 @@ function AdvicePage() {
         .from("advice_posts")
         .insert({
           author_user_id: user.id,
-          is_anonymous: anonymous,
+          is_anonymous: true,
           title: cleanTitle,
           body: cleanBody,
           category,
@@ -321,7 +318,6 @@ function AdvicePage() {
       setBody("");
       setTagInput("");
       setCategory("general");
-      setAnonymous(true);
       setSubmitOpen(false);
       if (moderationStatus === "approved") {
         toast.success("Advice approved and published.");
@@ -743,13 +739,6 @@ function AdvicePage() {
                   placeholder="rent, interview, confidence"
                 />
               </div>
-            </div>
-            <div className="flex items-center justify-between rounded-md border border-border/60 px-3 py-2">
-              <div>
-                <p className="text-sm font-medium">Post anonymously</p>
-                <p className="text-xs text-muted-foreground">Hidden from other users; moderation can still review.</p>
-              </div>
-              <Switch checked={anonymous} onCheckedChange={setAnonymous} />
             </div>
           </div>
           <DialogFooter className="gap-2">

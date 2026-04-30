@@ -436,9 +436,7 @@ Deno.serve(async (req) => {
       const postRef = String(post.slug ?? post.id);
       const publicUrl = postUrl(postRef);
       const postTitle = String(post.title ?? "Untitled");
-      const processAfter = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-
-      // Run AI moderation now on approved posts — store decision for deferred execution
+      // Run AI moderation as advisory context for admins (no automatic enforcement)
       let aiDecision: string | null = null;
       let aiConfidence: number | null = null;
       let aiSummary: string | null = null;
@@ -469,7 +467,6 @@ Deno.serve(async (req) => {
         reason,
         details,
         status: "open",
-        process_after: processAfter,
         ...(aiDecision !== null && {
           ai_decision: aiDecision,
           ai_confidence: aiConfidence,
@@ -483,7 +480,7 @@ Deno.serve(async (req) => {
         .upsert(upsertPayload, { onConflict: "advice_post_id,reporter_user_id" });
       if (upsertErr) throw upsertErr;
 
-      // Email reporter: received, will update in 24h
+      // Email reporter: received, pending manual moderation
       if (reporterEmail) {
         await sendEmailViaResend(reporterEmail, `Report received: ${postTitle}`, [
           "Thanks for reporting this advice post.",
@@ -493,24 +490,26 @@ Deno.serve(async (req) => {
           `Reason: ${reason}`,
           "",
           "What happens next:",
-          "- Our moderation system has reviewed it and will take action within 24 hours.",
-          "- You will get another email once a decision has been made.",
+          "- The post stays live until moderation action is taken.",
+          "- AI moderation may remove clearly violating posts.",
+          "- Otherwise, a moderator will review and decide whether to dismiss the report or remove the post.",
+          "- You may receive another email once a decision is made.",
           "",
           "RealTalk",
         ].join("\n"));
       }
 
-      // Email admin: new report + AI preview (they have 24h to manually override)
+      // Email admin: new report + optional AI advisory summary
       if (adminNotificationRecipients.length > 0) {
         const aiPreview = aiDecision
           ? [
               "",
-              `AI assessment (pending — executes in 24h):`,
+              `AI assessment (advisory only):`,
               `  Decision: ${aiDecision} (confidence: ${((aiConfidence ?? 0) * 100).toFixed(0)}%)`,
               `  Summary: ${aiSummary}`,
               `  Source: ${aiSource}`,
               "",
-              "You can manually approve, reject, or dismiss this report in Advice Admin before 24h to override.",
+              "No automatic action is taken from this assessment. Manual review is required.",
             ].join("\n")
           : "";
 
@@ -524,7 +523,7 @@ Deno.serve(async (req) => {
           `Reporter: ${reporterEmail || reporterUserId}`,
           aiPreview,
           "",
-          "Action: Review in Advice Admin.",
+            "Action: Review in Advice Admin (dismiss report or remove post).",
         ].join("\n"));
       }
 
@@ -541,9 +540,10 @@ Deno.serve(async (req) => {
             `Reason given: ${reason}`,
             "",
             "What this means:",
-            "- Our moderation team will review the post within 24 hours.",
+            "- Your post remains live unless moderation action is taken.",
+            "- AI moderation may remove clearly violating posts.",
             "- No action will be taken without a review.",
-            "- If the post is found to be fine, it will remain live.",
+            "- If the post is found to be fine, it will stay live.",
             "- If your post is removed you will receive a separate email.",
             "",
             "If you believe this report is incorrect, you don't need to do anything — we review all reports carefully.",
@@ -557,8 +557,6 @@ Deno.serve(async (req) => {
     }
 
     if (action === "process_pending_reports") {
-      // Processes reports where the 24h review window has passed and AI decision is stored.
-      // Called automatically when admin loads the advice-admin page.
       const requesterEmail = String(authData.user.email ?? "").toLowerCase();
       if (!adminEmails.has(requesterEmail)) {
         return toJsonResponse({ error: "Forbidden" }, 403);
@@ -566,7 +564,7 @@ Deno.serve(async (req) => {
 
       const { data: pendingReports, error: prErr } = await admin
         .from("advice_reports")
-        .select("id, advice_post_id, reporter_user_id, reason, details, ai_decision, ai_confidence, ai_summary, ai_source")
+        .select("id, advice_post_id, reporter_user_id, reason, ai_decision, ai_confidence, ai_summary")
         .eq("status", "open")
         .not("ai_decision", "is", null)
         .is("ai_processed_at", null)
@@ -578,16 +576,12 @@ Deno.serve(async (req) => {
 
       const HIGH_CONF = 0.75;
       let processed = 0;
+      let removed = 0;
 
       for (const report of reports) {
-        const rPostId = String(report.advice_post_id);
-        const rReporterUserId = String(report.reporter_user_id);
-        const rReason = String(report.reason ?? "");
-        const rDetails = String(report.details ?? "");
         const decision = String(report.ai_decision ?? "review");
         const confidence = Number(report.ai_confidence ?? 0);
-        const summary = String(report.ai_summary ?? "");
-        const source = String(report.ai_source ?? "unknown");
+        const rPostId = String(report.advice_post_id);
 
         const { data: rPost } = await admin
           .from("advice_posts")
@@ -596,40 +590,49 @@ Deno.serve(async (req) => {
           .maybeSingle();
 
         if (!rPost || String(rPost.status) !== "approved") {
-          // Post already handled — mark as processed and skip
-          await admin.from("advice_reports").update({
-            ai_processed_at: new Date().toISOString(),
-          }).eq("id", report.id);
+          await admin
+            .from("advice_reports")
+            .update({ ai_processed_at: new Date().toISOString() })
+            .eq("id", report.id);
           processed++;
           continue;
         }
 
-        const rTitle = String(rPost.title ?? "Untitled");
-        const rPostRef = String(rPost.slug ?? rPost.id);
-        const rPublicUrl = postUrl(rPostRef);
-        const rReporterEmail = await getUserEmailById(admin, rReporterUserId);
-
+        // AI is allowed to remove a post only on high-confidence reject.
+        // Otherwise, keep content live until manual moderator action.
         if (decision === "reject" && confidence >= HIGH_CONF) {
-          await admin.from("advice_posts").update({
-            status: "removed",
-            moderation_notes: `[auto-report-mod] ${summary}`,
-            updated_at: new Date().toISOString(),
-          }).eq("id", rPostId);
+          const summary = String(report.ai_summary ?? "Flagged by AI moderation after report.");
 
-          await admin.from("advice_reports").update({
-            status: "reviewed",
-            ai_processed_at: new Date().toISOString(),
-          }).eq("id", report.id);
+          await admin
+            .from("advice_posts")
+            .update({
+              status: "removed",
+              moderation_notes: `[auto-report-mod] ${summary}`,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", rPostId);
 
-          if (rReporterEmail) {
-            await sendEmailViaResend(rReporterEmail, `Report resolved: ${rTitle}`, [
+          await admin
+            .from("advice_reports")
+            .update({
+              status: "reviewed",
+              ai_processed_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", report.id);
+
+          const postTitle = String(rPost.title ?? "Untitled");
+          const postRef = String(rPost.slug ?? rPost.id);
+          const publicUrl = postUrl(postRef);
+
+          const reporterEmail = await getUserEmailById(admin, String(report.reporter_user_id));
+          if (reporterEmail) {
+            await sendEmailViaResend(reporterEmail, `Report resolved: ${postTitle}`, [
               "Thank you for your report.",
               "",
-              `Post: ${rTitle}`,
-              `Link: ${rPublicUrl}`,
-              `Reason: ${rReason}`,
-              "",
-              "Our moderation system reviewed the content and took action — the post has been removed.",
+              `Post: ${postTitle}`,
+              `Link: ${publicUrl}`,
+              "Outcome: Removed after AI moderation review.",
               "",
               "RealTalk",
             ].join("\n"));
@@ -638,9 +641,9 @@ Deno.serve(async (req) => {
           const authorEmail = await getUserEmailById(admin, String(rPost.author_user_id));
           if (authorEmail) {
             await sendEmailViaResend(authorEmail, `Advice update: post removed after report`, [
-              "Your advice post has been removed following a community report and moderation review.",
+              "Your advice post has been removed after a community report and AI moderation review.",
               "",
-              `Title: ${rTitle}`,
+              `Title: ${postTitle}`,
               `Reason: ${summary}`,
               "",
               "If you believe this is a mistake, please contact support.",
@@ -649,128 +652,13 @@ Deno.serve(async (req) => {
             ].join("\n"));
           }
 
-          if (adminNotificationRecipients.length > 0) {
-            await sendEmailViaResend(adminNotificationRecipients, `[AI Report Mod] Auto-removed: ${rTitle}`, [
-              "AI auto-removed a reported advice post after the 24h review window.",
-              "",
-              `Post: ${rTitle}`,
-              `Link: ${rPublicUrl}`,
-              `Report reason: ${rReason}`,
-              `Details: ${rDetails || "(none)"}`,
-              `Reporter: ${rReporterEmail || rReporterUserId}`,
-              "",
-              `AI decision: ${decision} (confidence: ${(confidence * 100).toFixed(0)}%)`,
-              `AI summary: ${summary}`,
-              `Source: ${source}`,
-            ].join("\n"));
-          }
-        } else if (decision === "approve" && confidence >= HIGH_CONF) {
-          await admin.from("advice_reports").update({
-            status: "dismissed",
-            ai_processed_at: new Date().toISOString(),
-          }).eq("id", report.id);
-
-          if (rReporterEmail) {
-            await sendEmailViaResend(rReporterEmail, `Report update: dismissed — ${rTitle}`, [
-              "Thank you for your report.",
-              "",
-              `Post: ${rTitle}`,
-              `Link: ${rPublicUrl}`,
-              `Reason: ${rReason}`,
-              "",
-              "After reviewing the content, our moderation system found no violation of community guidelines. The report has been dismissed.",
-              "",
-              "RealTalk",
-            ].join("\n"));
-          }
-
-          // Notify author: their post was reviewed and cleared
-          const authorEmailDismissed = await getUserEmailById(admin, String(rPost.author_user_id));
-          if (authorEmailDismissed) {
-            await sendEmailViaResend(authorEmailDismissed, `Your advice post has been cleared`, [
-              "A recent report against one of your advice posts has been reviewed and dismissed.",
-              "",
-              `Post: ${rTitle}`,
-              `Link: ${rPublicUrl}`,
-              "",
-              "Our moderation system found no violation of community guidelines. Your post remains live.",
-              "",
-              "RealTalk",
-            ].join("\n"));
-          }
-
-          if (adminNotificationRecipients.length > 0) {
-            await sendEmailViaResend(adminNotificationRecipients, `[AI Report Mod] Dismissed: ${rTitle}`, [
-              "AI dismissed a report as unfounded after the 24h review window.",
-              "",
-              `Post: ${rTitle}`,
-              `Link: ${rPublicUrl}`,
-              `Report reason: ${rReason}`,
-              `Reporter: ${rReporterEmail || rReporterUserId}`,
-              "",
-              `AI decision: approve (confidence: ${(confidence * 100).toFixed(0)}%)`,
-              `AI summary: ${summary}`,
-              `Source: ${source}`,
-            ].join("\n"));
-          }
-        } else {
-          // Uncertain — escalate to admin for manual review
-          await admin.from("advice_reports").update({
-            ai_processed_at: new Date().toISOString(),
-          }).eq("id", report.id);
-
-          if (rReporterEmail) {
-            await sendEmailViaResend(rReporterEmail, `Report update: under manual review — ${rTitle}`, [
-              "Thank you for your report.",
-              "",
-              `Post: ${rTitle}`,
-              `Link: ${rPublicUrl}`,
-              `Reason: ${rReason}`,
-              "",
-              "Our team is reviewing this manually and will follow up shortly.",
-              "",
-              "RealTalk",
-            ].join("\n"));
-          }
-
-          // Notify author: their post is under manual review
-          const authorEmailEscalated = await getUserEmailById(admin, String(rPost.author_user_id));
-          if (authorEmailEscalated) {
-            await sendEmailViaResend(authorEmailEscalated, `Your advice post is under manual review`, [
-              "A community report against one of your advice posts is being reviewed manually by our team.",
-              "",
-              `Post: ${rTitle}`,
-              `Link: ${rPublicUrl}`,
-              "",
-              "We will contact you once a decision has been made. No action has been taken yet.",
-              "",
-              "RealTalk",
-            ].join("\n"));
-          }
-
-          if (adminNotificationRecipients.length > 0) {
-            await sendEmailViaResend(adminNotificationRecipients, `[AI Escalation] Manual review needed: ${rTitle}`, [
-              "AI could not reach a confident decision on this report after 24h. Manual review required.",
-              "",
-              `Post: ${rTitle}`,
-              `Link: ${rPublicUrl}`,
-              `Report reason: ${rReason}`,
-              `Details: ${rDetails || "(none)"}`,
-              `Reporter: ${rReporterEmail || rReporterUserId}`,
-              "",
-              `AI decision: ${decision} (confidence: ${(confidence * 100).toFixed(0)}%)`,
-              `AI summary: ${summary}`,
-              `Source: ${source}`,
-              "",
-              "Action: Review in Advice Admin.",
-            ].join("\n"));
-          }
+          removed++;
         }
 
         processed++;
       }
 
-      return toJsonResponse({ ok: true, processed });
+      return toJsonResponse({ ok: true, processed, removed, automaticProcessing: true });
     }
 
     if (action === "resubmit_post") {
@@ -1109,6 +997,31 @@ Deno.serve(async (req) => {
       const postTitle = String(post?.title ?? "Untitled");
       const commentExcerpt = String(comment.body ?? "").slice(0, 200);
 
+      // AI moderation for reported comments/replies.
+      // High-confidence reject removes immediately; otherwise content stays live pending manual review.
+      const aiResult = await moderateWithAi({
+        title: `Comment on: ${postTitle}`,
+        body: String(comment.body ?? ""),
+        category: String(post?.id ? "general" : "general"),
+        tags: [],
+      });
+      const aiModeration = aiResult ?? heuristicModeration({
+        title: `Comment on: ${postTitle}`,
+        body: String(comment.body ?? ""),
+        tags: [],
+      });
+      const AI_REMOVE_CONFIDENCE = 0.75;
+      let removedByAi = false;
+
+      if (aiModeration.decision === "reject" && Number(aiModeration.confidence ?? 0) >= AI_REMOVE_CONFIDENCE) {
+        const { error: deleteErr } = await admin
+          .from("advice_comments")
+          .delete()
+          .eq("id", commentId);
+        if (deleteErr) throw deleteErr;
+        removedByAi = true;
+      }
+
       if (reporterEmail) {
         await sendEmailViaResend(reporterEmail, `Comment report received`, [
           "Thanks for reporting this comment.",
@@ -1117,7 +1030,9 @@ Deno.serve(async (req) => {
           `Link: ${publicUrl}`,
           `Reason: ${reason}`,
           "",
-          "Our moderation team will review it shortly.",
+          removedByAi
+            ? "Action taken: this comment was removed after AI moderation review."
+            : "No action has been taken yet. The comment stays live until moderation action.",
           "",
           "RealTalk",
         ].join("\n"));
@@ -1134,12 +1049,37 @@ Deno.serve(async (req) => {
           `Details: ${details || "(none)"}`,
           `Reporter: ${reporterEmail || reporterUserId}`,
           `Comment id: ${commentId}`,
+          `AI decision: ${aiModeration.decision} (${(Number(aiModeration.confidence ?? 0) * 100).toFixed(0)}%)`,
+          `AI summary: ${aiModeration.summary}`,
+          `AI action: ${removedByAi ? "removed" : "no automatic action"}`,
           "",
-          "Action: Review and delete the comment if necessary.",
+          removedByAi
+            ? "Action: Review the report outcome in admin if needed."
+            : "Action: Review and delete the comment manually if necessary.",
         ].join("\n"));
       }
 
-      return toJsonResponse({ ok: true });
+      if (removedByAi) {
+        const commentAuthorId = String(comment.author_user_id ?? "");
+        if (commentAuthorId && commentAuthorId !== reporterUserId) {
+          const commentAuthorEmail = await getUserEmailById(admin, commentAuthorId);
+          if (commentAuthorEmail) {
+            await sendEmailViaResend(commentAuthorEmail, `Your comment was removed`, [
+              "A comment you posted has been removed after a community report and AI moderation review.",
+              "",
+              `Post: ${postTitle}`,
+              `Link: ${publicUrl}`,
+              `Reason: ${aiModeration.summary}`,
+              "",
+              "If you believe this is a mistake, please contact support.",
+              "",
+              "RealTalk",
+            ].join("\n"));
+          }
+        }
+      }
+
+      return toJsonResponse({ ok: true, removed: removedByAi, ai: { decision: aiModeration.decision, confidence: aiModeration.confidence } });
     }
 
     if (adminEmails.size === 0) return toJsonResponse({ error: "No admins configured." }, 403);

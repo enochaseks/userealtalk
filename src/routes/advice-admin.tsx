@@ -129,7 +129,7 @@ function AdviceAdminPage() {
       setIsAuthorizedAdmin(true);
       setAuthCheckComplete(true);
       setAuthFailureReason("");
-      // Process any matured AI report decisions (24h window) — fire-and-forget
+      // Process mature AI report decisions (high-confidence remove only)
       invoke("process_pending_reports").catch(() => {});
     } catch (e: any) {
       const unauthorized = await isUnauthorizedError(e);
