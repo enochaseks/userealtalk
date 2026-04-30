@@ -4,8 +4,17 @@ import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import { ArrowUp, ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { PLAN_CATALOG, STRIPE_BILLING_ENABLED, type SubscriptionPlan } from "@/lib/subscriptions";
 import { useAuth } from "@/lib/auth";
+import {
+  QUICK_START_STRUGGLE_OPTIONS,
+  QUICK_START_WIN_OPTIONS,
+  saveQuickStartProfile,
+  type QuickStartPayload,
+  type QuickStartSupportType,
+  writeQuickStartPayload,
+} from "@/lib/quick-start";
 import logo from "../assets/logo.png";
 
 type DemoMsg = { role: "user" | "assistant"; content: string };
@@ -87,6 +96,10 @@ export function Landing() {
   const [feature, setFeature] = useState<PreviewFeature>("none");
   const [featureUses, setFeatureUses] = useState({ thinking: 0, plan: 0, vent: 0, benefits: 0 });
   const [showFeatureMenu, setShowFeatureMenu] = useState(false);
+  const [showQuickStartDialog, setShowQuickStartDialog] = useState(false);
+  const [quickStartStruggle, setQuickStartStruggle] = useState("");
+  const [quickStartWin, setQuickStartWin] = useState("");
+  const [quickStartSupport, setQuickStartSupport] = useState<QuickStartSupportType>("clarity");
   const [helpIndex, setHelpIndex] = useState(0);
   const [messages, setMessages] = useState<DemoMsg[]>([
     {
@@ -263,6 +276,31 @@ export function Landing() {
     trackEvent("quick_start_selected", { text: item.label, feature: item.feature });
     globalThis.scrollTo({ top: 0, behavior: "smooth" });
     setTimeout(() => inputRef.current?.focus(), 250);
+  };
+
+  const startQuickStart = () => {
+    const topStruggle = quickStartStruggle.trim();
+    const weeklyWin = quickStartWin.trim();
+    if (!topStruggle || !weeklyWin) return;
+
+    const payload: QuickStartPayload = {
+      topStruggle,
+      weeklyWin,
+      supportType: quickStartSupport,
+      createdAt: new Date().toISOString(),
+    };
+
+    writeQuickStartPayload(payload);
+    trackEvent("quick_start_onboarding_started", { support: quickStartSupport });
+    setShowQuickStartDialog(false);
+
+    if (user) {
+      void saveQuickStartProfile(user.id, payload);
+      void navigate({ to: "/" });
+      return;
+    }
+
+    void navigate({ to: "/auth" });
   };
 
   return (
@@ -502,6 +540,17 @@ export function Landing() {
           turn what's on your mind into clear plans.
         </p>
         <div className="mt-6 flex items-center justify-center gap-3">
+          <Button
+            size="lg"
+            variant="outline"
+            className="rounded-full px-7"
+            onClick={() => {
+              setShowQuickStartDialog(true);
+              trackEvent("quick_start_opened", { source: "hero_quick_start" });
+            }}
+          >
+            Quick Start
+          </Button>
           <Link to="/auth">
             <Button
               size="lg"
@@ -710,6 +759,21 @@ export function Landing() {
 
         <div className="mt-4 rounded-2xl border border-border/70 bg-surface/60 backdrop-blur px-4 py-4 text-left">
           <h3 className="text-sm md:text-base font-semibold tracking-tight">Quick starts</h3>
+          <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
+            Or answer three quick questions and RealTalk will tailor your first full session automatically.
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="mt-3 rounded-full"
+            onClick={() => {
+              setShowQuickStartDialog(true);
+              trackEvent("quick_start_opened", { source: "quick_starts_card" });
+            }}
+          >
+            Start tailored onboarding
+          </Button>
           <div className="mt-3 flex flex-wrap gap-2">
             {QUICK_STARTS.map((topic) => (
               <button
@@ -853,6 +917,88 @@ export function Landing() {
         </div>
       </motion.div>
       </section>
+
+      <Dialog open={showQuickStartDialog} onOpenChange={setShowQuickStartDialog}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Quick Start</DialogTitle>
+            <DialogDescription>
+              Answer three short questions and RealTalk will tailor your first session automatically.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-foreground">What&apos;s your top struggle right now?</label>
+              <select
+                value={quickStartStruggle}
+                onChange={(e) => setQuickStartStruggle(e.target.value)}
+                className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+              >
+                <option value="">Select your top struggle</option>
+                {quickStartStruggle && !QUICK_START_STRUGGLE_OPTIONS.includes(quickStartStruggle as (typeof QUICK_START_STRUGGLE_OPTIONS)[number]) && (
+                  <option value={quickStartStruggle}>{quickStartStruggle}</option>
+                )}
+                {QUICK_START_STRUGGLE_OPTIONS.map((option) => (
+                  <option key={option} value={option}>{option}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-foreground">What&apos;s one small win you want this week?</label>
+              <select
+                value={quickStartWin}
+                onChange={(e) => setQuickStartWin(e.target.value)}
+                className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+              >
+                <option value="">Select your small win</option>
+                {quickStartWin && !QUICK_START_WIN_OPTIONS.includes(quickStartWin as (typeof QUICK_START_WIN_OPTIONS)[number]) && (
+                  <option value={quickStartWin}>{quickStartWin}</option>
+                )}
+                {QUICK_START_WIN_OPTIONS.map((option) => (
+                  <option key={option} value={option}>{option}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-foreground">What kind of support do you need most?</p>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {([
+                  { value: "clarity", label: "Clarity", blurb: "Help me think clearly." },
+                  { value: "plan", label: "Plan", blurb: "Help me break it into steps." },
+                  { value: "encouragement", label: "Encouragement", blurb: "Keep it calm and supportive." },
+                  { value: "accountability", label: "Accountability", blurb: "Push me to follow through." },
+                ] as const).map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setQuickStartSupport(option.value)}
+                    className={`rounded-xl border px-3 py-3 text-left transition-colors ${
+                      quickStartSupport === option.value
+                        ? "border-primary bg-primary/10"
+                        : "border-border bg-background hover:border-primary/40"
+                    }`}
+                  >
+                    <div className="text-sm font-medium text-foreground">{option.label}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">{option.blurb}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2">
+              <Button type="button" variant="ghost" onClick={() => setShowQuickStartDialog(false)}>
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={startQuickStart}
+                disabled={!quickStartStruggle.trim() || !quickStartWin.trim()}
+              >
+                Continue
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
