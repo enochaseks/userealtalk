@@ -1,6 +1,18 @@
-import { Link, createFileRoute } from "@tanstack/react-router";
+import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
+
+type ReactionType = "helpful" | "inspiring" | "practical" | "supportive";
+
+const REACTIONS: { key: ReactionType; emoji: string; label: string }[] = [
+  { key: "helpful", emoji: "👍", label: "Helpful" },
+  { key: "inspiring", emoji: "💡", label: "Inspiring" },
+  { key: "practical", emoji: "🛠️", label: "Practical" },
+  { key: "supportive", emoji: "❤️", label: "Supportive" },
+];
 
 type AdvicePost = {
   id: string;
@@ -9,6 +21,9 @@ type AdvicePost = {
   category: string;
   tags: string[];
   helpful_count: number;
+  inspiring_count: number;
+  practical_count: number;
+  supportive_count: number;
   created_at: string;
   slug: string;
 };
@@ -33,6 +48,8 @@ export const Route = createFileRoute("/advice/$slug")({
 
 function AdviceDetailPage() {
   const { slug } = Route.useParams();
+  const navigate = useNavigate();
+  const { user } = useAuth();
   const [post, setPost] = useState<AdvicePost | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -45,17 +62,40 @@ function AdviceDetailPage() {
       setNotFound(false);
       try {
         const client = supabase as any;
-        const { data, error } = await client
-          .from("advice_posts")
-          .select("id, title, body, category, tags, helpful_count, created_at, slug")
-          .eq("slug", slug)
-          .eq("status", "approved")
-          .maybeSingle();
+
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(slug);
+
+        let data: AdvicePost | null = null;
+        let error: any = null;
+
+        if (isUuid) {
+          const res = await client
+            .from("advice_posts")
+            .select("id, title, body, category, tags, helpful_count, inspiring_count, practical_count, supportive_count, created_at, slug")
+            .eq("id", slug)
+            .eq("status", "approved")
+            .maybeSingle();
+          data = (res.data as AdvicePost | null) ?? null;
+          error = res.error;
+        } else {
+          const res = await client
+            .from("advice_posts")
+            .select("id, title, body, category, tags, helpful_count, inspiring_count, practical_count, supportive_count, created_at, slug")
+            .eq("slug", slug)
+            .eq("status", "approved")
+            .maybeSingle();
+          data = (res.data as AdvicePost | null) ?? null;
+          error = res.error;
+        }
 
         if (error) throw error;
         if (!data) {
           if (!cancelled) setNotFound(true);
           return;
+        }
+
+        if (isUuid && data.slug && data.slug !== slug) {
+          void navigate({ to: "/advice/$slug", params: { slug: data.slug }, replace: true });
         }
 
         if (!cancelled) {
@@ -73,7 +113,48 @@ function AdviceDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [slug]);
+  }, [slug, navigate]);
+
+  const markReaction = async (reaction: ReactionType) => {
+    if (!user) { toast("Sign in to react to advice."); return; }
+    if (!post) return;
+    try {
+      const client = supabase as any;
+      const { error } = await client.from("advice_feedback").upsert(
+        { advice_post_id: post.id, user_id: user.id, reaction, is_helpful: reaction === "helpful" },
+        { onConflict: "advice_post_id,user_id" },
+      );
+      if (error) throw error;
+      toast.success("Thanks for your reaction.");
+      // Optimistically update local counts
+      setPost((prev) => {
+        if (!prev) return prev;
+        const updated = { ...prev };
+        for (const r of ["helpful", "inspiring", "practical", "supportive"] as ReactionType[]) {
+          (updated as any)[`${r}_count`] = (prev as any)[`${r}_count`] as number;
+        }
+        (updated as any)[`${reaction}_count`] = ((prev as any)[`${reaction}_count`] as number) + 1;
+        return updated;
+      });
+    } catch (e: any) {
+      toast.error(e?.message || "Could not save reaction");
+    }
+  };
+
+  const sharePost = async () => {
+    if (!post) return;
+    const url = `https://userealtalk.co.uk/advice/${post.slug || post.id}`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: post.title, text: post.body.slice(0, 120), url });
+      } else {
+        await navigator.clipboard.writeText(url);
+        toast.success("Link copied to clipboard");
+      }
+    } catch {
+      // user cancelled
+    }
+  };
 
   const structuredData = useMemo(() => {
     if (!post) return "";
@@ -128,7 +209,8 @@ function AdviceDetailPage() {
       <header className="space-y-2">
         <h1 className="font-serif text-3xl tracking-tight">{post.title}</h1>
         <p className="text-xs text-muted-foreground">
-          {post.category} • {new Date(post.created_at).toLocaleDateString("en-GB")} • {post.helpful_count} helpful
+          {post.category} • {new Date(post.created_at).toLocaleDateString("en-GB")} •{" "}
+          {post.helpful_count + post.inspiring_count + post.practical_count + post.supportive_count} reactions
         </p>
       </header>
 
@@ -145,6 +227,35 @@ function AdviceDetailPage() {
           ))}
         </div>
       )}
+
+      <div className="flex flex-wrap items-center gap-1.5">
+        {REACTIONS.map(({ key, emoji, label }) => {
+          const count = (post as any)[`${key}_count`] as number;
+          return (
+            <Button
+              key={key}
+              type="button"
+              size="sm"
+              variant="outline"
+              className="text-xs px-2 h-7 gap-1"
+              title={label}
+              onClick={() => void markReaction(key)}
+            >
+              <span>{emoji}</span>
+              {count > 0 && <span>{count}</span>}
+            </Button>
+          );
+        })}
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="text-xs px-2 h-7"
+          onClick={() => void sharePost()}
+        >
+          🔗 Share
+        </Button>
+      </div>
     </article>
   );
 }

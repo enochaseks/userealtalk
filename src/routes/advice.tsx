@@ -1,6 +1,6 @@
-import { Link, createFileRoute } from "@tanstack/react-router";
+import { Link, Outlet, createFileRoute, useRouterState } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { Trash2 } from "lucide-react";
+import { Trash2, Plus } from "lucide-react";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -13,6 +13,14 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -65,6 +73,8 @@ function clearNotif(uid: string) {
   }
 }
 
+type ReactionType = "helpful" | "inspiring" | "practical" | "supportive";
+
 type AdvicePost = {
   id: string;
   title: string;
@@ -72,12 +82,22 @@ type AdvicePost = {
   category: string;
   tags: string[];
   helpful_count: number;
+  inspiring_count: number;
+  practical_count: number;
+  supportive_count: number;
   report_count: number;
   status: "pending" | "approved" | "rejected" | "removed";
   created_at: string;
   is_anonymous: boolean;
   slug?: string;
 };
+
+const REACTIONS: { key: ReactionType; emoji: string; label: string }[] = [
+  { key: "helpful", emoji: "👍", label: "Helpful" },
+  { key: "inspiring", emoji: "💡", label: "Inspiring" },
+  { key: "practical", emoji: "🛠️", label: "Practical" },
+  { key: "supportive", emoji: "❤️", label: "Supportive" },
+];
 
 const CATEGORIES = ["all", "general", "benefits", "money", "mental-health", "work", "relationships"] as const;
 
@@ -88,6 +108,7 @@ function excerpt(text: string, maxChars = 220) {
 }
 
 function AdvicePage() {
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { user } = useAuth();
 
   const [posts, setPosts] = useState<AdvicePost[]>([]);
@@ -114,6 +135,23 @@ function AdvicePage() {
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [deletingPostId, setDeletingPostId] = useState<string | null>(null);
 
+  // Submit dialog state
+  const [submitOpen, setSubmitOpen] = useState(false);
+
+  // Report dialog state
+  const [reportingPostId, setReportingPostId] = useState<string | null>(null);
+  const [reportReason, setReportReason] = useState("Potentially unsafe or misleading");
+  const [reportDetails, setReportDetails] = useState("");
+  const [reportSubmitting, setReportSubmitting] = useState(false);
+
+  const REPORT_REASONS = [
+    "Potentially unsafe or misleading",
+    "Inappropriate or offensive content",
+    "Spam or self-promotion",
+    "Contains personal information",
+    "Other",
+  ] as const;
+
   const parsedTags = useMemo(() => {
     return tagInput
       .split(",")
@@ -128,7 +166,7 @@ function AdvicePage() {
       const client = supabase as any;
       let query = client
         .from("advice_posts")
-        .select("id, title, body, category, tags, helpful_count, report_count, status, created_at, is_anonymous, slug")
+        .select("id, title, body, category, tags, helpful_count, inspiring_count, practical_count, supportive_count, report_count, status, created_at, is_anonymous, slug")
         .eq("status", "approved")
         .order("helpful_count", { ascending: false })
         .order("created_at", { ascending: false })
@@ -155,7 +193,7 @@ function AdvicePage() {
 
       const { data: mineData, error: mineError } = await client
         .from("advice_posts")
-        .select("id, title, body, category, tags, helpful_count, report_count, status, moderation_notes, created_at, is_anonymous, slug")
+        .select("id, title, body, category, tags, helpful_count, inspiring_count, practical_count, supportive_count, report_count, status, moderation_notes, created_at, is_anonymous, slug")
         .eq("author_user_id", user.id)
         .order("created_at", { ascending: false })
         .limit(20);
@@ -258,6 +296,7 @@ function AdvicePage() {
       setTagInput("");
       setCategory("general");
       setAnonymous(true);
+      setSubmitOpen(false);
       if (moderationStatus === "approved") {
         toast.success("Advice approved and published.");
       } else if (moderationStatus === "rejected") {
@@ -273,9 +312,9 @@ function AdvicePage() {
     }
   };
 
-  const markHelpful = async (postId: string) => {
+  const markReaction = async (postId: string, reaction: ReactionType) => {
     if (!user) {
-      toast("Sign in to mark advice as helpful.");
+      toast("Sign in to react to advice.");
       return;
     }
     try {
@@ -284,40 +323,56 @@ function AdvicePage() {
         {
           advice_post_id: postId,
           user_id: user.id,
-          is_helpful: true,
+          reaction,
+          is_helpful: reaction === "helpful",
         },
         { onConflict: "advice_post_id,user_id" },
       );
       if (error) throw error;
-      toast.success("Thanks for the feedback.");
+      toast.success("Thanks for your reaction.");
       await loadAdvice();
     } catch (e: any) {
-      toast.error(e?.message || "Could not save feedback");
+      toast.error(e?.message || "Could not save reaction");
     }
   };
 
-  const reportPost = async (postId: string) => {
-    if (!user) {
-      toast("Sign in to report advice.");
-      return;
-    }
+  const sharePost = async (post: AdvicePost) => {
+    const url = `https://userealtalk.co.uk/advice/${post.slug || post.id}`;
     try {
-      const client = supabase as any;
-      const { error } = await client.from("advice_reports").upsert(
-        {
-          advice_post_id: postId,
-          reporter_user_id: user.id,
-          reason: "Potentially unsafe or misleading",
-          details: "Flagged by user from advice library.",
-          status: "open",
+      if (navigator.share) {
+        await navigator.share({ title: post.title, text: excerpt(post.body, 120), url });
+      } else {
+        await navigator.clipboard.writeText(url);
+        toast.success("Link copied to clipboard");
+      }
+    } catch {
+      // user cancelled share
+    }
+  };
+
+  const submitReport = async () => {
+    if (!reportingPostId) return;
+    setReportSubmitting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("advice-admin", {
+        body: {
+          action: "create_report",
+          postId: reportingPostId,
+          reason: reportReason,
+          details: reportDetails.trim() || "Flagged by user from advice library.",
         },
-        { onConflict: "advice_post_id,reporter_user_id" },
-      );
+      });
       if (error) throw error;
+      if (data?.error) throw new Error(String(data.error));
       toast.success("Thanks, we will review this advice.");
+      setReportingPostId(null);
+      setReportDetails("");
+      setReportReason("Potentially unsafe or misleading");
       await loadAdvice();
     } catch (e: any) {
       toast.error(e?.message || "Could not submit report");
+    } finally {
+      setReportSubmitting(false);
     }
   };
 
@@ -387,25 +442,18 @@ function AdvicePage() {
 
     setEditSubmitting(true);
     try {
-      const client = supabase as any;
-      const { data: updatedPost, error } = await client
-        .from("advice_posts")
-        .update({
+      const { data, error } = await supabase.functions.invoke("advice-admin", {
+        body: {
+          action: "resubmit_post",
+          postId: editingPostId,
           title: cleanTitle,
           body: cleanBody,
           category: editCategory,
           tags: editedTags,
-          status: "pending",
-          moderation_notes: "",
-        })
-        .eq("id", editingPostId)
-        .eq("author_user_id", user.id)
-        .select("id")
-        .maybeSingle();
+        },
+      });
       if (error) throw error;
-      if (!updatedPost) {
-        throw new Error("Could not resubmit this post. It may no longer be editable.");
-      }
+      if (data?.error) throw new Error(String(data.error));
       toast.success("Resubmitted for review.");
       cancelEdit();
       await loadAdvice();
@@ -416,13 +464,33 @@ function AdvicePage() {
     }
   };
 
+  const isDetailView = /^\/advice\/[^/]+$/.test(pathname);
+  if (isDetailView) {
+    return <Outlet />;
+  }
+
   return (
     <div className="flex-1 max-w-3xl w-full mx-auto px-5 py-8 space-y-6">
       <section className="rounded-xl border border-border bg-surface/60 p-5">
-        <h1 className="font-serif text-3xl tracking-tight">Advice Library</h1>
-        <p className="text-sm text-muted-foreground mt-2">
-          Read practical community advice. Open any post for a shareable page that can be indexed by search engines.
-        </p>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h1 className="font-serif text-3xl tracking-tight">Advice Library</h1>
+            <p className="text-sm text-muted-foreground mt-2">
+              Read practical community advice. Open any post for a shareable page that can be indexed by search engines.
+            </p>
+          </div>
+          {user && (
+            <Button
+              type="button"
+              size="sm"
+              className="shrink-0 mt-1 gap-1.5"
+              onClick={() => setSubmitOpen(true)}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Share advice
+            </Button>
+          )}
+        </div>
         <div className="mt-4 flex flex-wrap gap-2">
           {CATEGORIES.map((option) => (
             <Button
@@ -463,7 +531,7 @@ function AdvicePage() {
                   </p>
                 </div>
                 <span className="text-[11px] px-2 py-1 rounded-full border border-border/60 text-muted-foreground shrink-0">
-                  {post.helpful_count} helpful
+                  {post.helpful_count + post.inspiring_count + post.practical_count + post.supportive_count} reactions
                 </span>
               </div>
 
@@ -489,11 +557,45 @@ function AdvicePage() {
                 </div>
               )}
 
-              <div className="flex items-center gap-2">
-                <Button type="button" size="sm" variant="outline" onClick={() => void markHelpful(post.id)}>
-                  Helpful
+              <div className="flex flex-wrap items-center gap-1.5">
+                {REACTIONS.map(({ key, emoji, label }) => {
+                  const count = post[`${key}_count` as keyof AdvicePost] as number;
+                  return (
+                    <Button
+                      key={key}
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="text-xs px-2 h-7 gap-1"
+                      title={label}
+                      onClick={() => void markReaction(post.id, key)}
+                    >
+                      <span>{emoji}</span>
+                      {count > 0 && <span>{count}</span>}
+                    </Button>
+                  );
+                })}
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="text-xs px-2 h-7"
+                  onClick={() => void sharePost(post)}
+                >
+                  🔗 Share
                 </Button>
-                <Button type="button" size="sm" variant="ghost" onClick={() => void reportPost(post.id)}>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="text-xs px-2 h-7 text-muted-foreground"
+                  onClick={() => {
+                    if (!user) { toast("Sign in to report advice."); return; }
+                    setReportReason("Potentially unsafe or misleading");
+                    setReportDetails("");
+                    setReportingPostId(post.id);
+                  }}
+                >
                   Report
                 </Button>
               </div>
@@ -502,17 +604,17 @@ function AdvicePage() {
         )}
       </section>
 
-      {user ? (
-        <>
-          <section className="rounded-xl border border-border bg-surface/60 p-5 space-y-4">
-            <div>
-              <h2 className="text-base font-semibold">Share your advice</h2>
-              <p className="text-xs text-muted-foreground mt-1">
-                Keep it practical and safe. Do not include names, addresses, claim IDs, emails, or phone numbers.
-              </p>
-            </div>
-
-            <div className="space-y-2">
+      {/* Share advice dialog */}
+      <Dialog open={submitOpen} onOpenChange={(open) => { if (!open && !submitting) setSubmitOpen(false); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Share your advice</DialogTitle>
+            <DialogDescription>
+              Keep it practical and safe. Do not include names, addresses, claim IDs, emails, or phone numbers.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
               <Label htmlFor="advice-title">Title</Label>
               <Input
                 id="advice-title"
@@ -522,20 +624,18 @@ function AdvicePage() {
                 placeholder="What advice helped you most?"
               />
             </div>
-
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               <Label htmlFor="advice-body">Advice</Label>
               <Textarea
                 id="advice-body"
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
                 placeholder="Share practical advice in your own words..."
-                className="min-h-32"
+                className="min-h-32 resize-none"
               />
             </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
                 <Label htmlFor="advice-category">Category</Label>
                 <select
                   id="advice-category"
@@ -544,15 +644,12 @@ function AdvicePage() {
                   className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
                 >
                   {CATEGORIES.filter((c) => c !== "all").map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
+                    <option key={option} value={option}>{option}</option>
                   ))}
                 </select>
               </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="advice-tags">Tags (comma-separated)</Label>
+              <div className="space-y-1.5">
+                <Label htmlFor="advice-tags">Tags</Label>
                 <Input
                   id="advice-tags"
                   value={tagInput}
@@ -561,20 +658,27 @@ function AdvicePage() {
                 />
               </div>
             </div>
-
             <div className="flex items-center justify-between rounded-md border border-border/60 px-3 py-2">
               <div>
                 <p className="text-sm font-medium">Post anonymously</p>
-                <p className="text-xs text-muted-foreground">Your identity is hidden from other users, but moderation can still review content.</p>
+                <p className="text-xs text-muted-foreground">Hidden from other users; moderation can still review.</p>
               </div>
               <Switch checked={anonymous} onCheckedChange={setAnonymous} />
             </div>
-
-            <Button type="button" onClick={submitAdvice} disabled={submitting}>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button type="button" variant="ghost" onClick={() => setSubmitOpen(false)} disabled={submitting}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={() => void submitAdvice()} disabled={submitting}>
               {submitting ? "Submitting..." : "Submit for review"}
             </Button>
-          </section>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
+      {user ? (
+        <>
           <section className="space-y-3">
             <h2 className="text-base font-semibold">Your submissions</h2>
             {myPosts.length === 0 ? (
@@ -722,6 +826,61 @@ function AdvicePage() {
           Want to submit your own advice or vote on posts? <Link to="/auth" className="text-primary hover:underline">Sign in</Link>.
         </section>
       )}
+
+      {/* Report confirmation dialog */}
+      <Dialog open={!!reportingPostId} onOpenChange={(open) => { if (!open) { setReportingPostId(null); setReportDetails(""); setReportReason("Potentially unsafe or misleading"); } }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Report this advice?</DialogTitle>
+            <DialogDescription>
+              Let us know why you think this advice should be reviewed. We take all reports seriously.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-1">
+            <div className="space-y-1.5">
+              <Label htmlFor="report-reason">Reason</Label>
+              <select
+                id="report-reason"
+                value={reportReason}
+                onChange={(e) => setReportReason(e.target.value)}
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+              >
+                {REPORT_REASONS.map((r) => (
+                  <option key={r} value={r}>{r}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="report-details">Additional details <span className="text-muted-foreground font-normal">(optional)</span></Label>
+              <Textarea
+                id="report-details"
+                value={reportDetails}
+                onChange={(e) => setReportDetails(e.target.value)}
+                placeholder="Describe the issue..."
+                className="min-h-20 resize-none"
+                maxLength={500}
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => { setReportingPostId(null); setReportDetails(""); setReportReason("Potentially unsafe or misleading"); }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={reportSubmitting}
+              onClick={() => void submitReport()}
+            >
+              {reportSubmitting ? "Submitting…" : "Submit report"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

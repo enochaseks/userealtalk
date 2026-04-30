@@ -506,7 +506,7 @@ const buildAdviceContext = async (
 
   let query = admin
     .from("advice_posts")
-    .select("id, title, body, category, tags, helpful_count, created_at")
+    .select("id, title, body, category, tags, helpful_count, created_at, slug")
     .eq("status", "approved")
     .order("helpful_count", { ascending: false })
     .order("created_at", { ascending: false })
@@ -538,10 +538,12 @@ const buildAdviceContext = async (
     const body = String(post.body || "").replace(/\s+/g, " ").trim();
     const snippet = body.length > 260 ? `${body.slice(0, 257)}...` : body;
     const postCategory = String(post.category || "general");
-    return `${index + 1}. [${postCategory}] ${title} - ${snippet}`;
+    const slugOrId = String(post.slug || post.id || "");
+    const url = slugOrId ? `https://userealtalk.co.uk/advice/${encodeURIComponent(slugOrId)}` : "";
+    return `${index + 1}. [${postCategory}] ${title}${url ? ` — ${url}` : ""} — ${snippet}`;
   });
 
-  return `Approved community advice context (anonymous, moderated):\n${lines.join("\n")}\nUse this as supportive experiential guidance, not as legal/medical authority.`;
+  return `Approved community advice context (anonymous, moderated):\n${lines.join("\n")}\nInstruction: If one of the above posts is genuinely relevant to what the user is dealing with, naturally mention it and include its URL so they can read more. Only reference a post if it truly helps — do not force it or list all posts. Use these as supportive experiential guidance, not as legal/medical authority.`;
 };
 
 const isBusinessMarketingRequest = (text: string): boolean => {
