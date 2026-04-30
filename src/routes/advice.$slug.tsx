@@ -2,6 +2,14 @@ import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -53,6 +61,10 @@ function AdviceDetailPage() {
   const [post, setPost] = useState<AdvicePost | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [userReaction, setUserReaction] = useState<ReactionType | null>(null);
+  const [clarifyOpen, setClarifyOpen] = useState(false);
+  const [clarifyText, setClarifyText] = useState("");
+  const [clarifyLoading, setClarifyLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -100,6 +112,18 @@ function AdviceDetailPage() {
 
         if (!cancelled) {
           setPost(data as AdvicePost);
+
+          if (user) {
+            const { data: feedbackData } = await client
+              .from("advice_feedback")
+              .select("reaction")
+              .eq("advice_post_id", data.id)
+              .eq("user_id", user.id)
+              .maybeSingle();
+            setUserReaction((feedbackData?.reaction as ReactionType | undefined) ?? null);
+          } else {
+            setUserReaction(null);
+          }
         }
       } catch {
         if (!cancelled) setNotFound(true);
@@ -113,31 +137,68 @@ function AdviceDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [slug, navigate]);
+  }, [slug, navigate, user]);
 
   const markReaction = async (reaction: ReactionType) => {
     if (!user) { toast("Sign in to react to advice."); return; }
     if (!post) return;
+
+    const prevReaction = userReaction;
+    if (prevReaction === reaction) return;
+
+    setPost((prev) => {
+      if (!prev) return prev;
+      const updated = { ...prev } as AdvicePost & Record<string, number>;
+
+      updated[`${reaction}_count`] = ((prev[`${reaction}_count` as keyof AdvicePost] as number) || 0) + 1;
+      if (prevReaction) {
+        updated[`${prevReaction}_count`] = Math.max(0, ((prev[`${prevReaction}_count` as keyof AdvicePost] as number) || 0) - 1);
+      }
+      return updated;
+    });
+    setUserReaction(reaction);
+
     try {
-      const client = supabase as any;
-      const { error } = await client.from("advice_feedback").upsert(
-        { advice_post_id: post.id, user_id: user.id, reaction, is_helpful: reaction === "helpful" },
-        { onConflict: "advice_post_id,user_id" },
-      );
-      if (error) throw error;
-      toast.success("Thanks for your reaction.");
-      // Optimistically update local counts
-      setPost((prev) => {
-        if (!prev) return prev;
-        const updated = { ...prev };
-        for (const r of ["helpful", "inspiring", "practical", "supportive"] as ReactionType[]) {
-          (updated as any)[`${r}_count`] = (prev as any)[`${r}_count`] as number;
-        }
-        (updated as any)[`${reaction}_count`] = ((prev as any)[`${reaction}_count`] as number) + 1;
-        return updated;
+      const { data, error } = await supabase.functions.invoke("advice-admin", {
+        body: {
+          action: "react_post",
+          postId: post.id,
+          reaction,
+        },
       });
+      if (error) throw error;
+      if (data?.error) throw new Error(String(data.error));
+      toast.success("Thanks for your reaction.");
     } catch (e: any) {
       toast.error(e?.message || "Could not save reaction");
+      const client = supabase as any;
+      const { data: refreshed } = await client
+        .from("advice_posts")
+        .select("id, title, body, category, tags, helpful_count, inspiring_count, practical_count, supportive_count, created_at, slug")
+        .eq("id", post.id)
+        .maybeSingle();
+      if (refreshed) setPost(refreshed as AdvicePost);
+      setUserReaction(prevReaction ?? null);
+    }
+  };
+
+  const askRealTalkClarification = async () => {
+    if (!post) return;
+    setClarifyOpen(true);
+    setClarifyText("");
+    setClarifyLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("advice-clarify", {
+        body: { postId: post.id },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(String(data.error));
+      setClarifyText(String(data?.text ?? ""));
+    } catch (e: any) {
+      toast.error(e?.message || "Could not get RealTalk clarification");
+      setClarifyOpen(false);
+    } finally {
+      setClarifyLoading(false);
     }
   };
 
@@ -226,19 +287,18 @@ function AdviceDetailPage() {
 
       <div className="flex flex-wrap items-center gap-1.5">
         {REACTIONS.map(({ key, emoji, label }) => {
-          const count = (post as any)[`${key}_count`] as number;
+          const isSelected = userReaction === key;
           return (
             <Button
               key={key}
               type="button"
               size="sm"
-              variant="outline"
-              className="text-xs px-2 h-7 gap-1"
-              title={label}
+              variant={isSelected ? "default" : "outline"}
+              className="text-xs px-2 h-7"
+              title={isSelected ? `Change reaction (currently ${label})` : label}
               onClick={() => void markReaction(key)}
             >
-              <span>{emoji}</span>
-              {count > 0 && <span>{count}</span>}
+              {emoji}
             </Button>
           );
         })}
@@ -251,7 +311,37 @@ function AdviceDetailPage() {
         >
           🔗 Share
         </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="text-xs px-2 h-7 gap-1"
+          onClick={() => void askRealTalkClarification()}
+        >
+          ✨ Ask RealTalk
+        </Button>
       </div>
+
+      <Dialog open={clarifyOpen} onOpenChange={setClarifyOpen}>
+        <DialogContent className="max-w-lg flex flex-col max-h-[85vh]">
+          <DialogHeader className="shrink-0">
+            <DialogTitle>RealTalk clarification</DialogTitle>
+            <DialogDescription className="line-clamp-2">{post.title}</DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto py-2 min-h-16">
+            {clarifyLoading ? (
+              <p className="text-sm text-muted-foreground animate-pulse">Thinking...</p>
+            ) : (
+              <p className="text-sm leading-relaxed whitespace-pre-wrap">{clarifyText}</p>
+            )}
+          </div>
+          <DialogFooter className="shrink-0 pt-2">
+            <Button type="button" variant="ghost" onClick={() => { setClarifyOpen(false); setClarifyText(""); }}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </article>
   );
 }

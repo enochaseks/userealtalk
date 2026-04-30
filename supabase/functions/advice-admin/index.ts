@@ -342,6 +342,69 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const action = String(body?.action ?? "list_pending");
 
+    if (action === "react_post") {
+      const postId = String(body?.postId ?? "").trim();
+      const reaction = String(body?.reaction ?? "").trim() as "helpful" | "inspiring" | "practical" | "supportive";
+      if (!postId) return toJsonResponse({ error: "postId is required" }, 400);
+      if (!["helpful", "inspiring", "practical", "supportive"].includes(reaction)) {
+        return toJsonResponse({ error: "Invalid reaction" }, 400);
+      }
+
+      const reactorUserId = String(authData.user.id);
+
+      const { data: post, error: postErr } = await admin
+        .from("advice_posts")
+        .select("id, title, slug, status, author_user_id")
+        .eq("id", postId)
+        .eq("status", "approved")
+        .maybeSingle();
+      if (postErr) throw postErr;
+      if (!post) return toJsonResponse({ error: "Post not found" }, 404);
+
+      const { data: existingFeedback, error: existingErr } = await admin
+        .from("advice_feedback")
+        .select("id")
+        .eq("advice_post_id", postId)
+        .eq("user_id", reactorUserId)
+        .maybeSingle();
+      if (existingErr) throw existingErr;
+
+      const { error: upsertErr } = await admin
+        .from("advice_feedback")
+        .upsert(
+          {
+            advice_post_id: postId,
+            user_id: reactorUserId,
+            reaction,
+            is_helpful: reaction === "helpful",
+          },
+          { onConflict: "advice_post_id,user_id" },
+        );
+      if (upsertErr) throw upsertErr;
+
+      // Notify the author only for a first-time reaction by this user.
+      const authorUserId = String(post.author_user_id ?? "");
+      if (!existingFeedback && authorUserId && authorUserId !== reactorUserId) {
+        const authorEmail = await getUserEmailById(admin, authorUserId);
+        if (authorEmail) {
+          const postTitle = String(post.title ?? "Untitled");
+          const postRef = String(post.slug ?? post.id);
+          const publicUrl = postUrl(postRef);
+          await sendEmailViaResend(authorEmail, `New reaction on your advice post`, [
+            "Someone reacted to your advice post.",
+            "",
+            `Post: ${postTitle}`,
+            `Reaction: ${reaction}`,
+            `Link: ${publicUrl}`,
+            "",
+            "RealTalk",
+          ].join("\n"));
+        }
+      }
+
+      return toJsonResponse({ ok: true });
+    }
+
     if (action === "create_report") {
       const postId = String(body?.postId ?? "").trim();
       const reason = String(body?.reason ?? "Potentially unsafe or misleading").trim().slice(0, 120);

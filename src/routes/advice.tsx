@@ -144,6 +144,9 @@ function AdvicePage() {
   const [reportDetails, setReportDetails] = useState("");
   const [reportSubmitting, setReportSubmitting] = useState(false);
 
+  // User's existing reactions per post (postId -> reaction)
+  const [userReactions, setUserReactions] = useState<Record<string, ReactionType>>({});
+
   // RealTalk clarification state
   const [clarifyPost, setClarifyPost] = useState<AdvicePost | null>(null);
   const [clarifyText, setClarifyText] = useState("");
@@ -165,8 +168,8 @@ function AdvicePage() {
       .slice(0, 8);
   }, [tagInput]);
 
-  const loadAdvice = async () => {
-    setBusy(true);
+  const loadAdvice = async (silent = false) => {
+    if (!silent) setBusy(true);
     try {
       const client = supabase as any;
       let query = client
@@ -193,7 +196,25 @@ function AdvicePage() {
       if (!user) {
         setMyPosts([]);
         setNewPostIds(new Set());
+        setUserReactions({});
         return;
+      }
+
+      // Fetch current user's reactions for the loaded posts
+      const loadedPostIds = ((data ?? []) as AdvicePost[]).map((p) => p.id);
+      if (loadedPostIds.length > 0) {
+        const { data: fbData } = await (supabase as any)
+          .from("advice_feedback")
+          .select("advice_post_id, reaction")
+          .eq("user_id", user.id)
+          .in("advice_post_id", loadedPostIds);
+        const reactions: Record<string, ReactionType> = {};
+        for (const row of (fbData ?? [])) {
+          reactions[String(row.advice_post_id)] = row.reaction as ReactionType;
+        }
+        setUserReactions(reactions);
+      } else {
+        setUserReactions({});
       }
 
       const { data: mineData, error: mineError } = await client
@@ -231,7 +252,7 @@ function AdvicePage() {
     } catch (e: any) {
       toast.error(e?.message || "Failed to load advice");
     } finally {
-      setBusy(false);
+      if (!silent) setBusy(false);
     }
   };
 
@@ -322,22 +343,43 @@ function AdvicePage() {
       toast("Sign in to react to advice.");
       return;
     }
+    // Optimistic update — new reaction increments total, switching keeps total unchanged.
+    const prevReaction = userReactions[postId];
+    setPosts((prev) =>
+      prev.map((p) => {
+        if (p.id !== postId) return p;
+        if (prevReaction === reaction) {
+          return p;
+        }
+
+        const updated = { ...p } as AdvicePost & Record<string, number>;
+        if (!prevReaction) {
+          updated[`${reaction}_count`] = ((p[`${reaction}_count` as keyof AdvicePost] as number) || 0) + 1;
+          return updated;
+        }
+
+        if (prevReaction !== reaction) {
+          updated[`${reaction}_count`] = ((p[`${reaction}_count` as keyof AdvicePost] as number) || 0) + 1;
+          (updated as any)[`${prevReaction}_count`] = Math.max(0, (p[`${prevReaction}_count` as keyof AdvicePost] as number) - 1);
+        }
+        return updated;
+      })
+    );
+    setUserReactions((prev) => ({ ...prev, [postId]: reaction }));
     try {
-      const client = supabase as any;
-      const { error } = await client.from("advice_feedback").upsert(
-        {
-          advice_post_id: postId,
-          user_id: user.id,
+      const { data, error } = await supabase.functions.invoke("advice-admin", {
+        body: {
+          action: "react_post",
+          postId,
           reaction,
-          is_helpful: reaction === "helpful",
         },
-        { onConflict: "advice_post_id,user_id" },
-      );
+      });
       if (error) throw error;
+      if (data?.error) throw new Error(String(data.error));
       toast.success("Thanks for your reaction.");
-      await loadAdvice();
     } catch (e: any) {
       toast.error(e?.message || "Could not save reaction");
+      await loadAdvice(true); // revert optimistic update on error
     }
   };
 
@@ -534,6 +576,13 @@ function AdvicePage() {
         </div>
       </section>
 
+      {!user && (
+        <section className="rounded-xl border border-border bg-surface/60 p-4 text-sm text-muted-foreground flex items-center justify-between gap-3">
+          <span>Want to share your own advice or react to posts?</span>
+          <Link to="/auth" className="text-primary font-medium hover:underline shrink-0">Sign in</Link>
+        </section>
+      )}
+
       <section className="space-y-3">
         <h2 className="text-base font-semibold">Published advice</h2>
         {busy ? (
@@ -579,19 +628,18 @@ function AdvicePage() {
 
               <div className="flex flex-wrap items-center gap-1.5">
                 {REACTIONS.map(({ key, emoji, label }) => {
-                  const count = post[`${key}_count` as keyof AdvicePost] as number;
+                  const isSelected = userReactions[post.id] === key;
                   return (
                     <Button
                       key={key}
                       type="button"
                       size="sm"
-                      variant="outline"
-                      className="text-xs px-2 h-7 gap-1"
-                      title={label}
+                      variant={isSelected ? "default" : "outline"}
+                      className="text-xs px-2 h-7"
+                      title={isSelected ? `Change reaction (currently ${label})` : label}
                       onClick={() => void markReaction(post.id, key)}
                     >
-                      <span>{emoji}</span>
-                      {count > 0 && <span>{count}</span>}
+                      {emoji}
                     </Button>
                   );
                 })}
