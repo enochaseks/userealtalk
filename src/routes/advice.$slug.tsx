@@ -145,14 +145,10 @@ function AdviceDetailPage() {
     if (!post) return;
     const url = `https://userealtalk.co.uk/advice/${post.slug || post.id}`;
     try {
-      if (navigator.share) {
-        await navigator.share({ title: post.title, text: post.body.slice(0, 120), url });
-      } else {
-        await navigator.clipboard.writeText(url);
-        toast.success("Link copied to clipboard");
-      }
+      await navigator.clipboard.writeText(url);
+      toast.success("Link copied to clipboard");
     } catch {
-      // user cancelled
+      toast.error("Could not copy link");
     }
   };
 

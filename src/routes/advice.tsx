@@ -339,14 +339,10 @@ function AdvicePage() {
   const sharePost = async (post: AdvicePost) => {
     const url = `https://userealtalk.co.uk/advice/${post.slug || post.id}`;
     try {
-      if (navigator.share) {
-        await navigator.share({ title: post.title, text: excerpt(post.body, 120), url });
-      } else {
-        await navigator.clipboard.writeText(url);
-        toast.success("Link copied to clipboard");
-      }
+      await navigator.clipboard.writeText(url);
+      toast.success("Link copied to clipboard");
     } catch {
-      // user cancelled share
+      toast.error("Could not copy link");
     }
   };
 
