@@ -1555,49 +1555,6 @@ const buildWorkersPrompt = (systemText: string, messages: Array<{ role: string; 
   return `${systemText}\n\n${convo}\n\nASSISTANT:`.trim();
 };
 
-const runGeminiFallback = async (
-  apiKey: string | undefined,
-  systemText: string,
-  messages: Array<{ role: string; content: string }>,
-): Promise<string | null> => {
-  if (!apiKey) return null;
-
-  const geminiMessages = messages
-    .filter((m) => m?.content)
-    .map((m) => ({
-      role: m.role === "assistant" ? "model" : "user",
-      parts: [{ text: m.content }],
-    }));
-
-  const ac = new AbortController();
-  const t = setTimeout(() => ac.abort(), 20000);
-  try {
-    const resp = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(apiKey)}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          system_instruction: { parts: [{ text: systemText }] },
-          contents: geminiMessages,
-        }),
-        signal: ac.signal,
-      },
-    );
-
-    if (!resp.ok) return null;
-    const json = await resp.json().catch(() => ({}));
-    const text = Array.isArray(json?.candidates?.[0]?.content?.parts)
-      ? json.candidates[0].content.parts.map((p: any) => String(p?.text ?? "")).join("")
-      : "";
-    return text.trim() || null;
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(t);
-  }
-};
-
 const runWorkersFallback = async (
   apiKey: string | undefined,
   accountId: string | undefined,
@@ -1828,7 +1785,13 @@ const buildAttachmentContext = async (
 
   if (attachments.length === 0) return "";
 
-  const extracted = await Promise.all(attachments.map((attachment) => extractAttachmentText(attachment, mistralApiKey)));
+  // When the model can see images directly, avoid adding a second system prompt
+  // that describes the image from a separate vision/OCR pass. That extra summary can
+  // be wrong and override the real image input. Keep extraction for non-image files only.
+  const nonImageAttachments = attachments.filter((attachment) => normalizeAttachmentKind(attachment) !== "image");
+  if (nonImageAttachments.length === 0) return "";
+
+  const extracted = await Promise.all(nonImageAttachments.map((attachment) => extractAttachmentText(attachment, mistralApiKey)));
   const succeeded = extracted.filter((entry) => !/No readable content|Could not read this file|isn't directly readable|OCR is unavailable|Couldn't decode|extraction failed|request failed/i.test(entry)).length;
   const failed = extracted.length - succeeded;
   return [
@@ -1844,18 +1807,41 @@ Deno.serve(async (req) => {
     const { messages, attachments, beReal, emotionalMode, logicalMode, thinkDeeply, forcePlan, forceBenefits, forceVent, ventAdviceMode, userId, userPlan, totalMessageCount, memoryLimit, userLocation } = await req.json();
     const plan = userPlan ?? "free";
     const MISTRAL_API_KEY = Deno.env.get("MISTRAL_API_KEY");
-    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
-    const ENABLE_GEMINI_FALLBACK = Deno.env.get("ENABLE_GEMINI_FALLBACK") === "true";
     const WORKERS_API_KEY = Deno.env.get("WORKERS_API_KEY");
     const CF_ACCOUNT_ID = Deno.env.get("CF_ACCOUNT_ID") ?? Deno.env.get("CLOUDFLARE_ACCOUNT_ID");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     const aiKey = MISTRAL_API_KEY;
     const aiUrl = "https://api.mistral.ai/v1/chat/completions";
-    const aiModel = "mistral-small-latest";
-    const hasAnyProvider = Boolean(aiKey || (ENABLE_GEMINI_FALLBACK && GEMINI_API_KEY) || (WORKERS_API_KEY && CF_ACCOUNT_ID));
+    const aiModelText = "mistral-small-latest";
+    // Use a lighter vision model by default to reduce rate-limit pressure on image turns.
+    const aiModelVision = Deno.env.get("MISTRAL_VISION_MODEL") || "pixtral-12b-2409";
+
+    const isImageByName = (name: string): boolean => {
+      const lower = String(name || "").toLowerCase();
+      return (
+        lower.endsWith(".jpg") ||
+        lower.endsWith(".jpeg") ||
+        lower.endsWith(".png") ||
+        lower.endsWith(".webp") ||
+        lower.endsWith(".gif") ||
+        lower.endsWith(".heic") ||
+        lower.endsWith(".heif")
+      );
+    };
+
+    // Detect if the current turn contains image attachments — used to pick vision model
+    const hasImageAttachments = Array.isArray(attachments) && attachments.some((a: any) => {
+      const mime = String(a?.mimeType ?? "").toLowerCase();
+      const kind = String(a?.kind ?? "").toLowerCase();
+      const name = String(a?.name ?? "");
+      return kind === "image" || mime.startsWith("image/") || isImageByName(name);
+    });
+
+    const aiModel = hasImageAttachments ? aiModelVision : aiModelText;
+    const hasAnyProvider = Boolean(aiKey || (WORKERS_API_KEY && CF_ACCOUNT_ID));
     if (!hasAnyProvider) {
-      throw new Error("Missing AI provider keys. Set MISTRAL_API_KEY or WORKERS_API_KEY + CF_ACCOUNT_ID (or enable Gemini fallback with ENABLE_GEMINI_FALLBACK=true).");
+      throw new Error("Missing AI provider keys. Set MISTRAL_API_KEY, or WORKERS_API_KEY + CF_ACCOUNT_ID.");
     }
 
     const lastUserMessage = latestUserContent(messages ?? []);
@@ -2156,6 +2142,9 @@ Deno.serve(async (req) => {
       systemMessages.push({ role: "system", content: ATTACHMENT_ANALYSIS_MODE });
       systemMessages.push({ role: "system", content: attachmentContext });
     }
+    if (hasImageAttachments) {
+      systemMessages.push({ role: "system", content: "Image vision mode: The user has shared one or more images in this message. You can see the images directly. Analyse them thoroughly — describe what you see, read all visible text accurately, identify objects, diagrams, documents, or screenshots, and answer any questions the user has about them. Do not say you cannot see images." });
+    }
     if (locationInstruction) {
       systemMessages.push({ role: "system", content: locationInstruction });
     }
@@ -2186,9 +2175,47 @@ Deno.serve(async (req) => {
           await new Promise((resolve) => setTimeout(resolve, totalReadTime));
         }
         
-        // Provider chain: Mistral (primary) -> (optional Gemini fallback) -> Cloudflare Workers AI
+        // Provider chain: Mistral (primary) -> Cloudflare Workers AI
         const aiAbort = new AbortController();
-        const aiTimeout = setTimeout(() => aiAbort.abort(), 25000);
+        const aiTimeout = setTimeout(() => aiAbort.abort(), 30000);
+
+        // Build the outgoing message list.
+        // When images are attached, upgrade the last user message to a multimodal content array
+        // so Pixtral can see the images natively rather than relying solely on OCR text.
+        const buildOutgoingMessages = (): Array<{ role: string; content: unknown }> => {
+          const base = [...(messages ?? [])] as Array<{ role: string; content: unknown }>;
+          if (!hasImageAttachments || !Array.isArray(attachments)) return base;
+
+          // Find the last user message and inject image_url parts alongside its text
+          const lastUserIdx = base.map((m) => m.role).lastIndexOf("user");
+          if (lastUserIdx === -1) return base;
+
+          const imageAttachments = (attachments as Array<any>).filter((a) => {
+            const mime = String(a?.mimeType ?? "").toLowerCase();
+            const kind = String(a?.kind ?? "").toLowerCase();
+            const name = String(a?.name ?? "");
+            return (kind === "image" || mime.startsWith("image/") || isImageByName(name)) && a?.base64;
+          });
+
+          if (imageAttachments.length === 0) return base;
+
+          const existingText = String(base[lastUserIdx].content ?? "");
+          const contentParts: Array<unknown> = [];
+          if (existingText) contentParts.push({ type: "text", text: existingText });
+          for (const img of imageAttachments) {
+            const mime = String(img.mimeType ?? "image/jpeg");
+            contentParts.push({
+              type: "image_url",
+              image_url: `data:${mime};base64,${img.base64}`,
+            });
+          }
+
+          const result = [...base];
+          result[lastUserIdx] = { role: "user", content: contentParts };
+          return result;
+        };
+
+        const outgoingMessages = buildOutgoingMessages();
         try {
           if (!aiKey) throw new Error("MISTRAL_API_KEY not set, skipping to fallback");
           const aiResp = await fetch(aiUrl, {
@@ -2199,7 +2226,7 @@ Deno.serve(async (req) => {
             },
             body: JSON.stringify({
               model: aiModel,
-              messages: [...systemMessages, ...messages],
+              messages: [...systemMessages, ...outgoingMessages],
               stream: true,
             }),
             signal: aiAbort.signal,
@@ -2234,20 +2261,51 @@ Deno.serve(async (req) => {
             .filter(Boolean)
             .join("\n\n");
 
-          if (ENABLE_GEMINI_FALLBACK) {
-            const geminiText = await runGeminiFallback(GEMINI_API_KEY, systemText, messages ?? []);
-            if (geminiText) {
-              sendSse({ choices: [{ delta: { content: geminiText } }] });
-              controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-              return;
+          // Image requests: never fall back to text-only providers (they hallucinate).
+          if (hasImageAttachments) {
+            const isRateLimit = err instanceof Error && /429|rate.limit/i.test(err.message);
+            const imageAttachments = Array.isArray(attachments)
+              ? (attachments as Array<any>).filter((a) => {
+                  const mime = String(a?.mimeType ?? "").toLowerCase();
+                  const kind = String(a?.kind ?? "").toLowerCase();
+                  const name = String(a?.name ?? "");
+                  return kind === "image" || mime.startsWith("image/") || isImageByName(name);
+                })
+              : [];
+            const totalImageBytes = imageAttachments.reduce((sum, a) => sum + Number(a?.sizeBytes ?? 0), 0);
+            const failureType = isRateLimit ? "rate_limited" : "error";
+            const errMsg = err instanceof Error ? err.message : String(err ?? "");
+            console.warn("vision_failure", {
+              provider: "mistral", model: aiModel,
+              userId: String(userId ?? ""), plan,
+              failureType, imageCount: imageAttachments.length, totalImageBytes, error: errMsg,
+            });
+            // Persist to DB for per-user monitoring (fire-and-forget)
+            if (admin && userId) {
+              admin.from("vision_failure_events").insert({
+                user_id: userId,
+                user_plan: plan,
+                provider: "mistral",
+                model: aiModel,
+                failure_type: failureType,
+                image_count: imageAttachments.length,
+                total_bytes: totalImageBytes,
+                error_msg: errMsg.slice(0, 500),
+              }).then(() => {}).catch(() => {});
             }
+            const userMsg = isRateLimit
+              ? "Image analysis is temporarily unavailable due to high demand. Please wait a moment and try again."
+              : "I couldn't analyse that image right now. Please try again in a moment.";
+            sendSse({ choices: [{ delta: { content: userMsg } }] });
+            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+            return;
           }
 
           const workersText = await runWorkersFallback(
             WORKERS_API_KEY,
             CF_ACCOUNT_ID,
             systemText,
-            messages ?? [],
+            outgoingMessages as any ?? [],
           );
           if (workersText) {
             sendSse({ choices: [{ delta: { content: workersText } }] });

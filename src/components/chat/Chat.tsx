@@ -98,10 +98,13 @@ type ChatAttachment = {
   base64: string;
   sizeBytes: number;
   kind: "image" | "pdf" | "text" | "other";
+  filePath?: string;
+  previewUrl?: string;
 };
 
 const MAX_CHAT_ATTACHMENTS = 3;
 const MAX_CHAT_ATTACHMENT_BYTES = 4 * 1024 * 1024;
+const CHAT_ATTACHMENT_BUCKET = "chat-attachments";
 const CHAT_DRAFT_DB_NAME = "realtalk-chat-drafts";
 const CHAT_DRAFT_STORE = "kv";
 const USER_LOCATION_STORAGE_KEY = "realtalk_user_location";
@@ -235,8 +238,24 @@ const chatDraftDelete = async (key: string): Promise<void> => {
   }
 };
 
+const inferMimeTypeFromName = (name: string): string => {
+  const lower = String(name || "").toLowerCase();
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".webp")) return "image/webp";
+  if (lower.endsWith(".gif")) return "image/gif";
+  if (lower.endsWith(".heic")) return "image/heic";
+  if (lower.endsWith(".heif")) return "image/heif";
+  if (lower.endsWith(".pdf")) return "application/pdf";
+  if (lower.endsWith(".txt")) return "text/plain";
+  if (lower.endsWith(".md")) return "text/markdown";
+  if (lower.endsWith(".csv")) return "text/csv";
+  if (lower.endsWith(".json")) return "application/json";
+  return "application/octet-stream";
+};
+
 const inferAttachmentKind = (file: File): ChatAttachment["kind"] => {
-  const mime = (file.type || "").toLowerCase();
+  const mime = ((file.type || inferMimeTypeFromName(file.name)) || "").toLowerCase();
   const name = file.name.toLowerCase();
   if (mime.startsWith("image/")) return "image";
   if (mime === "application/pdf" || name.endsWith(".pdf")) return "pdf";
@@ -266,6 +285,98 @@ const fileToBase64 = (file: File): Promise<string> =>
 
 const attachmentToDataUrl = (attachment: Pick<ChatAttachment, "mimeType" | "base64">): string =>
   `data:${attachment.mimeType};base64,${attachment.base64}`;
+
+const base64ToUint8Array = (base64: string): Uint8Array => {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+};
+
+const sanitizeAttachmentFilename = (value: string): string =>
+  String(value || "file")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 80) || "file";
+
+const getSignedAttachmentPreviewUrl = async (filePath?: string): Promise<string> => {
+  if (!filePath) return "";
+  const { data, error } = await supabase.storage.from(CHAT_ATTACHMENT_BUCKET).createSignedUrl(filePath, 60 * 60);
+  if (error) return "";
+  return data?.signedUrl ?? "";
+};
+
+const uploadAttachmentsForMessage = async (
+  userId: string,
+  messageId: string,
+  attachments: ChatAttachment[],
+): Promise<Map<string, string>> => {
+  const uploadedPaths = new Map<string, string>();
+  if (!attachments.length) return uploadedPaths;
+
+  await Promise.all(
+    attachments.map(async (attachment, idx) => {
+      if (!attachment.base64) return;
+      try {
+        const bytes = base64ToUint8Array(attachment.base64);
+        const safeName = sanitizeAttachmentFilename(attachment.name);
+        const objectPath = `${userId}/${messageId}/${idx}-${Date.now()}-${safeName}`;
+        const { error } = await supabase.storage
+          .from(CHAT_ATTACHMENT_BUCKET)
+          .upload(objectPath, bytes, { contentType: attachment.mimeType, upsert: true });
+        if (!error) uploadedPaths.set(attachment.id, objectPath);
+      } catch {
+        // Keep chat working even if upload/persistence fails.
+      }
+    }),
+  );
+
+  return uploadedPaths;
+};
+
+const normalizeMobileImageFile = async (file: File, options?: { forceImageReencode?: boolean }): Promise<File | null> => {
+  const mime = (file.type || "").toLowerCase();
+  const isHeicLike = mime.startsWith("image/heic") || mime.startsWith("image/heif") || /\.(heic|heif)$/i.test(file.name);
+  const isImage = mime.startsWith("image/") || isHeicLike || /\.(jpe?g|png|gif|webp|bmp|tiff?|svg|avif|ico)$/i.test(file.name);
+  const shouldReencodeImage = Boolean(options?.forceImageReencode) && isImage;
+  if (!isHeicLike && !shouldReencodeImage && !isImage) return file;
+  // For non-HEIC, non-mobile images, only resize if large
+  if (!isHeicLike && !shouldReencodeImage) {
+    if (file.size < 800 * 1024) return file;
+  }
+
+  try {
+    const bitmap = await createImageBitmap(file);
+    const MAX_DIM = 1024;
+    const scale = Math.min(1, MAX_DIM / Math.max(bitmap.width, bitmap.height));
+    // If no resize needed and no re-encode needed, skip canvas entirely
+    if (scale === 1 && !isHeicLike && !shouldReencodeImage) {
+      bitmap.close();
+      return file;
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+
+    const blob = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob((b) => resolve(b), "image/jpeg", 0.78);
+    });
+    bitmap.close();
+    if (!blob) return null;
+
+    const baseName = file.name.replace(/\.[^.]+$/, "") || "photo";
+    return new File([blob], `${baseName}.jpg`, {
+      type: "image/jpeg",
+      lastModified: file.lastModified,
+    });
+  } catch {
+    return null;
+  }
+};
 
 const messageAttachmentCacheKey = (messageId: string) => `message-attachments:${messageId}`;
 
@@ -314,6 +425,7 @@ const appendAttachmentMetaMarker = (content: string, attachments: ChatAttachment
     mimeType: item.mimeType,
     sizeBytes: item.sizeBytes,
     kind: item.kind,
+    filePath: item.filePath,
   }));
   return `${content}\n${ATTACHMENT_META_MARKER}${JSON.stringify(meta)}]`;
 };
@@ -336,6 +448,7 @@ const parseAttachmentMetaFromText = (text: string): {
       mimeType?: string;
       sizeBytes?: number;
       kind?: ChatAttachment["kind"];
+      filePath?: string;
     }>;
 
     const attachmentsMeta = (Array.isArray(parsed) ? parsed : [])
@@ -350,6 +463,7 @@ const parseAttachmentMetaFromText = (text: string): {
           mimeType: String(item.mimeType ?? "application/octet-stream"),
           sizeBytes: Number(item.sizeBytes ?? 0),
           kind,
+          filePath: item.filePath ? String(item.filePath) : undefined,
         } as Omit<ChatAttachment, "base64">;
       })
       .filter((item) => Boolean(item.name));
@@ -913,10 +1027,13 @@ export function Chat() {
               if (Array.isArray(cached) && cached.length > 0) {
                 restoredAttachments = cached;
               } else {
-                restoredAttachments = parsedAttachment.attachmentsMeta.map((item) => ({
-                  ...item,
-                  base64: "",
-                }));
+                restoredAttachments = await Promise.all(
+                  parsedAttachment.attachmentsMeta.map(async (item) => ({
+                    ...item,
+                    base64: "",
+                    previewUrl: await getSignedAttachmentPreviewUrl(item.filePath),
+                  })),
+                );
               }
             }
 
@@ -1914,9 +2031,20 @@ export function Chat() {
       const cid = await ensureConversation(userVisibleText);
       conversationId = cid;
 
+      // Upload attachments first so storage paths are included in the initial DB insert.
+      // This avoids relying on a follow-up message update that can be blocked by RLS.
+      const storageMessageRef = crypto.randomUUID();
+      const uploadedPaths = attachmentsForRequest.length > 0
+        ? await uploadAttachmentsForMessage(user.id, storageMessageRef, attachmentsForRequest)
+        : new Map<string, string>();
+      const persistedAttachments = attachmentsForRequest.map((item) => ({
+        ...item,
+        filePath: uploadedPaths.get(item.id),
+      }));
+
       const persistedUserContentWithAttachmentMeta = appendAttachmentMetaMarker(
         persistedUserContent,
-        attachmentsForRequest,
+        persistedAttachments,
       );
 
       const { data: savedUserMessage } = await supabase
@@ -1931,15 +2059,36 @@ export function Chat() {
         .single();
 
       if (savedUserMessage?.id && attachmentsForRequest.length > 0) {
-        void chatMessageAttachmentSet(savedUserMessage.id, attachmentsForRequest).catch(() => {
+        void chatMessageAttachmentSet(savedUserMessage.id, persistedAttachments).catch(() => {
           // Ignore local cache failures.
         });
+
+        if (uploadedPaths.size === 0 && attachmentsForRequest.length > 0) {
+          toast.warning("Attachment preview persistence failed for this message. Try re-sending this image.");
+        }
+
+        const previewUrlByPath = new Map<string, string>();
+        await Promise.all(
+          Array.from(uploadedPaths.values()).map(async (filePath) => {
+            const signed = await getSignedAttachmentPreviewUrl(filePath);
+            if (signed) previewUrlByPath.set(filePath, signed);
+          }),
+        );
 
         setMessages((prev) => {
           const copy = [...prev];
           for (let i = copy.length - 1; i >= 0; i--) {
             if (copy[i].role === "user" && !copy[i].id && copy[i].content === persistedUserContent) {
-              copy[i] = { ...copy[i], id: savedUserMessage.id };
+              copy[i] = {
+                ...copy[i],
+                id: savedUserMessage.id,
+                attachments: persistedAttachments.map((attachment) => ({
+                  ...attachment,
+                  previewUrl: attachment.filePath
+                    ? (previewUrlByPath.get(attachment.filePath) ?? attachment.previewUrl)
+                    : attachment.previewUrl,
+                })),
+              };
               break;
             }
           }
@@ -3112,23 +3261,29 @@ export function Chat() {
 
     const nextItems: ChatAttachment[] = [];
     for (const file of toProcess) {
-      if (file.size > MAX_CHAT_ATTACHMENT_BYTES) {
-        toast.error(`${file.name} is too large. Max size is 4MB.`);
+      const normalized = await normalizeMobileImageFile(file, { forceImageReencode: isMobile });
+      if (!normalized) {
+        toast.error(`${file.name} could not be processed. Please use JPG or PNG on mobile.`);
+        continue;
+      }
+
+      if (normalized.size > MAX_CHAT_ATTACHMENT_BYTES) {
+        toast.error(`${normalized.name} is too large. Max size is 4MB.`);
         continue;
       }
 
       try {
-        const base64 = await fileToBase64(file);
+        const base64 = await fileToBase64(normalized);
         nextItems.push({
-          id: `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2, 8)}`,
-          name: file.name,
-          mimeType: file.type || "application/octet-stream",
+          id: `${normalized.name}-${normalized.size}-${normalized.lastModified}-${Math.random().toString(36).slice(2, 8)}`,
+          name: normalized.name,
+          mimeType: normalized.type || inferMimeTypeFromName(normalized.name),
           base64,
-          sizeBytes: file.size,
-          kind: inferAttachmentKind(file),
+          sizeBytes: normalized.size,
+          kind: inferAttachmentKind(normalized),
         });
       } catch {
-        toast.error(`Couldn't read ${file.name}.`);
+        toast.error(`Couldn't read ${normalized.name}.`);
       }
     }
 
@@ -3267,7 +3422,9 @@ export function Chat() {
                                 <div className="mt-2 grid grid-cols-1 gap-2">
                                   {m.attachments.map((attachment) => {
                                     const isImage = attachment.kind === "image";
-                                    const href = attachment.base64 ? attachmentToDataUrl(attachment) : "";
+                                    const href = attachment.base64
+                                      ? attachmentToDataUrl(attachment)
+                                      : (attachment.previewUrl ?? "");
                                     const hasPayload = Boolean(href);
                                     const cardContent = (
                                       <>
