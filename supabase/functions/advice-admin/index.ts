@@ -454,6 +454,31 @@ Deno.serve(async (req) => {
         ].join("\n"));
       }
 
+      // Email post author: their post has been reported
+      const authorUserId = String(post.author_user_id ?? "");
+      if (authorUserId && authorUserId !== reporterUserId) {
+        const authorEmail = await getUserEmailById(admin, authorUserId);
+        if (authorEmail) {
+          await sendEmailViaResend(authorEmail, `Your advice post has been reported`, [
+            "One of your advice posts has been flagged for review by a community member.",
+            "",
+            `Post: ${postTitle}`,
+            `Link: ${publicUrl}`,
+            `Reason given: ${reason}`,
+            "",
+            "What this means:",
+            "- Our moderation team will review the post within 24 hours.",
+            "- No action will be taken without a review.",
+            "- If the post is found to be fine, it will remain live.",
+            "- If your post is removed you will receive a separate email.",
+            "",
+            "If you believe this report is incorrect, you don't need to do anything — we review all reports carefully.",
+            "",
+            "RealTalk",
+          ].join("\n"));
+        }
+      }
+
       return toJsonResponse({ ok: true });
     }
 
@@ -585,6 +610,21 @@ Deno.serve(async (req) => {
             ].join("\n"));
           }
 
+          // Notify author: their post was reviewed and cleared
+          const authorEmailDismissed = await getUserEmailById(admin, String(rPost.author_user_id));
+          if (authorEmailDismissed) {
+            await sendEmailViaResend(authorEmailDismissed, `Your advice post has been cleared`, [
+              "A recent report against one of your advice posts has been reviewed and dismissed.",
+              "",
+              `Post: ${rTitle}`,
+              `Link: ${rPublicUrl}`,
+              "",
+              "Our moderation system found no violation of community guidelines. Your post remains live.",
+              "",
+              "RealTalk",
+            ].join("\n"));
+          }
+
           if (adminNotificationRecipients.length > 0) {
             await sendEmailViaResend(adminNotificationRecipients, `[AI Report Mod] Dismissed: ${rTitle}`, [
               "AI dismissed a report as unfounded after the 24h review window.",
@@ -614,6 +654,21 @@ Deno.serve(async (req) => {
               `Reason: ${rReason}`,
               "",
               "Our team is reviewing this manually and will follow up shortly.",
+              "",
+              "RealTalk",
+            ].join("\n"));
+          }
+
+          // Notify author: their post is under manual review
+          const authorEmailEscalated = await getUserEmailById(admin, String(rPost.author_user_id));
+          if (authorEmailEscalated) {
+            await sendEmailViaResend(authorEmailEscalated, `Your advice post is under manual review`, [
+              "A community report against one of your advice posts is being reviewed manually by our team.",
+              "",
+              `Post: ${rTitle}`,
+              `Link: ${rPublicUrl}`,
+              "",
+              "We will contact you once a decision has been made. No action has been taken yet.",
               "",
               "RealTalk",
             ].join("\n"));
