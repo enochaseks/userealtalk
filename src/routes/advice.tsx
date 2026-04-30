@@ -144,7 +144,7 @@ function AdvicePage() {
   const [reportDetails, setReportDetails] = useState("");
   const [reportSubmitting, setReportSubmitting] = useState(false);
 
-  // AI clarification state
+  // RealTalk clarification state
   const [clarifyPost, setClarifyPost] = useState<AdvicePost | null>(null);
   const [clarifyText, setClarifyText] = useState("");
   const [clarifyLoading, setClarifyLoading] = useState(false);
@@ -363,7 +363,7 @@ function AdvicePage() {
       if (data?.error) throw new Error(String(data.error));
       setClarifyText(String(data?.text ?? ""));
     } catch (e: any) {
-      toast.error(e?.message || "Could not get AI clarification");
+      toast.error(e?.message || "Could not get RealTalk clarification");
       setClarifyPost(null);
     } finally {
       setClarifyLoading(false);
@@ -856,7 +856,7 @@ function AdvicePage() {
         </section>
       )}
 
-      {/* AI clarification dialog */}
+      {/* RealTalk clarification dialog */}
       <Dialog open={!!clarifyPost} onOpenChange={(open) => { if (!open) { setClarifyPost(null); setClarifyText(""); } }}>
         <DialogContent className="max-w-lg flex flex-col max-h-[85vh]">
           <DialogHeader className="shrink-0">

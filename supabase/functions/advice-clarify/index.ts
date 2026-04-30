@@ -79,7 +79,7 @@ Deno.serve(async (req: Request) => {
       const used = Number(usageRow?.used_count ?? 0);
       if (used >= limit) {
         return toJsonResponse(
-          { error: `You've used all ${limit} AI clarifications this month on the ${verifiedPlan} plan. Upgrade or come back next month.` },
+          { error: `You've used all ${limit} RealTalk Clarifications this month on the ${verifiedPlan} plan. Upgrade or come back next month.` },
           429,
         );
       }
