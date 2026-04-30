@@ -478,8 +478,7 @@ export function Landing() {
       <section className="px-4 pt-3 pb-7 flex items-start justify-center">
         <motion.div
           initial={{ opacity: 0, y: 12 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, amount: 0.2 }}
+          animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.7, ease: "easeOut" }}
           className="max-w-2xl w-full text-center"
         >
