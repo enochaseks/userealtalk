@@ -1022,6 +1022,29 @@ Deno.serve(async (req) => {
         removedByAi = true;
       }
 
+      const nowIso = new Date().toISOString();
+      const { error: upsertCommentReportErr } = await admin
+        .from("advice_comment_reports")
+        .upsert(
+          {
+            comment_id: commentId,
+            advice_post_id: String(comment.advice_post_id),
+            reporter_user_id: reporterUserId,
+            reason,
+            details,
+            status: removedByAi ? "reviewed" : "open",
+            moderator_notes: removedByAi ? `[auto:report-comment] ${aiModeration.summary}` : "",
+            ai_decision: aiModeration.decision,
+            ai_confidence: aiModeration.confidence,
+            ai_summary: aiModeration.summary,
+            ai_source: aiModeration.source,
+            ai_processed_at: removedByAi ? nowIso : null,
+            updated_at: nowIso,
+          },
+          { onConflict: "comment_id,reporter_user_id" },
+        );
+      if (upsertCommentReportErr) throw upsertCommentReportErr;
+
       if (reporterEmail) {
         await sendEmailViaResend(reporterEmail, `Comment report received`, [
           "Thanks for reporting this comment.",
@@ -1130,6 +1153,39 @@ Deno.serve(async (req) => {
 
       if (error) throw error;
       return toJsonResponse({ reports: data ?? [] });
+    }
+
+    // ── List open comment reports ───────────────────────────────────────────
+    if (action === "list_comment_reports") {
+      const { data, error } = await admin
+        .from("advice_comment_reports")
+        .select(`
+          id,
+          reason,
+          details,
+          status,
+          moderator_notes,
+          ai_decision,
+          ai_confidence,
+          ai_summary,
+          ai_source,
+          created_at,
+          reporter_user_id,
+          comment_id,
+          advice_post_id,
+          advice_comments (
+            id, body, author_user_id, advice_post_id, created_at, parent_comment_id
+          ),
+          advice_posts (
+            id, title, slug, status
+          )
+        `)
+        .eq("status", "open")
+        .order("created_at", { ascending: true })
+        .limit(100);
+
+      if (error) throw error;
+      return toJsonResponse({ commentReports: data ?? [] });
     }
 
     // ── Approve a post ──────────────────────────────────────────────────────
@@ -1278,6 +1334,20 @@ Deno.serve(async (req) => {
       return toJsonResponse({ ok: true });
     }
 
+    // ── Dismiss a comment report ────────────────────────────────────────────
+    if (action === "dismiss_comment_report") {
+      const reportId = String(body?.reportId ?? "").trim();
+      if (!reportId) throw new Error("reportId is required");
+
+      const { error } = await admin
+        .from("advice_comment_reports")
+        .update({ status: "dismissed", updated_at: new Date().toISOString() })
+        .eq("id", reportId);
+      if (error) throw error;
+
+      return toJsonResponse({ ok: true });
+    }
+
     // ── Remove post from a report (mark report reviewed + post removed) ─────
     if (action === "remove_from_report") {
       const reportId = String(body?.reportId ?? "").trim();
@@ -1343,6 +1413,34 @@ Deno.serve(async (req) => {
           .join("\n");
         await sendEmailViaResend(adminNotificationRecipients, subject, bodyText);
       }
+
+      return toJsonResponse({ ok: true });
+    }
+
+    // ── Remove comment from a comment report ────────────────────────────────
+    if (action === "remove_comment_from_report") {
+      const reportId = String(body?.reportId ?? "").trim();
+      const commentId = String(body?.commentId ?? "").trim();
+      const notes = String(body?.notes ?? "").trim();
+      if (!reportId || !commentId) throw new Error("reportId and commentId are required");
+
+      const [{ error: reportErr }, { error: deleteErr }] = await Promise.all([
+        admin
+          .from("advice_comment_reports")
+          .update({
+            status: "reviewed",
+            moderator_notes: notes,
+            ai_processed_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", reportId),
+        admin
+          .from("advice_comments")
+          .delete()
+          .eq("id", commentId),
+      ]);
+      if (reportErr) throw reportErr;
+      if (deleteErr) throw deleteErr;
 
       return toJsonResponse({ ok: true });
     }

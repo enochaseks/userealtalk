@@ -44,6 +44,36 @@ type AdviceReport = {
   } | null;
 };
 
+type AdviceCommentReport = {
+  id: string;
+  reason: string;
+  details: string;
+  status: string;
+  moderator_notes: string;
+  ai_decision: string | null;
+  ai_confidence: number | null;
+  ai_summary: string | null;
+  ai_source: string | null;
+  created_at: string;
+  reporter_user_id: string;
+  comment_id: string;
+  advice_post_id: string;
+  advice_comments: {
+    id: string;
+    body: string;
+    author_user_id: string;
+    advice_post_id: string;
+    created_at: string;
+    parent_comment_id: string | null;
+  } | null;
+  advice_posts: {
+    id: string;
+    title: string;
+    slug: string | null;
+    status: string;
+  } | null;
+};
+
 const CATEGORY_LABELS: Record<string, string> = {
   general: "General",
   benefits: "Benefits",
@@ -55,9 +85,10 @@ const CATEGORY_LABELS: Record<string, string> = {
 
 function AdviceAdminPage() {
   const { user, session, loading } = useAuth();
-  const [tab, setTab] = useState<"pending" | "reports">("pending");
+  const [tab, setTab] = useState<"pending" | "reports" | "commentReports">("pending");
   const [posts, setPosts] = useState<AdvicePost[]>([]);
   const [reports, setReports] = useState<AdviceReport[]>([]);
+  const [commentReports, setCommentReports] = useState<AdviceCommentReport[]>([]);
   const [busy, setBusy] = useState(false);
   const [actionId, setActionId] = useState<string | null>(null);
   const [noteMap, setNoteMap] = useState<Record<string, string>>({});
@@ -120,12 +151,14 @@ function AdviceAdminPage() {
     if (!isSignedIn || loading) return;
     setBusy(true);
     try {
-      const [pendingData, reportsData] = await Promise.all([
+      const [pendingData, reportsData, commentReportsData] = await Promise.all([
         invoke("list_pending"),
         invoke("list_reports"),
+        invoke("list_comment_reports"),
       ]);
       setPosts(pendingData?.posts ?? []);
       setReports(reportsData?.reports ?? []);
+      setCommentReports(commentReportsData?.commentReports ?? []);
       setIsAuthorizedAdmin(true);
       setAuthCheckComplete(true);
       setAuthFailureReason("");
@@ -149,6 +182,7 @@ function AdviceAdminPage() {
   useEffect(() => {
     setPosts([]);
     setReports([]);
+    setCommentReports([]);
     setIsAuthorizedAdmin(false);
     setAuthCheckComplete(false);
     setAuthFailureReason("");
@@ -170,6 +204,8 @@ function AdviceAdminPage() {
             ? "Post rejected."
             : action === "remove" || action === "remove_from_report"
               ? "Post removed."
+              : action === "remove_comment_from_report"
+                ? "Comment removed."
               : "Report dismissed.",
       );
       await loadData();
@@ -224,7 +260,7 @@ function AdviceAdminPage() {
           <div>
             <h1 className="text-lg font-semibold text-foreground">Advice Moderation</h1>
             <p className="text-xs text-muted-foreground">
-              {posts.length} pending · {reports.length} open {reports.length === 1 ? "report" : "reports"}
+              {posts.length} pending · {reports.length} post reports · {commentReports.length} comment reports
             </p>
           </div>
         </div>
@@ -246,6 +282,14 @@ function AdviceAdminPage() {
             }`}
           >
             Reports ({reports.length})
+          </button>
+          <button
+            onClick={() => setTab("commentReports")}
+            className={`flex-1 text-sm py-1.5 rounded-md transition-colors font-medium ${
+              tab === "commentReports" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Comment Reports ({commentReports.length})
           </button>
         </div>
 
@@ -394,6 +438,98 @@ function AdviceAdminPage() {
                       className="flex-1 gap-1.5"
                       disabled={actionId === report.id}
                       onClick={() => handleAction("dismiss_report", report.id, { reportId: report.id })}
+                    >
+                      <XCircle className="h-3.5 w-3.5" />
+                      Dismiss
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {tab === "commentReports" && (
+          <div className="space-y-4">
+            {busy && commentReports.length === 0 && (
+              <p className="text-sm text-muted-foreground text-center py-10">Loading…</p>
+            )}
+            {!busy && commentReports.length === 0 && (
+              <p className="text-sm text-muted-foreground text-center py-10">No open comment reports.</p>
+            )}
+            {commentReports.map((report) => {
+              const comment = report.advice_comments;
+              const post = report.advice_posts;
+              return (
+                <div key={report.id} className="rounded-xl border border-border bg-surface p-4 space-y-3">
+                  <div className="flex items-start gap-2">
+                    <Flag className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-foreground">{report.reason}</p>
+                      {report.details && (
+                        <p className="text-xs text-muted-foreground mt-0.5">{report.details}</p>
+                      )}
+                      <p className="text-[10px] text-muted-foreground mt-1">
+                        {new Date(report.created_at).toLocaleDateString()}
+                      </p>
+                    </div>
+                  </div>
+
+                  {post && (
+                    <div className="rounded-lg border border-border/60 bg-background p-3 space-y-1">
+                      <p className="text-xs font-medium text-foreground">{post.title}</p>
+                      <p className="text-[10px] text-muted-foreground">Status: {post.status}</p>
+                    </div>
+                  )}
+
+                  {comment && (
+                    <div className="rounded-lg border border-border/60 bg-background p-3 space-y-1">
+                      <p className="text-xs font-medium text-foreground">Reported {comment.parent_comment_id ? "reply" : "comment"}</p>
+                      <p className="text-xs text-muted-foreground whitespace-pre-wrap">{comment.body}</p>
+                    </div>
+                  )}
+
+                  <div className="rounded-lg border border-border/60 bg-background p-3 space-y-1">
+                    <p className="text-xs font-medium text-foreground">AI signal</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      {report.ai_decision ? `${report.ai_decision} (${Math.round((report.ai_confidence ?? 0) * 100)}%)` : "No AI result"}
+                    </p>
+                    {report.ai_summary && <p className="text-[11px] text-muted-foreground">{report.ai_summary}</p>}
+                  </div>
+
+                  <textarea
+                    placeholder="Optional note"
+                    value={noteMap[report.id] ?? ""}
+                    onChange={(e) => setNoteMap((prev) => ({ ...prev, [report.id]: e.target.value }))}
+                    rows={2}
+                    className="w-full text-xs bg-background border border-border rounded-md px-3 py-2 text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:ring-1 focus:ring-ring"
+                  />
+
+                  <div className="flex gap-2">
+                    {comment && (
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        className="flex-1 gap-1.5"
+                        disabled={actionId === report.id}
+                        onClick={() =>
+                          handleAction("remove_comment_from_report", report.id, {
+                            reportId: report.id,
+                            commentId: comment.id,
+                            notes: noteMap[report.id] ?? "",
+                          })
+                        }
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Remove {comment.parent_comment_id ? "reply" : "comment"}
+                      </Button>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="flex-1 gap-1.5"
+                      disabled={actionId === report.id}
+                      onClick={() => handleAction("dismiss_comment_report", report.id, { reportId: report.id })}
                     >
                       <XCircle className="h-3.5 w-3.5" />
                       Dismiss

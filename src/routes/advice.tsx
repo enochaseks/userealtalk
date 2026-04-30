@@ -109,6 +109,7 @@ function excerpt(text: string, maxChars = 220) {
 function AdvicePage() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { user } = useAuth();
+  const isDetailView = /^\/advice\/[^/]+$/.test(pathname);
 
   const [posts, setPosts] = useState<AdvicePost[]>([]);
   const [myPosts, setMyPosts] = useState<AdvicePost[]>([]);
@@ -254,8 +255,8 @@ function AdvicePage() {
   };
 
   useEffect(() => {
-    void loadAdvice();
-  }, [user?.id, filterCategory, searchQuery]);
+    if (!isDetailView) void loadAdvice();
+  }, [user?.id, filterCategory, searchQuery, isDetailView]);
 
   // Clear notification badge when signed-in user views this page
   useEffect(() => {
@@ -531,7 +532,6 @@ function AdvicePage() {
     }
   };
 
-  const isDetailView = /^\/advice\/[^/]+$/.test(pathname);
   if (isDetailView) {
     return <Outlet />;
   }

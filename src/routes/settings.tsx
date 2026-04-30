@@ -70,6 +70,18 @@ function SettingsPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
 
+  type MyCommentReport = {
+    id: string;
+    reason: string;
+    status: string;
+    ai_decision: string | null;
+    auto_actioned: boolean | null;
+    created_at: string;
+    advice_posts: { id: string; title: string; slug: string } | null;
+    advice_comments: { body: string; parent_comment_id: string | null } | null;
+  };
+  const [myReports, setMyReports] = useState<MyCommentReport[] | null>(null);
+
   useEffect(() => {
     if (!loading && !user) navigate({ to: "/auth" });
   }, [user, loading, navigate]);
@@ -101,6 +113,22 @@ function SettingsPage() {
     };
 
     void load();
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) { setMyReports(null); return; }
+    const client = supabase as any;
+    client
+      .from("advice_comment_reports")
+      .select(`
+        id, reason, status, ai_decision, auto_actioned, created_at,
+        advice_posts ( id, title, slug ),
+        advice_comments ( body, parent_comment_id )
+      `)
+      .eq("reporter_user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(50)
+        .then((result: { data: MyCommentReport[] | null }) => setMyReports(result.data ?? []));
   }, [user]);
 
   if (!user) return null;
@@ -647,6 +675,62 @@ function SettingsPage() {
           </div>
         </div>
 
+        {myReports !== null && (
+          <div className="rounded-xl border border-border bg-surface/60 p-5 space-y-3">
+            <Label className="text-sm font-semibold text-foreground">My comment reports</Label>
+            <p className="text-xs text-muted-foreground">Reports you&apos;ve submitted for comments or replies.</p>
+            {myReports.length === 0 ? (
+              <p className="text-xs text-muted-foreground">You have not submitted any comment reports yet.</p>
+            ) : (
+              <div className="space-y-3">
+                {myReports.map((r) => {
+                const statusLabel =
+                  r.ai_decision === "reject" && r.auto_actioned
+                    ? "Auto-removed"
+                    : r.status === "reviewed"
+                    ? "Actioned"
+                    : r.status === "dismissed"
+                    ? "Dismissed"
+                    : "Under review";
+                const statusColor =
+                  statusLabel === "Auto-removed" || statusLabel === "Actioned"
+                    ? "text-green-600 dark:text-green-400"
+                    : statusLabel === "Dismissed"
+                    ? "text-muted-foreground"
+                    : "text-amber-600 dark:text-amber-400";
+                  return (
+                    <div key={r.id} className="rounded-lg border border-border/60 bg-background/40 p-3 space-y-1.5 text-xs">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-medium">{r.reason}</span>
+                        <span className={`font-semibold ${statusColor}`}>{statusLabel}</span>
+                      </div>
+                      {r.advice_comments?.body && (
+                        <p className="text-muted-foreground line-clamp-2">
+                          &ldquo;{r.advice_comments.body.slice(0, 120)}{r.advice_comments.body.length > 120 ? "\u2026" : ""}&rdquo;
+                        </p>
+                      )}
+                      {r.advice_posts && (
+                        <p className="text-muted-foreground">
+                          On:{" "}
+                          <Link
+                            to="/advice/$slug"
+                            params={{ slug: r.advice_posts.slug }}
+                            className="text-primary hover:underline"
+                          >
+                            {r.advice_posts.title}
+                          </Link>
+                        </p>
+                      )}
+                      <p className="text-muted-foreground/60">
+                        Reported {new Date(r.created_at).toLocaleDateString()}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
         <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-5 space-y-3">
           <div>
             <Label className="text-sm font-semibold text-foreground cursor-pointer">
@@ -684,6 +768,7 @@ function SettingsPage() {
             </AlertDialogContent>
           </AlertDialog>
         </div>
+
         <p className="text-center text-xs text-muted-foreground/60 pb-2">RealTalk v1.0 &mdash; Your thinking companion</p>
       </div>
     </div>
