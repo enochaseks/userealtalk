@@ -27,6 +27,7 @@ const APP_CSS_HREF = appCss.includes("?")
   : `${appCss}?v=${encodeURIComponent(ASSET_VERSION)}`;
 
 const USER_LOCATION_STORAGE_KEY = "realtalk_user_location";
+const DEBT_CHECKIN_LAST_PROBE_PREFIX = "realtalk_debt_checkin_last_probe";
 
 type StoredUserLocation = {
   countryCode: string;
@@ -413,10 +414,37 @@ function AppFrame() {
       }
     };
 
+    const runDebtCheckinProbe = async () => {
+      if (disposed) return;
+      const todayKey = new Date().toISOString().slice(0, 10);
+      const storageKey = `${DEBT_CHECKIN_LAST_PROBE_PREFIX}:${user.id}`;
+      if (typeof window !== "undefined" && window.localStorage.getItem(storageKey) === todayKey) return;
+
+      try {
+        const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/debt-checkin`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+            apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "",
+          },
+          body: JSON.stringify({ force: false }),
+        });
+
+        if (resp.ok && typeof window !== "undefined") {
+          window.localStorage.setItem(storageKey, todayKey);
+        }
+      } catch {
+        // Silent fail for debt probes.
+      }
+    };
+
     void runReminderCheck();
+    void runDebtCheckinProbe();
     const timer = window.setInterval(() => {
       void runReminderCheck();
-    }, 60_000);
+      void runDebtCheckinProbe();
+    }, 60 * 60_000);
 
     return () => {
       disposed = true;
@@ -829,7 +857,7 @@ function TopNav() {
       <div className="max-w-3xl mx-auto px-5 h-14 flex items-center relative">
         <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2 pointer-events-none select-none">
           <span className="text-sm font-semibold tracking-tight text-foreground">RealTalk</span>
-          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">1.0</span>
+          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">1.1</span>
         </div>
         <div className="flex items-center gap-2">
           <Sheet open={open} onOpenChange={setOpen}>

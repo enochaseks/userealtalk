@@ -45,7 +45,7 @@ const SUBSCRIPTION_FEATURE_LABELS: Record<MeteredFeature, string> = {
   journal_save: "Journal saves",
   cv_toolkit: "CV Toolkit",
   advice_clarify: "RealTalk Clarification",
-  money_coach_plan: "Money Coach AI analysis",
+  money_coach_plan: "Money Coach analysis",
 };
 
 function SettingsPage() {
@@ -57,6 +57,9 @@ function SettingsPage() {
   const [checkoutBusy, setCheckoutBusy] = useState(false);
   const [portalBusy, setPortalBusy] = useState(false);
   const [weeklyEmailEnabled, setWeeklyEmailEnabled] = useState(false);
+  const [moneyPlannerEmailNotificationsEnabled, setMoneyPlannerEmailNotificationsEnabled] = useState(true);
+  const [debtWeeklyCheckinEnabled, setDebtWeeklyCheckinEnabled] = useState(false);
+  const [debtWeeklyCheckinEmailEnabled, setDebtWeeklyCheckinEmailEnabled] = useState(false);
   const [scheduleEmailRemindersEnabled, setScheduleEmailRemindersEnabled] = useState(false);
   const [scheduleReminderMinutes, setScheduleReminderMinutes] = useState(30);
   const [scheduleReminderUseGmail, setScheduleReminderUseGmail] = useState(false);
@@ -96,9 +99,9 @@ function SettingsPage() {
     const load = async () => {
       const [snapshotResult, settingsResult] = await Promise.all([
         loadSubscriptionSnapshot(user.id),
-        supabase
+        (supabase as any)
           .from("user_insight_settings")
-          .select("weekly_email_enabled, schedule_email_reminders_enabled, schedule_email_reminder_minutes, schedule_email_use_gmail, share_venting_with_database")
+          .select("weekly_email_enabled, money_planner_email_notifications_enabled, debt_weekly_checkin_enabled, debt_weekly_checkin_email_enabled, schedule_email_reminders_enabled, schedule_email_reminder_minutes, schedule_email_use_gmail, share_venting_with_database")
           .eq("user_id", user.id)
           .maybeSingle(),
       ]);
@@ -107,6 +110,9 @@ function SettingsPage() {
 
       const data = settingsResult.data;
       setWeeklyEmailEnabled(Boolean(data?.weekly_email_enabled));
+      setMoneyPlannerEmailNotificationsEnabled(data?.money_planner_email_notifications_enabled ?? true);
+      setDebtWeeklyCheckinEnabled(Boolean(data?.debt_weekly_checkin_enabled));
+      setDebtWeeklyCheckinEmailEnabled(Boolean(data?.debt_weekly_checkin_email_enabled));
       setScheduleEmailRemindersEnabled(Boolean(data?.schedule_email_reminders_enabled));
       setScheduleReminderMinutes(Number(data?.schedule_email_reminder_minutes ?? 30));
       setScheduleReminderUseGmail(Boolean(data?.schedule_email_use_gmail));
@@ -255,12 +261,15 @@ function SettingsPage() {
 
   const saveInsightSettings = async (payload: {
     weekly_email_enabled: boolean;
+    money_planner_email_notifications_enabled: boolean;
+    debt_weekly_checkin_enabled: boolean;
+    debt_weekly_checkin_email_enabled: boolean;
     schedule_email_reminders_enabled: boolean;
     schedule_email_reminder_minutes: number;
     schedule_email_use_gmail: boolean;
     share_venting_with_database: boolean;
   }) => {
-    const { error } = await supabase.from("user_insight_settings").upsert({
+    const { error } = await (supabase as any).from("user_insight_settings").upsert({
       user_id: user.id,
       monitor_enabled: true,
       ...payload,
@@ -274,6 +283,9 @@ function SettingsPage() {
     setWeeklyEmailEnabled(enabled);
     const error = await saveInsightSettings({
       weekly_email_enabled: enabled,
+      money_planner_email_notifications_enabled: moneyPlannerEmailNotificationsEnabled,
+      debt_weekly_checkin_enabled: debtWeeklyCheckinEnabled,
+      debt_weekly_checkin_email_enabled: debtWeeklyCheckinEmailEnabled,
       schedule_email_reminders_enabled: scheduleEmailRemindersEnabled,
       schedule_email_reminder_minutes: scheduleReminderMinutes,
       schedule_email_use_gmail: scheduleReminderUseGmail,
@@ -287,11 +299,77 @@ function SettingsPage() {
     toast.success(enabled ? "Weekly insight email enabled" : "Weekly insight email disabled");
   };
 
+  const toggleMoneyPlannerEmailNotifications = async (enabled: boolean) => {
+    const previous = moneyPlannerEmailNotificationsEnabled;
+    setMoneyPlannerEmailNotificationsEnabled(enabled);
+    const error = await saveInsightSettings({
+      weekly_email_enabled: weeklyEmailEnabled,
+      money_planner_email_notifications_enabled: enabled,
+      debt_weekly_checkin_enabled: debtWeeklyCheckinEnabled,
+      debt_weekly_checkin_email_enabled: debtWeeklyCheckinEmailEnabled,
+      schedule_email_reminders_enabled: scheduleEmailRemindersEnabled,
+      schedule_email_reminder_minutes: scheduleReminderMinutes,
+      schedule_email_use_gmail: scheduleReminderUseGmail,
+      share_venting_with_database: shareVentingWithDatabase,
+    });
+    if (error) {
+      setMoneyPlannerEmailNotificationsEnabled(previous);
+      toast.error("Failed to update Money Planner email setting");
+      return;
+    }
+    toast.success(enabled ? "Money Planner security emails enabled" : "Money Planner security emails disabled");
+  };
+
+  const toggleDebtWeeklyCheckins = async (enabled: boolean) => {
+    const previous = debtWeeklyCheckinEnabled;
+    setDebtWeeklyCheckinEnabled(enabled);
+    const error = await saveInsightSettings({
+      weekly_email_enabled: weeklyEmailEnabled,
+      money_planner_email_notifications_enabled: moneyPlannerEmailNotificationsEnabled,
+      debt_weekly_checkin_enabled: enabled,
+      debt_weekly_checkin_email_enabled: debtWeeklyCheckinEmailEnabled,
+      schedule_email_reminders_enabled: scheduleEmailRemindersEnabled,
+      schedule_email_reminder_minutes: scheduleReminderMinutes,
+      schedule_email_use_gmail: scheduleReminderUseGmail,
+      share_venting_with_database: shareVentingWithDatabase,
+    });
+    if (error) {
+      setDebtWeeklyCheckinEnabled(previous);
+      toast.error("Failed to update weekly debt check-ins");
+      return;
+    }
+    toast.success(enabled ? "Weekly debt check-ins enabled" : "Weekly debt check-ins disabled");
+  };
+
+  const toggleDebtWeeklyCheckinEmails = async (enabled: boolean) => {
+    const previous = debtWeeklyCheckinEmailEnabled;
+    setDebtWeeklyCheckinEmailEnabled(enabled);
+    const error = await saveInsightSettings({
+      weekly_email_enabled: weeklyEmailEnabled,
+      money_planner_email_notifications_enabled: moneyPlannerEmailNotificationsEnabled,
+      debt_weekly_checkin_enabled: debtWeeklyCheckinEnabled,
+      debt_weekly_checkin_email_enabled: enabled,
+      schedule_email_reminders_enabled: scheduleEmailRemindersEnabled,
+      schedule_email_reminder_minutes: scheduleReminderMinutes,
+      schedule_email_use_gmail: scheduleReminderUseGmail,
+      share_venting_with_database: shareVentingWithDatabase,
+    });
+    if (error) {
+      setDebtWeeklyCheckinEmailEnabled(previous);
+      toast.error("Failed to update debt check-in email setting");
+      return;
+    }
+    toast.success(enabled ? "Debt check-in emails enabled" : "Debt check-in emails disabled");
+  };
+
   const toggleScheduleEmailReminders = async (enabled: boolean) => {
     const previous = scheduleEmailRemindersEnabled;
     setScheduleEmailRemindersEnabled(enabled);
     const error = await saveInsightSettings({
       weekly_email_enabled: weeklyEmailEnabled,
+      money_planner_email_notifications_enabled: moneyPlannerEmailNotificationsEnabled,
+      debt_weekly_checkin_enabled: debtWeeklyCheckinEnabled,
+      debt_weekly_checkin_email_enabled: debtWeeklyCheckinEmailEnabled,
       schedule_email_reminders_enabled: enabled,
       schedule_email_reminder_minutes: scheduleReminderMinutes,
       schedule_email_use_gmail: scheduleReminderUseGmail,
@@ -313,6 +391,9 @@ function SettingsPage() {
     setScheduleReminderMinutes(minutes);
     const error = await saveInsightSettings({
       weekly_email_enabled: weeklyEmailEnabled,
+      money_planner_email_notifications_enabled: moneyPlannerEmailNotificationsEnabled,
+      debt_weekly_checkin_enabled: debtWeeklyCheckinEnabled,
+      debt_weekly_checkin_email_enabled: debtWeeklyCheckinEmailEnabled,
       schedule_email_reminders_enabled: scheduleEmailRemindersEnabled,
       schedule_email_reminder_minutes: minutes,
       schedule_email_use_gmail: scheduleReminderUseGmail,
@@ -342,6 +423,9 @@ function SettingsPage() {
     setScheduleReminderUseGmail(useGmail);
     const error = await saveInsightSettings({
       weekly_email_enabled: weeklyEmailEnabled,
+      money_planner_email_notifications_enabled: moneyPlannerEmailNotificationsEnabled,
+      debt_weekly_checkin_enabled: debtWeeklyCheckinEnabled,
+      debt_weekly_checkin_email_enabled: debtWeeklyCheckinEmailEnabled,
       schedule_email_reminders_enabled: scheduleEmailRemindersEnabled,
       schedule_email_reminder_minutes: scheduleReminderMinutes,
       schedule_email_use_gmail: useGmail,
@@ -366,6 +450,9 @@ function SettingsPage() {
     setShareVentingWithDatabase(enabled);
     const error = await saveInsightSettings({
       weekly_email_enabled: weeklyEmailEnabled,
+      money_planner_email_notifications_enabled: moneyPlannerEmailNotificationsEnabled,
+      debt_weekly_checkin_enabled: debtWeeklyCheckinEnabled,
+      debt_weekly_checkin_email_enabled: debtWeeklyCheckinEmailEnabled,
       schedule_email_reminders_enabled: scheduleEmailRemindersEnabled,
       schedule_email_reminder_minutes: scheduleReminderMinutes,
       schedule_email_use_gmail: scheduleReminderUseGmail,
@@ -583,6 +670,46 @@ function SettingsPage() {
           </div>
         </div>
 
+        <div className="rounded-xl border border-border bg-surface/60 p-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <Label className="text-sm font-semibold text-foreground cursor-pointer">
+                Money Planner security emails
+              </Label>
+              <p className="text-xs text-muted-foreground mt-1">
+                Email you whenever your Money Planner changes so you can confirm the update was yours.
+              </p>
+            </div>
+            <Switch checked={moneyPlannerEmailNotificationsEnabled} onCheckedChange={toggleMoneyPlannerEmailNotifications} />
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-border bg-surface/60 p-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <Label className="text-sm font-semibold text-foreground cursor-pointer">
+                Weekly debt check-ins
+              </Label>
+              <p className="text-xs text-muted-foreground mt-1">
+                Keep nudging me weekly about open debts until I mark them paid off in Money Planner.
+              </p>
+            </div>
+            <Switch checked={debtWeeklyCheckinEnabled} onCheckedChange={toggleDebtWeeklyCheckins} />
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div>
+              <Label className="text-sm font-semibold text-foreground cursor-pointer">
+                Email debt check-ins
+              </Label>
+              <p className="text-xs text-muted-foreground mt-1">
+                Send those weekly debt updates by email with AI questions and support if I'm falling behind.
+              </p>
+            </div>
+            <Switch checked={debtWeeklyCheckinEmailEnabled} onCheckedChange={toggleDebtWeeklyCheckinEmails} disabled={!debtWeeklyCheckinEnabled} />
+          </div>
+        </div>
+
         <div className="rounded-xl border border-border bg-surface/60 p-5 space-y-3">
           <div className="flex items-center justify-between">
             <div>
@@ -770,7 +897,7 @@ function SettingsPage() {
           </AlertDialog>
         </div>
 
-        <p className="text-center text-xs text-muted-foreground/60 pb-2">RealTalk v1.0 &mdash; Your thinking companion</p>
+        <p className="text-center text-xs text-muted-foreground/60 pb-2">RealTalk v1.1 &mdash; Your thinking companion</p>
       </div>
     </div>
   );

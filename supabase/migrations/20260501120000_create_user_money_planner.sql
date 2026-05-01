@@ -4,6 +4,7 @@ create table if not exists public.user_money_planner (
   spends jsonb not null default '[]',
   tasks jsonb not null default '[]',
   debts jsonb not null default '[]',
+  benefits jsonb not null default '[]',
   advice_markdown text not null default '',
   updated_at timestamptz not null default now()
 );

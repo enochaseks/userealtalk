@@ -140,7 +140,7 @@ function AccountDataPage() {
             <li>saved plans</li>
             <li>journal entries</li>
             <li>schedules and reminder logs</li>
-            <li>Money Planner data (savings goals, spending entries, tasks, debts, AI plans)</li>
+            <li>Money Planner data (savings goals, spending entries, tasks, debts, RealTalk money plans)</li>
             <li>advice submissions, feedback, comments, reactions, and reports</li>
             <li>weekly insights and summaries</li>
             <li>venting privacy settings</li>

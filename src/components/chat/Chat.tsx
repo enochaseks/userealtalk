@@ -540,7 +540,7 @@ const FEATURE_LABELS: Record<MeteredFeature, string> = {
   journal_save: "Journal saves",
   cv_toolkit: "CV Toolkit",
   advice_clarify: "RealTalk Clarification",
-  money_coach_plan: "Money Coach AI analysis",
+  money_coach_plan: "Money Coach analysis",
 };
 
 const getJournalSaveKey = (messageId: string | null | undefined, content: string) => {
@@ -2675,7 +2675,7 @@ export function Chat() {
         });
       }
 
-      toast.error("AI took too long. Switched to quick response mode.");
+      toast.error("RealTalk took too long. Switched to quick response mode.");
       window.dispatchEvent(new Event("conversationCreated"));
       return;
     }
@@ -4233,7 +4233,7 @@ export function Chat() {
                     disabled={emailBusy}
                     onClick={() => void generateEmailDraft()}
                   >
-                    {emailBusy ? "Working..." : "Generate with AI"}
+                    {emailBusy ? "Working..." : "Generate with RealTalk"}
                   </Button>
                   <Button
                     type="button"
@@ -4242,7 +4242,7 @@ export function Chat() {
                     disabled={emailBusy}
                     onClick={() => void reviewEmailDraft()}
                   >
-                    {emailBusy ? "Working..." : "Review with AI"}
+                    {emailBusy ? "Working..." : "Review with RealTalk"}
                   </Button>
                   <Button
                     type="button"

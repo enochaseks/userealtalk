@@ -7,7 +7,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const INSIGHT_SYSTEM = `You are a sharp, honest weekly wellbeing analyst. You read a user's chat history and write a concise weekly insight report.
+const INSIGHT_SYSTEM = `You are a sharp, honest weekly wellbeing analyst. You read a user's chat history and relevant in-app planning activity and write a concise weekly insight report.
 
 Return ONLY strict JSON with these keys:
 - emotion_trend
@@ -19,10 +19,12 @@ Return ONLY strict JSON with these keys:
 - what_didnt
 - response_patterns
 - boundary_respect
+- money_planner_summary
 
 Rules:
 - Each value must be 1–2 short, specific sentences.
 - Reference actual topics, emotions, situations, or phrases from the conversation. Do NOT write generic filler.
+- If money-planning data is provided, use it to describe concrete financial habits, structure, or stress patterns without sounding like regulated financial advice.
 - NEVER write phrases like "still forming", "still being gathered", "still being observed", "still being tracked", "still being measured", "still limited". These are meaningless and forbidden.
 - If a field genuinely has no signal, write exactly: "No clear pattern this week."
 - Be direct and honest — name what actually happened in the chat.
@@ -95,6 +97,51 @@ const extractJsonObject = (raw: string): Record<string, unknown> | null => {
   return null;
 };
 
+const moneyFrequencyToMonthlyAmount = (amount: number, frequency: string): number => {
+  if (!Number.isFinite(amount)) return 0;
+  if (frequency === "weekly") return amount * (52 / 12);
+  if (frequency === "fortnightly") return amount * (26 / 12);
+  if (frequency === "four-weekly") return amount * (13 / 12);
+  return amount;
+};
+
+const buildMoneyPlannerContext = (planner: any): string => {
+  if (!planner) return "";
+
+  const spends = Array.isArray(planner.spends) ? planner.spends : [];
+  const tasks = Array.isArray(planner.tasks) ? planner.tasks : [];
+  const debts = Array.isArray(planner.debts) ? planner.debts : [];
+  const benefits = Array.isArray(planner.benefits) ? planner.benefits : [];
+  const goal = planner.goal && typeof planner.goal === "object" ? planner.goal : {};
+  const jobIncome = planner.job_income && typeof planner.job_income === "object" ? planner.job_income : {};
+
+  const totalSpent = spends.reduce((sum: number, item: any) => sum + (Number(item?.amount ?? 0) || 0), 0);
+  const totalDebt = debts.reduce((sum: number, item: any) => sum + (Number(item?.balance ?? 0) || 0), 0);
+  const totalBenefitsMonthly = benefits.reduce(
+    (sum: number, item: any) => sum + moneyFrequencyToMonthlyAmount(Number(item?.amountMonthly ?? 0) || 0, String(item?.paymentFrequency ?? "monthly")),
+    0,
+  );
+  const completedTasks = tasks.filter((task: any) => task?.done).length;
+  const jobIncomeMonthly = moneyFrequencyToMonthlyAmount(Number(jobIncome?.amount ?? 0) || 0, String(jobIncome?.frequency ?? "monthly"));
+
+  return [
+    "Money Planner snapshot:",
+    `- Goal: ${String(goal?.title ?? "Not set")}`,
+    `- Target amount: £${(Number(goal?.targetAmount ?? 0) || 0).toFixed(2)}`,
+    `- Current balance: £${(Number(goal?.currentBalance ?? 0) || 0).toFixed(2)}`,
+    `- Target date: ${String(goal?.targetDate ?? "Not set")}`,
+    `- Spending entries: ${spends.length}, total spend £${totalSpent.toFixed(2)}`,
+    `- Tasks completed: ${completedTasks}/${tasks.length}`,
+    `- Debts tracked: ${debts.length}, total debt £${totalDebt.toFixed(2)}`,
+    `- Employment: ${String(planner.employment_type ?? "not set")}`,
+    `- Job income: ${String(jobIncome?.employer ?? "Not set")}, £${(Number(jobIncome?.amount ?? 0) || 0).toFixed(2)} ${String(jobIncome?.frequency ?? "monthly")} (~£${jobIncomeMonthly.toFixed(2)}/month), next pay ${String(jobIncome?.nextPayDate ?? "not set")}`,
+    `- Benefits: ${benefits.length}, about £${totalBenefitsMonthly.toFixed(2)}/month, next benefit pay ${String(planner.next_benefit_pay_date ?? "not set")}`,
+    planner.advice_markdown ? `- Latest AI money plan notes: ${String(planner.advice_markdown).slice(0, 600)}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+};
+
 const buildInsightEmailBody = (weekStart: string, insight: Record<string, unknown>): string => {
   return [
     `Weekly RealTalk insight for week of ${new Date(weekStart).toLocaleDateString("en-GB", { timeZone: "UTC" })}`,
@@ -109,6 +156,7 @@ const buildInsightEmailBody = (weekStart: string, insight: Record<string, unknow
     `Calm progress: ${String(insight.calm_progress ?? "No clear pattern this week.")}`,
     `Overthinking reduction: ${String(insight.overthinking_reduction ?? "No clear pattern this week.")}`,
     `How RealTalk helped: ${String(insight.ai_help_summary ?? "No clear pattern this week.")}`,
+    `Money planning: ${String(insight.money_planner_summary ?? "No clear pattern this week.")}`,
   ].join("\n");
 };
 
@@ -294,7 +342,7 @@ serve(async (req) => {
 
     const { data: existingInsight } = await admin
       .from("user_weekly_insights")
-      .select("week_start, emotion_trend, thought_patterns, calm_progress, overthinking_reduction, ai_help_summary, what_worked, what_didnt, response_patterns, boundary_respect, source_message_count, emailed_at")
+      .select("week_start, emotion_trend, thought_patterns, calm_progress, overthinking_reduction, ai_help_summary, what_worked, what_didnt, response_patterns, boundary_respect, money_planner_summary, source_message_count, emailed_at")
       .eq("user_id", userId)
       .eq("week_start", weekStart)
       .maybeSingle();
@@ -344,6 +392,12 @@ serve(async (req) => {
       .eq("user_id", userId)
       .maybeSingle();
 
+    const { data: moneyPlanner } = await admin
+      .from("user_money_planner")
+      .select("goal, spends, tasks, debts, benefits, on_benefits, next_benefit_pay_date, employment_type, job_income, advice_markdown, updated_at")
+      .eq("user_id", userId)
+      .maybeSingle();
+
     // Fetch this week's messages first (up to 200), then pad with up to 50 older messages for context
     const { data: weekMsgs } = await admin
       .from("messages")
@@ -385,6 +439,7 @@ serve(async (req) => {
       Array.isArray(memoryProfile?.comfort_boundaries) && memoryProfile.comfort_boundaries.length > 0
         ? `Comfort boundaries to respect: ${JSON.stringify(memoryProfile.comfort_boundaries).slice(0, 1200)}`
         : "",
+      moneyPlanner ? buildMoneyPlannerContext(moneyPlanner) : "",
     ]
       .filter(Boolean)
       .join("\n");
@@ -414,6 +469,7 @@ serve(async (req) => {
       what_didnt: String(parsed.what_didnt || "No clear pattern this week."),
       response_patterns: String(parsed.response_patterns || "No clear pattern this week."),
       boundary_respect: String(parsed.boundary_respect || "No clear pattern this week."),
+      money_planner_summary: String(parsed.money_planner_summary || "No clear pattern this week."),
       source_message_count: msgs.length,
       emailed_at: existingInsight?.emailed_at ?? null,
       updated_at: new Date().toISOString(),

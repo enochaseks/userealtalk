@@ -99,6 +99,7 @@ type Insight = {
   what_didnt: string;
   response_patterns: string;
   boundary_respect: string;
+  money_planner_summary: string;
   updated_at: string;
 };
 
@@ -138,7 +139,7 @@ const SUBSCRIPTION_FEATURE_LABELS: Record<MeteredFeature, string> = {
   journal_save: "Journal saves",
   cv_toolkit: "CV Toolkit",
   advice_clarify: "RealTalk Clarification",
-  money_coach_plan: "Money Coach AI analysis",
+  money_coach_plan: "Money Coach analysis",
 };
 
 const getUtcWeekStart = (): string => {
@@ -341,10 +342,11 @@ function ProfilePage() {
     };
 
     const loadInsights = async () => {
-      const { data } = await supabase
+      const insightClient: any = supabase;
+      const { data } = await insightClient
         .from("user_weekly_insights")
         .select(
-          "id,week_start,emotion_trend,thought_patterns,calm_progress,overthinking_reduction,ai_help_summary,what_worked,what_didnt,response_patterns,boundary_respect,updated_at",
+          "id,week_start,emotion_trend,thought_patterns,calm_progress,overthinking_reduction,ai_help_summary,what_worked,what_didnt,response_patterns,boundary_respect,money_planner_summary,updated_at",
         )
         .order("week_start", { ascending: false })
         .order("updated_at", { ascending: false });
@@ -1328,6 +1330,7 @@ function ProfilePage() {
                     <InsightRow title="How RealTalk helped" value={latest.ai_help_summary} />
                     <InsightRow title="What worked" value={latest.what_worked} />
                     <InsightRow title="What didn’t work" value={latest.what_didnt} />
+                    <InsightRow title="Money planning" value={latest.money_planner_summary} />
                     <InsightRow title="Your response pattern" value={latest.response_patterns} />
                     <InsightRow title="Boundary comfort" value={latest.boundary_respect} />
                   </div>
