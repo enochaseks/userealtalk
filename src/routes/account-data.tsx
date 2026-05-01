@@ -7,7 +7,7 @@ import { toast } from "sonner";
 
 export const Route = createFileRoute("/account-data")({
   component: AccountDataPage,
-  head: () => ({ meta: [{ title: "Account & Data Export — RealTalk" }] }),
+  head: () => ({ meta: [{ title: "Account, Data & Security — RealTalk" }] }),
 });
 
 function AccountDataPage() {
@@ -125,7 +125,7 @@ function AccountDataPage() {
       </button>
       <h1 className="font-serif text-3xl tracking-tight">Account &amp; Data</h1>
       <p className="mt-3 text-sm text-muted-foreground">
-        Manage your data and privacy settings in RealTalk.
+        Manage your data, privacy, and account security in RealTalk.
       </p>
 
       <div className="mt-6 space-y-5">
@@ -141,6 +141,7 @@ function AccountDataPage() {
             <li>journal entries</li>
             <li>schedules and reminder logs</li>
             <li>Money Planner data (savings goals, spending entries, tasks, debts, RealTalk money plans)</li>
+            <li>planner and debt security notification settings</li>
             <li>advice submissions, feedback, comments, reactions, and reports</li>
             <li>weekly insights and summaries</li>
             <li>venting privacy settings</li>
@@ -171,6 +172,9 @@ function AccountDataPage() {
             <li>learned profile data</li>
             <li>feature usage and subscription records</li>
           </ul>
+          <p className="mt-3 text-sm text-muted-foreground">
+            Some sensitive processing modes do not retain raw files (for example, private financial uploads and raw voice audio), so those raw items are not included in exports.
+          </p>
           <p className="mt-3 text-sm text-muted-foreground">This action cannot be undone.</p>
           <div className="mt-3">
             <Link
@@ -180,6 +184,16 @@ function AccountDataPage() {
               Go to profile settings
             </Link>
           </div>
+        </div>
+
+        <div className="rounded-xl border border-border bg-surface/60 p-5">
+          <h2 className="text-base font-semibold">Account security</h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Security is strongest when you use a unique password and keep your email account protected with MFA.
+          </p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            If passkeys or in-app 2FA become available in your account settings, enable them for stronger protection with less login friction.
+          </p>
         </div>
 
         <div className="rounded-xl border border-border bg-surface/60 p-5">

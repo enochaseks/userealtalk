@@ -18,14 +18,14 @@ function PrivacyPage() {
       </button>
       <h1 className="font-serif text-3xl tracking-tight">Privacy Policy</h1>
       <p className="mt-3 text-sm text-muted-foreground">
-        Last updated: May 2026 (updated to cover sensitive financial data handling and non-retention)
+        Last updated: May 2026 (updated for RealTalk v1.1 data use, account security, and retention rules)
       </p>
 
       <div className="mt-6 space-y-6 text-sm leading-relaxed text-foreground/90">
         <section>
           <h2 className="font-semibold text-base">1. Overview</h2>
           <p className="mt-2 text-muted-foreground">
-            RealTalk is an AI-powered platform designed to help users reflect, gain clarity, and make better decisions through conversation.
+            RealTalk is a conversational platform designed to help users reflect, gain clarity, and make better decisions.
           </p>
           <p className="mt-2 text-muted-foreground">
             This policy explains what data we collect, how it is used, and the control you have over it.
@@ -54,6 +54,7 @@ function PrivacyPage() {
             <li>Optional country/location context (from GPS, IP lookup, locale, or manual country selection)</li>
             <li>Financial consent preference (whether you have accepted sensitive financial processing)</li>
             <li>Money Planner data (savings goals, manual spending entries, to-do tasks, debt records, and AI-generated money plans — stored server-side and synced across devices)</li>
+            <li>Account security settings and delivery preferences (for example, planner and debt security email toggles)</li>
           </ul>
         </section>
 
@@ -289,6 +290,14 @@ function PrivacyPage() {
           <h2 className="font-semibold text-base">13. Security</h2>
           <p className="mt-2 text-muted-foreground">
             We implement appropriate safeguards to protect your data from unauthorised access or misuse.
+          </p>
+          <ul className="mt-2 list-disc pl-5 text-muted-foreground space-y-1">
+            <li>Data is transmitted over encrypted connections</li>
+            <li>Access is restricted to authorised systems and operators</li>
+            <li>Authentication and session management are handled by our identity provider</li>
+          </ul>
+          <p className="mt-2 text-muted-foreground">
+            We may expand account security options over time (including stronger login verification methods such as passkeys or multi-factor authentication).
           </p>
         </section>
 

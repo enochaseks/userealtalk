@@ -64,6 +64,20 @@ function SettingsPage() {
   const [scheduleReminderMinutes, setScheduleReminderMinutes] = useState(30);
   const [scheduleReminderUseGmail, setScheduleReminderUseGmail] = useState(false);
   const [shareVentingWithDatabase, setShareVentingWithDatabase] = useState(false);
+  const [mfaLoading, setMfaLoading] = useState(false);
+  const [mfaBusy, setMfaBusy] = useState(false);
+  const [totpCode, setTotpCode] = useState("");
+  const [totpSetup, setTotpSetup] = useState<{
+    factorId: string;
+    qrCode: string;
+    uri: string;
+  } | null>(null);
+  const [totpFactors, setTotpFactors] = useState<Array<{
+    id: string;
+    friendly_name?: string;
+    status?: string;
+    created_at?: string;
+  }>>([]);
   const [autoPdfEnabled, setAutoPdfEnabled] = useState(() => {
     if (typeof window !== "undefined") {
       return localStorage.getItem("autoPdfSave") !== "false";
@@ -121,6 +135,37 @@ function SettingsPage() {
 
     void load();
   }, [user]);
+
+  const loadMfaFactors = async () => {
+    if (!user) {
+      setTotpFactors([]);
+      return;
+    }
+
+    const mfaApi = (supabase.auth as any).mfa;
+    if (!mfaApi?.listFactors) {
+      setTotpFactors([]);
+      return;
+    }
+
+    setMfaLoading(true);
+    try {
+      const { data, error } = await mfaApi.listFactors();
+      if (error) throw error;
+      const factors = Array.isArray(data?.totp) ? data.totp : [];
+      setTotpFactors(factors);
+    } catch (e: any) {
+      console.warn("[settings] MFA listFactors failed:", e);
+      toast.error(e?.message || "Could not load two-factor status");
+    } finally {
+      setMfaLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadMfaFactors();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
   useEffect(() => {
     if (!user) { setMyReports(null); return; }
@@ -445,6 +490,116 @@ function SettingsPage() {
     toast.success(enabled ? "PDF auto-save enabled" : "PDF auto-save disabled");
   };
 
+  const startTotpSetup = async () => {
+    const mfaApi = (supabase.auth as any).mfa;
+    if (!mfaApi?.enroll) {
+      toast.error("Two-factor authentication is not available right now.");
+      return;
+    }
+
+    setMfaBusy(true);
+    try {
+      const { data, error } = await mfaApi.enroll({
+        factorType: "totp",
+        friendlyName: "RealTalk Authenticator",
+      });
+      if (error) throw error;
+
+      const factorId = String(data?.id ?? "");
+      const qrCode = String(data?.totp?.qr_code ?? "");
+      const uri = String(data?.totp?.uri ?? "");
+
+      if (!factorId || !qrCode || !uri) {
+        throw new Error("Could not start authenticator setup");
+      }
+
+      setTotpSetup({ factorId, qrCode, uri });
+      setTotpCode("");
+      toast.success("Authenticator setup started. Scan the QR code and verify.");
+    } catch (e: any) {
+      toast.error(e?.message || "Could not start two-factor setup");
+    } finally {
+      setMfaBusy(false);
+    }
+  };
+
+  const cancelTotpSetup = async () => {
+    const mfaApi = (supabase.auth as any).mfa;
+    if (!totpSetup || !mfaApi?.unenroll) {
+      setTotpSetup(null);
+      setTotpCode("");
+      return;
+    }
+
+    setMfaBusy(true);
+    try {
+      await mfaApi.unenroll({ factorId: totpSetup.factorId });
+    } catch {
+      // Best effort cleanup.
+    } finally {
+      setTotpSetup(null);
+      setTotpCode("");
+      setMfaBusy(false);
+      await loadMfaFactors();
+    }
+  };
+
+  const verifyTotpSetup = async () => {
+    const mfaApi = (supabase.auth as any).mfa;
+    if (!totpSetup || !mfaApi?.challenge || !mfaApi?.verify) return;
+
+    const code = totpCode.trim();
+    if (!/^\d{6}$/.test(code)) {
+      toast.error("Enter a valid 6-digit code.");
+      return;
+    }
+
+    setMfaBusy(true);
+    try {
+      const { data: challengeData, error: challengeError } = await mfaApi.challenge({ factorId: totpSetup.factorId });
+      if (challengeError) throw challengeError;
+
+      const challengeId = String(challengeData?.id ?? "");
+      if (!challengeId) throw new Error("Could not verify challenge");
+
+      const { error: verifyError } = await mfaApi.verify({
+        factorId: totpSetup.factorId,
+        challengeId,
+        code,
+      });
+      if (verifyError) throw verifyError;
+
+      setTotpSetup(null);
+      setTotpCode("");
+      toast.success("Two-factor authentication enabled.");
+      await loadMfaFactors();
+    } catch (e: any) {
+      toast.error(e?.message || "Could not verify two-factor code");
+    } finally {
+      setMfaBusy(false);
+    }
+  };
+
+  const disableTotpFactor = async (factorId: string) => {
+    const mfaApi = (supabase.auth as any).mfa;
+    if (!mfaApi?.unenroll) {
+      toast.error("Two-factor authentication is not available right now.");
+      return;
+    }
+
+    setMfaBusy(true);
+    try {
+      const { error } = await mfaApi.unenroll({ factorId });
+      if (error) throw error;
+      toast.success("Two-factor authentication removed.");
+      await loadMfaFactors();
+    } catch (e: any) {
+      toast.error(e?.message || "Could not disable two-factor authentication");
+    } finally {
+      setMfaBusy(false);
+    }
+  };
+
   const toggleShareVenting = async (enabled: boolean) => {
     const previous = shareVentingWithDatabase;
     setShareVentingWithDatabase(enabled);
@@ -511,6 +666,13 @@ function SettingsPage() {
       setDeletingAccount(false);
     }
   };
+
+  const hasActiveTotp = totpFactors.some((factor) => factor.status === "verified");
+  const qrImageSrc = totpSetup
+    ? totpSetup.qrCode.startsWith("data:")
+      ? totpSetup.qrCode
+      : `data:image/svg+xml;utf8,${encodeURIComponent(totpSetup.qrCode)}`
+    : "";
 
   return (
     <div className="flex-1 max-w-3xl w-full mx-auto px-5 py-10">
@@ -757,6 +919,91 @@ function SettingsPage() {
           <p className="text-[11px] text-muted-foreground">
             Gmail mode uses your connected Google account. Normal email mode uses the platform provider.
           </p>
+        </div>
+
+        <div className="rounded-xl border border-border bg-surface/60 p-5 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <Label className="text-sm font-semibold text-foreground cursor-pointer">
+                Two-factor authentication
+              </Label>
+              <p className="text-xs text-muted-foreground mt-1">
+                Add an authenticator app code for stronger account protection.
+              </p>
+            </div>
+            <span className={`text-xs font-medium ${hasActiveTotp ? "text-green-600" : "text-muted-foreground"}`}>
+              {mfaLoading ? "Checking..." : hasActiveTotp ? "Enabled" : "Not enabled"}
+            </span>
+          </div>
+
+          {!totpSetup && (
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" size="sm" variant="outline" onClick={() => void startTotpSetup()} disabled={mfaBusy}>
+                {mfaBusy ? "Starting..." : "Set up authenticator app"}
+              </Button>
+            </div>
+          )}
+
+          {totpSetup && (
+            <div className="rounded-lg border border-border/60 bg-background/40 p-3 space-y-3">
+              <p className="text-xs text-muted-foreground">
+                1) Scan this QR code in Google Authenticator, 1Password, or Authy.
+              </p>
+              <img src={qrImageSrc} alt="Authenticator QR code" className="h-36 w-36 rounded border border-border/60 bg-white p-2" />
+              <p className="text-[11px] text-muted-foreground break-all">
+                Can&apos;t scan? Use this setup link: {totpSetup.uri}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                2) Enter the current 6-digit code to finish setup.
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <Input
+                  value={totpCode}
+                  onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  placeholder="123456"
+                  inputMode="numeric"
+                  className="w-32"
+                />
+                <Button type="button" size="sm" onClick={() => void verifyTotpSetup()} disabled={mfaBusy || totpCode.length !== 6}>
+                  {mfaBusy ? "Verifying..." : "Verify code"}
+                </Button>
+                <Button type="button" size="sm" variant="ghost" onClick={() => void cancelTotpSetup()} disabled={mfaBusy}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {totpFactors.length > 0 && (
+            <div className="space-y-2">
+              {totpFactors.map((factor) => (
+                <div key={factor.id} className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-background/30 p-2.5">
+                  <div>
+                    <p className="text-xs font-medium">{factor.friendly_name || "Authenticator"}</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      Status: {factor.status || "pending"}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void disableTotpFactor(factor.id)}
+                    disabled={mfaBusy}
+                  >
+                    Remove
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="rounded-lg border border-dashed border-border/60 bg-background/20 p-3">
+            <p className="text-xs font-medium text-foreground">Passkeys</p>
+            <p className="text-[11px] text-muted-foreground mt-1">
+              Passkey sign-in is planned next. For now, authenticator app 2FA is available above.
+            </p>
+          </div>
         </div>
 
         <div className="rounded-xl border border-border bg-surface/60 p-5">

@@ -17,13 +17,13 @@ function TermsPage() {
         Back
       </button>
       <h1 className="font-serif text-3xl tracking-tight">Terms of Service</h1>
-      <p className="mt-3 text-sm text-muted-foreground">Last updated: May 2026 (updated to cover sensitive financial data handling and non-retention)</p>
+      <p className="mt-3 text-sm text-muted-foreground">Last updated: May 2026 (updated for RealTalk v1.1 features, account security, and data handling)</p>
 
       <div className="mt-6 space-y-6 text-sm leading-relaxed text-foreground/90">
         <section>
           <h2 className="font-semibold text-base">1. Service Overview</h2>
           <p className="mt-2 text-muted-foreground">
-            RealTalk is an AI-powered platform designed to support thinking, planning, venting, and personal clarity.
+            RealTalk is a conversational platform designed to support thinking, planning, venting, and personal clarity.
           </p>
           <p className="mt-2 text-muted-foreground">It provides:</p>
           <ul className="mt-2 list-disc pl-5 text-muted-foreground space-y-1">
@@ -34,6 +34,8 @@ function TermsPage() {
             <li>CV Toolkit (review, job matching, cover letter, rewrite, transferable skills, personal statement)</li>
             <li>voice input</li>
             <li>journal</li>
+            <li>advice library</li>
+            <li>money planner and debt support tools</li>
             <li>schedule reminders</li>
             <li>optional location-aware guidance</li>
           </ul>
@@ -129,7 +131,22 @@ function TermsPage() {
         </section>
 
         <section>
-          <h2 className="font-semibold text-base">8. Acceptable Use</h2>
+          <h2 className="font-semibold text-base">8. Account Security &amp; Authentication</h2>
+          <p className="mt-2 text-muted-foreground">
+            You are responsible for maintaining the confidentiality of your account credentials and for activities performed through your account.
+          </p>
+          <ul className="mt-2 list-disc pl-5 text-muted-foreground space-y-1">
+            <li>use a strong, unique password for your RealTalk account</li>
+            <li>do not share your login credentials</li>
+            <li>notify us promptly if you suspect unauthorised access</li>
+          </ul>
+          <p className="mt-2 text-muted-foreground">
+            RealTalk may introduce additional authentication protections over time (including passkeys and multi-factor authentication).
+          </p>
+        </section>
+
+        <section>
+          <h2 className="font-semibold text-base">9. Acceptable Use</h2>
           <p className="mt-2 text-muted-foreground">You agree not to:</p>
           <ul className="mt-2 list-disc pl-5 text-muted-foreground space-y-1">
             <li>misuse the platform</li>
@@ -141,7 +158,7 @@ function TermsPage() {
         </section>
 
         <section>
-          <h2 className="font-semibold text-base">9. Gmail Integration (Optional)</h2>
+          <h2 className="font-semibold text-base">10. Gmail Integration (Optional)</h2>
           <p className="mt-2 text-muted-foreground">If you connect Google:</p>
           <ul className="mt-2 list-disc pl-5 text-muted-foreground space-y-1">
             <li>you authorise RealTalk to send emails on your behalf when explicitly triggered or when optional features (such as weekly insights) are enabled</li>
@@ -153,7 +170,7 @@ function TermsPage() {
         </section>
 
         <section>
-          <h2 className="font-semibold text-base">9a. CV Toolkit</h2>
+          <h2 className="font-semibold text-base">10a. CV Toolkit</h2>
           <p className="mt-2 text-muted-foreground">
             The CV Toolkit allows you to upload a CV and receive AI-generated feedback, job matching, cover letters, and more.
           </p>
@@ -167,7 +184,7 @@ function TermsPage() {
         </section>
 
         <section>
-          <h2 className="font-semibold text-base">9b. Voice Input</h2>
+          <h2 className="font-semibold text-base">10b. Voice Input</h2>
           <p className="mt-2 text-muted-foreground">
             Voice input is an optional feature that uses your device microphone to transcribe speech to text.
           </p>
@@ -179,7 +196,7 @@ function TermsPage() {
         </section>
 
         <section>
-          <h2 className="font-semibold text-base">9c. Subscription Plans &amp; Billing</h2>
+          <h2 className="font-semibold text-base">10c. Subscription Plans &amp; Billing</h2>
           <p className="mt-2 text-muted-foreground">
             RealTalk offers the following plans: Free, Pro, Platinum, Student, and Professional.
           </p>
@@ -200,7 +217,7 @@ function TermsPage() {
         </section>
 
         <section>
-          <h2 className="font-semibold text-base">10. Schedule Reminders</h2>
+          <h2 className="font-semibold text-base">11. Schedule Reminders</h2>
           <p className="mt-2 text-muted-foreground">If enabled, RealTalk may send reminder emails based on your configured schedule.</p>
           <ul className="mt-2 list-disc pl-5 text-muted-foreground space-y-1">
             <li>timing is controlled by user settings</li>
@@ -210,7 +227,7 @@ function TermsPage() {
         </section>
 
         <section>
-          <h2 className="font-semibold text-base">10a. Location-Based Features</h2>
+          <h2 className="font-semibold text-base">11a. Location-Based Features</h2>
           <p className="mt-2 text-muted-foreground">
             RealTalk may offer optional country-aware responses to provide more relevant links and regional guidance.
           </p>
@@ -224,7 +241,7 @@ function TermsPage() {
         </section>
 
         <section>
-          <h2 className="font-semibold text-base">10b. Sensitive Financial Data (Money Coach)</h2>
+          <h2 className="font-semibold text-base">11b. Sensitive Financial Data (Money Coach)</h2>
           <p className="mt-2 text-muted-foreground">
             When you use money-management features with sensitive financial files (for example, bank statements or transaction exports), the following applies:
           </p>
@@ -240,7 +257,7 @@ function TermsPage() {
         </section>
 
         <section>
-          <h2 className="font-semibold text-base">10c. Money Planner Tool Data</h2>
+          <h2 className="font-semibold text-base">11c. Money Planner Tool Data</h2>
           <p className="mt-2 text-muted-foreground">
             Data you enter into the Money Planner tool — including savings goals, manual spending entries, to-do tasks, debt records, and AI-generated money plans — is stored in your RealTalk account database and synced across devices.
           </p>
@@ -252,7 +269,7 @@ function TermsPage() {
         </section>
 
         <section>
-          <h2 className="font-semibold text-base">11. Intellectual Property</h2>
+          <h2 className="font-semibold text-base">12. Intellectual Property</h2>
           <p className="mt-2 text-muted-foreground">All platform content, branding, design, and features (including RealTime Neurons) are owned by RealTalk LTD.</p>
           <p className="mt-2 text-muted-foreground">You retain ownership of the content you submit.</p>
           <p className="mt-2 text-muted-foreground">
@@ -261,7 +278,7 @@ function TermsPage() {
         </section>
 
         <section>
-          <h2 className="font-semibold text-base">12. Data Rights</h2>
+          <h2 className="font-semibold text-base">13. Data Rights</h2>
           <p className="mt-2 text-muted-foreground">You may:</p>
           <ul className="mt-2 list-disc pl-5 text-muted-foreground space-y-1">
             <li>export your data</li>
@@ -273,7 +290,7 @@ function TermsPage() {
         </section>
 
         <section>
-          <h2 className="font-semibold text-base">13. Limitation of Liability</h2>
+          <h2 className="font-semibold text-base">14. Limitation of Liability</h2>
           <p className="mt-2 text-muted-foreground">RealTalk is provided "as is".</p>
           <p className="mt-2 text-muted-foreground">To the fullest extent permitted by law, we are not liable for:</p>
           <ul className="mt-2 list-disc pl-5 text-muted-foreground space-y-1">
@@ -286,7 +303,7 @@ function TermsPage() {
         </section>
 
         <section>
-          <h2 className="font-semibold text-base">14. Changes to These Terms</h2>
+          <h2 className="font-semibold text-base">15. Changes to These Terms</h2>
           <p className="mt-2 text-muted-foreground">
             We may update these Terms as the platform evolves.
           </p>
@@ -296,7 +313,7 @@ function TermsPage() {
         </section>
 
         <section>
-          <h2 className="font-semibold text-base">15. Contact</h2>
+          <h2 className="font-semibold text-base">16. Contact</h2>
           <p className="mt-2 text-muted-foreground">For questions about these Terms:</p>
           <p className="mt-2 text-muted-foreground">
             <strong>Email:</strong>{" "}

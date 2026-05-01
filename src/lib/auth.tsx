@@ -64,13 +64,20 @@ type AuthCtx = {
   user: User | null;
   session: Session | null;
   loading: boolean;
-  signIn: (email: string, password: string, keep?: boolean) => Promise<{ error?: string }>;
+  signIn: (email: string, password: string, keep?: boolean) => Promise<{ error?: string; requiresMfa?: boolean }>;
   signUp: (email: string, password: string, keep?: boolean) => Promise<{ error?: string }>;
   requestPasswordReset: (email: string) => Promise<{ error?: string; retryAfterSeconds?: number; status?: number }>;
+  completeMfaSignIn: (code: string) => Promise<{ error?: string }>;
   signInWithGoogle: (keep?: boolean) => Promise<{ error?: string }>;
   connectGoogleForGmail: () => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
 };
+
+function isMfaRequiredError(error?: { message?: string; code?: string }) {
+  if (!error) return false;
+  const message = (error.message || "").toLowerCase();
+  return error.code === "mfa_required" || message.includes("mfa") || message.includes("multi-factor");
+}
 
 const Ctx = createContext<AuthCtx | null>(null);
 
@@ -258,6 +265,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email: normalizeEmail(email),
         password,
       });
+      if (isMfaRequiredError(error)) {
+        return { requiresMfa: true };
+      }
       return { error: mapAuthError(error) };
     },
     signUp: async (email, password, keep = true) => {
@@ -279,6 +289,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         retryAfterSeconds: extractRetryAfterSeconds(error?.message),
         status: error?.status,
       };
+    },
+    completeMfaSignIn: async (code) => {
+      const trimmedCode = code.trim();
+      if (!/^\d{6}$/.test(trimmedCode)) {
+        return { error: "Enter a valid 6-digit code." };
+      }
+
+      const mfaApi = (supabase.auth as any).mfa;
+      if (!mfaApi?.listFactors || !mfaApi?.challenge || !mfaApi?.verify) {
+        return { error: "Two-factor authentication is not available right now." };
+      }
+
+      const { data: listData, error: listError } = await mfaApi.listFactors();
+      if (listError) return { error: mapAuthError(listError) ?? listError.message };
+
+      const factors = Array.isArray(listData?.totp) ? listData.totp : [];
+      const factor = factors.find((item: any) => item.status === "verified") ?? factors[0];
+      if (!factor?.id) {
+        return { error: "No authenticator factor found for this account." };
+      }
+
+      const { data: challengeData, error: challengeError } = await mfaApi.challenge({ factorId: factor.id });
+      if (challengeError) return { error: mapAuthError(challengeError) ?? challengeError.message };
+
+      const challengeId = String(challengeData?.id ?? "");
+      if (!challengeId) return { error: "Could not start MFA challenge." };
+
+      const { error: verifyError } = await mfaApi.verify({
+        factorId: factor.id,
+        challengeId,
+        code: trimmedCode,
+      });
+      if (verifyError) return { error: mapAuthError(verifyError) ?? verifyError.message };
+
+      return {};
     },
     signInWithGoogle: async (keep = true) => {
       localStorage.setItem(KEEP_KEY, String(keep));
