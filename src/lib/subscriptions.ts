@@ -1,7 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 
 export type SubscriptionPlan = "free" | "pro" | "platinum" | "student" | "professional";
-export type MeteredFeature = "deep_thinking" | "plan" | "gmail_send" | "voice_input" | "journal_save" | "cv_toolkit" | "advice_clarify";
+export type MeteredFeature = "deep_thinking" | "plan" | "gmail_send" | "voice_input" | "journal_save" | "cv_toolkit" | "advice_clarify" | "money_coach_plan";
 export type AccessFeature = MeteredFeature | "schedule" | "benefits_helper";
 export type UsagePeriodType = "day" | "month";
 
@@ -48,6 +48,7 @@ export const PLAN_CATALOG: PlanCatalogItem[] = [
       "Conversation Memory: up to 100 messages",
       "Benefits Helper (UC/DWP guidance): included",
       "CV Toolkit: 2 uses per day (Review, Job Match, Rewrite only)",
+      "Money Planner AI: 5 plan generations per month",
     ],
   },
   {
@@ -67,6 +68,7 @@ export const PLAN_CATALOG: PlanCatalogItem[] = [
       "Conversation Memory: up to 200 messages",
       "Benefits Helper (UC/DWP guidance): included",
       "CV Toolkit: 5 uses per day (Review, Job Match, Rewrite, Cover Letter)",
+      "Money Planner AI: 20 plan generations per month",
     ],
   },
   {
@@ -86,6 +88,7 @@ export const PLAN_CATALOG: PlanCatalogItem[] = [
       "Conversation Memory: up to 300 messages",
       "Benefits Helper (UC/DWP guidance): included",
       "CV Toolkit: 8 uses per day (all tools)",
+      "Money Planner AI: 100 plan generations per month",
     ],
   },
   {
@@ -103,6 +106,7 @@ export const PLAN_CATALOG: PlanCatalogItem[] = [
       "Gmail send: 100 per month",
       "Conversation Memory: up to 500 messages",
       "CV Toolkit: 15 uses per day (all tools including Personal Statement)",
+      "Money Planner AI: 150 plan generations per month",
     ],
   },
   {
@@ -120,6 +124,7 @@ export const PLAN_CATALOG: PlanCatalogItem[] = [
       "Gmail send: 200 per month",
       "Conversation Memory: unlimited",
       "CV Toolkit: 25 uses per day (all tools)",
+      "Money Planner AI: unlimited",
     ],
   },
 ];
@@ -135,6 +140,7 @@ const PLAN_LIMITS: Record<SubscriptionPlan, Record<AccessFeature, number | boole
     journal_save: 10,               // per month
     cv_toolkit: 2,                  // per day
     advice_clarify: 10,             // per month
+    money_coach_plan: 5,            // 5 AI plan generations per month
   },
   pro: {
     schedule: true,
@@ -146,6 +152,7 @@ const PLAN_LIMITS: Record<SubscriptionPlan, Record<AccessFeature, number | boole
     journal_save: 20,               // per month
     cv_toolkit: 5,                  // per day
     advice_clarify: 50,             // per month
+    money_coach_plan: 20,           // 20 AI plan generations per month
   },
   platinum: {
     schedule: true,
@@ -157,6 +164,7 @@ const PLAN_LIMITS: Record<SubscriptionPlan, Record<AccessFeature, number | boole
     journal_save: 40,               // per month
     cv_toolkit: 8,                  // per day
     advice_clarify: null,           // unlimited
+    money_coach_plan: null,         // unlimited
   },
   student: {
     schedule: true,
@@ -168,6 +176,7 @@ const PLAN_LIMITS: Record<SubscriptionPlan, Record<AccessFeature, number | boole
     journal_save: 120,              // per month
     cv_toolkit: 15,                 // per day
     advice_clarify: null,           // unlimited
+    money_coach_plan: null,         // unlimited
   },
   professional: {
     schedule: true,
@@ -179,6 +188,7 @@ const PLAN_LIMITS: Record<SubscriptionPlan, Record<AccessFeature, number | boole
     journal_save: 200,              // per month (unchanged)
     cv_toolkit: 25,                 // per day
     advice_clarify: null,           // unlimited
+    money_coach_plan: null,         // unlimited
   },
 };
 
@@ -190,6 +200,7 @@ const FEATURE_PERIOD: Record<MeteredFeature, UsagePeriodType> = {
   journal_save: "month",
   cv_toolkit: "day",
   advice_clarify: "month",
+  money_coach_plan: "month",
 };
 
 export const getCurrentPeriodKey = (periodType: UsagePeriodType, now = new Date()): string => {
@@ -355,6 +366,11 @@ export const setSubscriptionPlan = async (userId: string, plan: SubscriptionPlan
   if (error) throw error;
 
   return loadSubscriptionSnapshot(userId);
+};
+
+export const canUseMeteredFeature = (feature: MeteredFeature, snapshot: SubscriptionSnapshot): boolean => {
+  const usage = snapshot.usage[feature];
+  return usage.limit === null || usage.used < usage.limit;
 };
 
 // Conversation memory limits based on subscription tier

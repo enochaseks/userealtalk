@@ -24,20 +24,48 @@ function AccountDataPage() {
     setBusy(true);
     try {
       const client = supabase as any;
-      const [conversationsRes, messagesRes, plansRes, insightsRes, settingsRes, memoryProfileRes, advicePostsRes, adviceFeedbackRes, adviceReportsRes] = await Promise.all([
+      const [
+        conversationsRes,
+        messagesRes,
+        plansRes,
+        insightsRes,
+        weeklyInsightsRes,
+        settingsRes,
+        memoryProfileRes,
+        advicePostsRes,
+        adviceFeedbackRes,
+        adviceReportsRes,
+        adviceCommentsRes,
+        adviceCommentReactionsRes,
+        journalRes,
+        schedulesRes,
+        moneyPlannerRes,
+        featureUsageRes,
+        subscriptionRes,
+        learningAttemptsRes,
+        visionFailuresRes,
+        reminderLogsRes,
+      ] = await Promise.all([
         supabase.from("conversations").select("*").eq("user_id", user.id).order("updated_at", { ascending: false }),
         supabase.from("messages").select("*").eq("user_id", user.id).order("created_at", { ascending: true }),
         supabase.from("plans").select("*").eq("user_id", user.id).order("created_at", { ascending: false }),
-        supabase
-          .from("conversation_weekly_insights")
-          .select("*")
-          .eq("user_id", user.id)
-          .order("week_start", { ascending: false }),
+        supabase.from("conversation_weekly_insights").select("*").eq("user_id", user.id).order("week_start", { ascending: false }),
+        client.from("user_weekly_insights").select("*").eq("user_id", user.id).order("week_start", { ascending: false }),
         supabase.from("user_insight_settings").select("*").eq("user_id", user.id).maybeSingle(),
         supabase.from("user_memory_profiles").select("*").eq("user_id", user.id).maybeSingle(),
         client.from("advice_posts").select("*").eq("author_user_id", user.id).order("created_at", { ascending: false }),
         client.from("advice_feedback").select("*").eq("user_id", user.id).order("created_at", { ascending: false }),
         client.from("advice_reports").select("*").eq("reporter_user_id", user.id).order("created_at", { ascending: false }),
+        client.from("advice_comments").select("*").eq("user_id", user.id).order("created_at", { ascending: false }),
+        client.from("advice_comment_reactions").select("*").eq("user_id", user.id).order("created_at", { ascending: false }),
+        client.from("journal_entries").select("*").eq("user_id", user.id).order("created_at", { ascending: false }),
+        client.from("user_schedules").select("*").eq("user_id", user.id).order("starts_at", { ascending: false }),
+        client.from("user_money_planner").select("*").eq("user_id", user.id).maybeSingle(),
+        client.from("user_feature_usage").select("*").eq("user_id", user.id),
+        client.from("user_subscriptions").select("*").eq("user_id", user.id).maybeSingle(),
+        client.from("user_learning_attempts").select("*").eq("user_id", user.id).order("created_at", { ascending: false }),
+        client.from("vision_failure_events").select("*").eq("user_id", user.id).order("created_at", { ascending: false }),
+        client.from("user_schedule_reminder_logs").select("*").eq("user_id", user.id).order("sent_at", { ascending: false }),
       ]);
 
       const payload = {
@@ -49,12 +77,23 @@ function AccountDataPage() {
         conversations: conversationsRes.data ?? [],
         messages: messagesRes.data ?? [],
         plans: plansRes.data ?? [],
-        weekly_insights: insightsRes.data ?? [],
+        conversation_weekly_insights: insightsRes.data ?? [],
+        weekly_insights: weeklyInsightsRes.data ?? [],
         insight_settings: settingsRes.data ?? null,
         learned_profile_preferences: memoryProfileRes.data ?? null,
         advice_posts: advicePostsRes.data ?? [],
         advice_feedback: adviceFeedbackRes.data ?? [],
         advice_reports: adviceReportsRes.data ?? [],
+        advice_comments: adviceCommentsRes.data ?? [],
+        advice_comment_reactions: adviceCommentReactionsRes.data ?? [],
+        journal_entries: journalRes.data ?? [],
+        schedules: schedulesRes.data ?? [],
+        money_planner: moneyPlannerRes.data ?? null,
+        feature_usage: featureUsageRes.data ?? [],
+        subscription: subscriptionRes.data ?? null,
+        learning_attempts: learningAttemptsRes.data ?? [],
+        vision_failure_events: visionFailuresRes.data ?? [],
+        schedule_reminder_logs: reminderLogsRes.data ?? [],
       };
 
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
@@ -99,10 +138,15 @@ function AccountDataPage() {
           <ul className="mt-2 list-disc pl-5 text-sm text-muted-foreground space-y-1">
             <li>conversations and messages</li>
             <li>saved plans</li>
-            <li>advice submissions, feedback, and reports</li>
-            <li>insights and summaries</li>
-            <li>venting privacy settings (including whether you opted in to sharing vent chats)</li>
-            <li>learned profile preferences (such as communication style and behavioural patterns)</li>
+            <li>journal entries</li>
+            <li>schedules and reminder logs</li>
+            <li>Money Planner data (savings goals, spending entries, tasks, debts, AI plans)</li>
+            <li>advice submissions, feedback, comments, reactions, and reports</li>
+            <li>weekly insights and summaries</li>
+            <li>venting privacy settings</li>
+            <li>learned profile preferences (communication style, behavioural patterns)</li>
+            <li>feature usage counts and subscription status</li>
+            <li>learning attempts and vision failure events</li>
           </ul>
           <div className="mt-3">
             <Button onClick={() => void exportMyData()} disabled={busy}>
@@ -118,10 +162,14 @@ function AccountDataPage() {
           </p>
           <p className="mt-3 text-sm text-muted-foreground">Deleting your account will remove:</p>
           <ul className="mt-2 list-disc pl-5 text-sm text-muted-foreground space-y-1">
-            <li>all conversations</li>
+            <li>all conversations and messages</li>
             <li>all insights and summaries</li>
-            <li>saved plans</li>
+            <li>saved plans and journal entries</li>
+            <li>schedules and reminders</li>
+            <li>Money Planner data</li>
+            <li>advice posts, comments, and reactions</li>
             <li>learned profile data</li>
+            <li>feature usage and subscription records</li>
           </ul>
           <p className="mt-3 text-sm text-muted-foreground">This action cannot be undone.</p>
           <div className="mt-3">

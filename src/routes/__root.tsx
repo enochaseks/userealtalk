@@ -17,7 +17,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { loadSubscriptionSnapshot } from "@/lib/subscriptions";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { BookOpen, Check, ChevronDown, FileText, Globe2, LocateFixed, MapPin, Menu, NotebookPen, Plus, Settings, X } from "lucide-react";
+import { BookOpen, Check, ChevronDown, FileText, Globe2, LocateFixed, MapPin, Menu, NotebookPen, PiggyBank, Plus, Settings, X } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
@@ -943,6 +943,14 @@ function TopNav() {
                       >
                         <NotebookPen className="h-4 w-4 shrink-0 text-primary" />
                         <span>Journal</span>
+                      </Link>
+                      <Link
+                        to="/money-planner"
+                        onClick={() => setOpen(false)}
+                        className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-surface-elevated hover:text-foreground"
+                      >
+                        <PiggyBank className="h-4 w-4 shrink-0 text-primary" />
+                        <span>Money Planner</span>
                       </Link>
                     </CollapsibleContent>
                   </Collapsible>

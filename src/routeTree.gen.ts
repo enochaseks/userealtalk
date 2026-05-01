@@ -17,6 +17,7 @@ import { Route as RefundPolicyRouteImport } from './routes/refund-policy'
 import { Route as RecoverRouteImport } from './routes/recover'
 import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as PrivacyRouteImport } from './routes/privacy'
+import { Route as MoneyPlannerRouteImport } from './routes/money-planner'
 import { Route as JournalRouteImport } from './routes/journal'
 import { Route as CvReviewRouteImport } from './routes/cv-review'
 import { Route as AuthRouteImport } from './routes/auth'
@@ -64,6 +65,11 @@ const ProfileRoute = ProfileRouteImport.update({
 const PrivacyRoute = PrivacyRouteImport.update({
   id: '/privacy',
   path: '/privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MoneyPlannerRoute = MoneyPlannerRouteImport.update({
+  id: '/money-planner',
+  path: '/money-planner',
   getParentRoute: () => rootRouteImport,
 } as any)
 const JournalRoute = JournalRouteImport.update({
@@ -115,6 +121,7 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/cv-review': typeof CvReviewRoute
   '/journal': typeof JournalRoute
+  '/money-planner': typeof MoneyPlannerRoute
   '/privacy': typeof PrivacyRoute
   '/profile': typeof ProfileRoute
   '/recover': typeof RecoverRoute
@@ -133,6 +140,7 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/cv-review': typeof CvReviewRoute
   '/journal': typeof JournalRoute
+  '/money-planner': typeof MoneyPlannerRoute
   '/privacy': typeof PrivacyRoute
   '/profile': typeof ProfileRoute
   '/recover': typeof RecoverRoute
@@ -152,6 +160,7 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/cv-review': typeof CvReviewRoute
   '/journal': typeof JournalRoute
+  '/money-planner': typeof MoneyPlannerRoute
   '/privacy': typeof PrivacyRoute
   '/profile': typeof ProfileRoute
   '/recover': typeof RecoverRoute
@@ -172,6 +181,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/cv-review'
     | '/journal'
+    | '/money-planner'
     | '/privacy'
     | '/profile'
     | '/recover'
@@ -190,6 +200,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/cv-review'
     | '/journal'
+    | '/money-planner'
     | '/privacy'
     | '/profile'
     | '/recover'
@@ -208,6 +219,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/cv-review'
     | '/journal'
+    | '/money-planner'
     | '/privacy'
     | '/profile'
     | '/recover'
@@ -227,6 +239,7 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRoute
   CvReviewRoute: typeof CvReviewRoute
   JournalRoute: typeof JournalRoute
+  MoneyPlannerRoute: typeof MoneyPlannerRoute
   PrivacyRoute: typeof PrivacyRoute
   ProfileRoute: typeof ProfileRoute
   RecoverRoute: typeof RecoverRoute
@@ -293,6 +306,13 @@ declare module '@tanstack/react-router' {
       path: '/privacy'
       fullPath: '/privacy'
       preLoaderRoute: typeof PrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/money-planner': {
+      id: '/money-planner'
+      path: '/money-planner'
+      fullPath: '/money-planner'
+      preLoaderRoute: typeof MoneyPlannerRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/journal': {
@@ -373,6 +393,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRoute,
   CvReviewRoute: CvReviewRoute,
   JournalRoute: JournalRoute,
+  MoneyPlannerRoute: MoneyPlannerRoute,
   PrivacyRoute: PrivacyRoute,
   ProfileRoute: ProfileRoute,
   RecoverRoute: RecoverRoute,

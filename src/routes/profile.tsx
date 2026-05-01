@@ -138,6 +138,7 @@ const SUBSCRIPTION_FEATURE_LABELS: Record<MeteredFeature, string> = {
   journal_save: "Journal saves",
   cv_toolkit: "CV Toolkit",
   advice_clarify: "RealTalk Clarification",
+  money_coach_plan: "Money Coach AI analysis",
 };
 
 const getUtcWeekStart = (): string => {

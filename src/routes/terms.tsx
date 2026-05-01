@@ -17,7 +17,7 @@ function TermsPage() {
         Back
       </button>
       <h1 className="font-serif text-3xl tracking-tight">Terms of Service</h1>
-      <p className="mt-3 text-sm text-muted-foreground">Last updated: April 2026 (updated to cover CV Toolkit, voice input, subscriptions, and location-based guidance)</p>
+      <p className="mt-3 text-sm text-muted-foreground">Last updated: May 2026 (updated to cover sensitive financial data handling and non-retention)</p>
 
       <div className="mt-6 space-y-6 text-sm leading-relaxed text-foreground/90">
         <section>
@@ -224,6 +224,34 @@ function TermsPage() {
         </section>
 
         <section>
+          <h2 className="font-semibold text-base">10b. Sensitive Financial Data (Money Coach)</h2>
+          <p className="mt-2 text-muted-foreground">
+            When you use money-management features with sensitive financial files (for example, bank statements or transaction exports), the following applies:
+          </p>
+          <ul className="mt-2 list-disc pl-5 text-muted-foreground space-y-1">
+            <li>You must provide explicit consent before sensitive financial processing starts</li>
+            <li>These requests are handled in private mode</li>
+            <li>RealTalk does not retain sensitive financial attachments in database or storage for these requests</li>
+            <li>RealTalk does not retain the underlying sensitive financial message content for these requests</li>
+          </ul>
+          <p className="mt-2 text-muted-foreground">
+            To preserve service continuity, RealTalk may keep non-sensitive placeholders or minimal operational metadata that does not contain your sensitive financial content.
+          </p>
+        </section>
+
+        <section>
+          <h2 className="font-semibold text-base">10c. Money Planner Tool Data</h2>
+          <p className="mt-2 text-muted-foreground">
+            Data you enter into the Money Planner tool — including savings goals, manual spending entries, to-do tasks, debt records, and AI-generated money plans — is stored in your RealTalk account database and synced across devices.
+          </p>
+          <ul className="mt-2 list-disc pl-5 text-muted-foreground space-y-1">
+            <li>This data is tied to your account and deleted when you delete your account</li>
+            <li>This data is distinct from sensitive financial file uploads (bank statements), which are not stored</li>
+            <li>You can delete your account and all associated data at any time via the account data page</li>
+          </ul>
+        </section>
+
+        <section>
           <h2 className="font-semibold text-base">11. Intellectual Property</h2>
           <p className="mt-2 text-muted-foreground">All platform content, branding, design, and features (including RealTime Neurons) are owned by RealTalk LTD.</p>
           <p className="mt-2 text-muted-foreground">You retain ownership of the content you submit.</p>
@@ -252,7 +280,7 @@ function TermsPage() {
             <li>reliance on AI-generated content</li>
             <li>decisions made based on responses</li>
             <li>service interruptions or provider outages</li>
-            <li>data loss, including browser-stored data</li>
+            <li>data loss, including browser-stored or server-stored data</li>
             <li>indirect or consequential damages</li>
           </ul>
         </section>

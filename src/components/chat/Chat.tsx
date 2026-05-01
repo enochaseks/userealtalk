@@ -33,6 +33,7 @@ import { useSearch, useNavigate } from "@tanstack/react-router";
 import { useVoiceInput } from "../../hooks/use-voice-input";
 import { useIsMobile } from "@/hooks/use-mobile";
 import {
+  canUseMeteredFeature,
   consumeMeteredFeature,
   getUsageWindowLabel,
   hasFeatureAccess,
@@ -108,6 +109,9 @@ const CHAT_ATTACHMENT_BUCKET = "chat-attachments";
 const CHAT_DRAFT_DB_NAME = "realtalk-chat-drafts";
 const CHAT_DRAFT_STORE = "kv";
 const USER_LOCATION_STORAGE_KEY = "realtalk_user_location";
+const FINANCIAL_CONSENT_STORAGE_KEY = "realtalk_financial_data_consent_v1";
+const SENSITIVE_FINANCIAL_MESSAGE_PLACEHOLDER =
+  "[Sensitive financial information was provided in private mode and was not stored.]";
 
 type UserLocationContext = {
   countryCode: string;
@@ -146,6 +150,7 @@ type ComposerDraft = {
   forceThinking: boolean;
   forcePlan: boolean;
   forceBenefits: boolean;
+  forceMoneyCoach: boolean;
   forceVent: boolean;
   ventAdviceMode: VentAdviceMode;
 };
@@ -186,6 +191,7 @@ const chatDraftGet = async (key: string): Promise<ComposerDraft | null> => {
         const forceThinking = Boolean((value as any).forceThinking);
         const forcePlan = Boolean((value as any).forcePlan);
         const forceBenefits = Boolean((value as any).forceBenefits);
+        const forceMoneyCoach = Boolean((value as any).forceMoneyCoach);
         const forceVent = Boolean((value as any).forceVent);
         const ventAdviceMode = (value as any).ventAdviceMode === "advice" ? "advice" : "none";
         resolve({
@@ -197,6 +203,7 @@ const chatDraftGet = async (key: string): Promise<ComposerDraft | null> => {
           forceThinking,
           forcePlan,
           forceBenefits,
+          forceMoneyCoach,
           forceVent,
           ventAdviceMode,
         });
@@ -533,6 +540,7 @@ const FEATURE_LABELS: Record<MeteredFeature, string> = {
   journal_save: "Journal saves",
   cv_toolkit: "CV Toolkit",
   advice_clarify: "RealTalk Clarification",
+  money_coach_plan: "Money Coach AI analysis",
 };
 
 const getJournalSaveKey = (messageId: string | null | undefined, content: string) => {
@@ -564,6 +572,7 @@ export function Chat() {
   const [forceThinking, setForceThinking] = useState(false);
   const [forcePlan, setForcePlan] = useState(false);
   const [forceBenefits, setForceBenefits] = useState(false);
+  const [forceMoneyCoach, setForceMoneyCoach] = useState(false);
   const [forceVent, setForceVent] = useState(false);
   const [ventAdviceMode, setVentAdviceMode] = useState<VentAdviceMode>("none");
   const [showFeatureMenu, setShowFeatureMenu] = useState(false);
@@ -593,6 +602,9 @@ export function Chat() {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [upgradeBusy, setUpgradeBusy] = useState(false);
   const [isDeletingConversation, setIsDeletingConversation] = useState(false);
+  const [financialConsentAccepted, setFinancialConsentAccepted] = useState(false);
+  const [showFinancialConsentDialog, setShowFinancialConsentDialog] = useState(false);
+  const [financialConsentChecked, setFinancialConsentChecked] = useState(false);
   const [userLocation, setUserLocation] = useState<UserLocationContext | null>(null);
   const [quickStartProfile, setQuickStartProfile] = useState<QuickStartPayload | null>(null);
   const [quickStartPending, setQuickStartPending] = useState(false);
@@ -646,8 +658,9 @@ export function Chat() {
         setQuickStartWin(localPayload.weeklyWin);
         setQuickStartSupport(localPayload.supportType);
         setQuickStartTools(getQuickStartToolRecommendations(localPayload));
-        await saveQuickStartProfile(user.id, localPayload, { resetPending: shouldQueueApply });
-        if (!shouldQueueApply) {
+        if (shouldQueueApply) {
+          await saveQuickStartProfile(user.id, localPayload, { resetPending: true });
+        } else {
           clearQuickStartPayload();
         }
         return;
@@ -757,6 +770,7 @@ export function Chat() {
     setForceThinking(Boolean(draft.forceThinking));
     setForcePlan(Boolean(draft.forcePlan));
     setForceBenefits(Boolean(draft.forceBenefits));
+    setForceMoneyCoach(Boolean(draft.forceMoneyCoach));
     setForceVent(Boolean(draft.forceVent));
     setVentAdviceMode(draft.ventAdviceMode === "advice" ? "advice" : "none");
   }, []);
@@ -772,7 +786,7 @@ export function Chat() {
     void (async () => {
       try {
         const specificDraft = await chatDraftGet(composerDraftKey);
-        const latestDraft = specificDraft ? null : await chatDraftGet(latestComposerDraftKey);
+        const latestDraft = specificDraft || convId ? null : await chatDraftGet(latestComposerDraftKey);
         const draft = specificDraft ?? latestDraft;
         if (cancelled || !draft) return;
         applyComposerDraft(draft);
@@ -786,7 +800,7 @@ export function Chat() {
     return () => {
       cancelled = true;
     };
-  }, [applyComposerDraft, composerDraftKey, latestComposerDraftKey]);
+  }, [applyComposerDraft, composerDraftKey, convId, latestComposerDraftKey]);
 
   useEffect(() => {
     if (!composerDraftKey || !latestComposerDraftKey || !draftHydrated) return;
@@ -801,6 +815,7 @@ export function Chat() {
         forceThinking,
         forcePlan,
         forceBenefits,
+        forceMoneyCoach,
         forceVent,
         ventAdviceMode,
       };
@@ -835,6 +850,7 @@ export function Chat() {
     draftHydrated,
     emotionalMode,
     forceBenefits,
+    forceMoneyCoach,
     forcePlan,
     forceThinking,
     forceVent,
@@ -864,11 +880,6 @@ export function Chat() {
     if (snapshot.plan !== "platinum") {
       setShowUpgradeModal(true);
     }
-  };
-
-  const canUseMeteredFeature = (feature: MeteredFeature, snapshot: SubscriptionSnapshot) => {
-    const usage = snapshot.usage[feature];
-    return usage.limit === null || usage.used < usage.limit;
   };
 
   const planLimitReached =
@@ -950,6 +961,11 @@ export function Chat() {
       window.removeEventListener("storage", syncLocation);
       window.removeEventListener("userLocationUpdated", syncLocation as EventListener);
     };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setFinancialConsentAccepted(window.localStorage.getItem(FINANCIAL_CONSENT_STORAGE_KEY) === "true");
   }, []);
 
   useEffect(() => {
@@ -1713,6 +1729,68 @@ export function Chat() {
     return keys.some((k) => lower.includes(k));
   };
 
+  const isMoneyHelpIntent = (text: string): boolean => {
+    const lower = text.toLowerCase();
+    const keys = [
+      "budget",
+      "money",
+      "overspending",
+      "spending",
+      "save money",
+      "savings",
+      "paycheck",
+      "pay day",
+      "debt",
+      "credit card",
+      "bills",
+      "rent",
+      "expenses",
+      "financial",
+      "broke",
+      "living paycheck",
+      "living pay check",
+      "impulse buy",
+      "impulse spending",
+    ];
+    return keys.some((k) => lower.includes(k));
+  };
+
+  const isFinancialAttachment = (attachment: ChatAttachment): boolean => {
+    const name = String(attachment.name || "").toLowerCase();
+    const mime = String(attachment.mimeType || "").toLowerCase();
+    return (
+      name.includes("statement") ||
+      name.includes("transaction") ||
+      name.includes("bank") ||
+      name.includes("spend") ||
+      name.includes("expense") ||
+      name.includes("budget") ||
+      name.includes("card") ||
+      name.includes("balance") ||
+      mime.includes("csv") ||
+      mime.includes("pdf") ||
+      attachment.kind === "text"
+    );
+  };
+
+  const extractBalanceHint = (text: string): string | null => {
+    const normalized = String(text || "").replace(/\s+/g, " ");
+    const patterns = [
+      /(?:current\s+)?balance(?:\s+is|\s*=|\s*:)??\s*([$£€]\s?\d[\d,]*(?:\.\d{1,2})?)/i,
+      /(?:i\s+have|left\s+with|only\s+have)\s*([$£€]\s?\d[\d,]*(?:\.\d{1,2})?)/i,
+      /([$£€]\s?\d[\d,]*(?:\.\d{1,2})?)\s*(?:left|remaining)/i,
+    ];
+
+    for (const pattern of patterns) {
+      const match = normalized.match(pattern);
+      if (match?.[1]) {
+        return match[1].replace(/\s+/g, "").trim();
+      }
+    }
+
+    return null;
+  };
+
   const isEmailIntent = (text: string): boolean => {
     const lower = text.toLowerCase();
     const patterns = [
@@ -1897,23 +1975,35 @@ export function Chat() {
     return `The AI response was delayed. I can still help quickly: summarize your main goal in one line and your biggest blocker in one line, and I will give you a focused next step.\n\nCurrent topic: ${trimmed}`;
   };
 
- const send = async (overrideText?: string, overrideVentAdviceMode?: VentAdviceMode) => {
-  const text = (overrideText ?? input).trim();
-  const attachmentsForRequest = [...pendingAttachments];
-  if ((!text && attachmentsForRequest.length === 0) || busy || !user) return;
-  const activeMode = modeRef.current;
+  const send = async (
+    overrideText?: string,
+    overrideVentAdviceMode?: VentAdviceMode,
+    bypassFinancialConsent = false,
+  ) => {
+    const text = (overrideText ?? input).trim();
+    const attachmentsForRequest = [...pendingAttachments];
+    if ((!text && attachmentsForRequest.length === 0) || busy || !user) return;
+    const activeMode = modeRef.current;
 
-  // If the user expresses email intent, open the Gmail panel instead of chatting
-  if (!overrideText && isEmailIntent(text)) {
-    const emailSnapshot = await refreshSubscription();
-    if (emailSnapshot && !canUseMeteredFeature("gmail_send", emailSnapshot)) {
-      showFeatureLimitToast("gmail_send", emailSnapshot);
+    const hasSensitiveFinancialAttachment = attachmentsForRequest.some((item) => isFinancialAttachment(item));
+    if (hasSensitiveFinancialAttachment && !financialConsentAccepted && !bypassFinancialConsent) {
+      setFinancialConsentChecked(false);
+      setShowFinancialConsentDialog(true);
       return;
     }
-    setInput("");
-    setShowEmailPanel(true);
-    return;
-  }
+
+    // Clear the input immediately so the textarea feels responsive
+    if (!overrideText) setInput("");
+    if (!overrideText && isEmailIntent(text)) {
+      const emailSnapshot = await refreshSubscription();
+      if (emailSnapshot && !canUseMeteredFeature("gmail_send", emailSnapshot)) {
+        showFeatureLimitToast("gmail_send", emailSnapshot);
+        return;
+      }
+      setInput("");
+      setShowEmailPanel(true);
+      return;
+    }
 
     const scheduleRequested = false;
     let thinkingRequested = forceThinking || shouldUseThinkingMode(text);
@@ -1928,6 +2018,16 @@ export function Chat() {
     // Offer the vent choice whenever vent is active and no explicit advice mode was picked.
     // This covers both manual Vent toggle and auto-detected vent language.
     const shouldOfferVentChoice = activeVent && !overrideVentAdviceMode && activeVentAdviceMode === "none";
+    const autoVentTriggered = ventDetectedFromText && !forceVent && !overrideVentAdviceMode;
+    const ventModeNotice = shouldOfferVentChoice
+      ? isPrivateVenting
+        ? autoVentTriggered
+          ? "Entering Vent Mode because this message sounds stressed. Chats in Vent Mode are private by default and will not appear in Recent Chats unless you turn on vent sharing in Settings."
+          : "Entering Vent Mode. Chats in Vent Mode are private by default and will not appear in Recent Chats unless you turn on vent sharing in Settings."
+        : autoVentTriggered
+          ? "Entering Vent Mode because this message sounds stressed. Vent sharing is enabled, so this chat can still be saved to your Recent Chats."
+          : "Entering Vent Mode. Vent sharing is enabled, so this chat can still be saved to your Recent Chats."
+      : "";
 
     const featureSnapshot = await refreshSubscription();
     const activePlan = featureSnapshot?.plan ?? subscriptionSnapshot?.plan ?? "free";
@@ -1953,10 +2053,28 @@ export function Chat() {
     // Keep manual toggles sticky, but do not auto-lock modes from text detection.
     // Auto-locking can unintentionally keep heavy modes active and slow future replies.
 
+    const moneyAttachmentCount = attachmentsForRequest.filter((item) => isFinancialAttachment(item)).length;
+    const moneyAttachmentPresent = moneyAttachmentCount > 0;
+    const moneyBalanceHint = extractBalanceHint(text);
+    const moneyIntentRequested = forceMoneyCoach || isMoneyHelpIntent(text) || moneyAttachmentPresent;
+    const isSensitiveFinancialRequest = moneyAttachmentPresent;
+
+    // Enforce money coach limit for bank statement / financial file analysis
+    if (moneyAttachmentPresent && featureSnapshot && !canUseMeteredFeature("money_coach_plan", featureSnapshot)) {
+      showFeatureLimitToast("money_coach_plan", featureSnapshot);
+      return;
+    }
+    const shouldPersistConversationData = !isPrivateVenting && !isSensitiveFinancialRequest;
+    const financialPrivacyNotice = isSensitiveFinancialRequest
+      ? "Sensitive financial files were detected. This request is handled in private mode: financial attachments and message content are not saved to the database."
+      : "";
+    const assistantNotice = [ventModeNotice, financialPrivacyNotice].filter(Boolean).join("\n\n");
+
     const activeFeatures: string[] = [
       thinkingRequested ? "Deep Thinking" : "",
       planningRequested ? "Plan Mode" : "",
       forceBenefits ? "Benefits Helper" : "",
+      moneyIntentRequested ? "Money Coach" : "",
       activeVent ? "Vent" : "",
     ].filter(Boolean);
 
@@ -1973,61 +2091,64 @@ export function Chat() {
 
     isSendingRef.current = true;
 
-  const userVisibleText = text || `Please review my attached file${attachmentsForRequest.length > 1 ? "s" : ""}.`;
+    const userVisibleText = text || `Please review my attached file${attachmentsForRequest.length > 1 ? "s" : ""}.`;
     const cvHelpRequested =
       isCvHelpIntent(userVisibleText) ||
       attachmentsForRequest.some((a) => /\b(cv|resume)\b/i.test(a.name));
-  const persistedUserContent = userVisibleText.trim();
+    const persistedUserContent = shouldPersistConversationData
+      ? userVisibleText.trim()
+      : SENSITIVE_FINANCIAL_MESSAGE_PLACEHOLDER;
 
-  if (composerDraftKey && latestComposerDraftKey) {
-    const outgoingDraft: ComposerDraft = {
-      input: text,
-      pendingAttachments: attachmentsForRequest,
-      beReal,
-      emotionalMode,
-      logicalMode,
-      forceThinking,
-      forcePlan,
-      forceBenefits,
-      forceVent,
-      ventAdviceMode,
+    if (composerDraftKey && latestComposerDraftKey) {
+      const outgoingDraft: ComposerDraft = {
+        input: text,
+        pendingAttachments: attachmentsForRequest,
+        beReal,
+        emotionalMode,
+        logicalMode,
+        forceThinking,
+        forcePlan,
+        forceBenefits,
+        forceMoneyCoach,
+        forceVent,
+        ventAdviceMode,
+      };
+
+      // Save immediately so a fast refresh/reload cannot drop the outgoing payload.
+      void chatDraftSet(composerDraftKey, outgoingDraft).catch(() => {
+        // Ignore storage failures (quota/private mode/etc).
+      });
+      void chatDraftSet(latestComposerDraftKey, outgoingDraft).catch(() => {
+        // Ignore storage failures (quota/private mode/etc).
+      });
+    }
+
+    setInput("");
+    setBusy(true);
+
+    const userMsg: Msg = {
+      role: "user",
+      content: persistedUserContent,
+      features: activeFeatures,
+      attachments: attachmentsForRequest,
     };
 
-    // Save immediately so a fast refresh/reload cannot drop the outgoing payload.
-    void chatDraftSet(composerDraftKey, outgoingDraft).catch(() => {
-      // Ignore storage failures (quota/private mode/etc).
-    });
-    void chatDraftSet(latestComposerDraftKey, outgoingDraft).catch(() => {
-      // Ignore storage failures (quota/private mode/etc).
-    });
-  }
-
-  setInput("");
-  setBusy(true);
-
-  const userMsg: Msg = {
-    role: "user",
-    content: persistedUserContent,
-    features: activeFeatures,
-    attachments: attachmentsForRequest,
-  };
-
-  // Add user message + a single assistant placeholder
-  setMessages((prev) => [
-    ...prev,
-    userMsg,
-    {
-      role: "assistant",
-      content: "",
-      thinking: thinkingRequested && !shouldOfferVentChoice ? "🤔 Thinking..." : undefined,
-      ventChoicePending: shouldOfferVentChoice,
-    },
-  ]);
+    // Add user message + a single assistant placeholder
+    setMessages((prev) => [
+      ...prev,
+      userMsg,
+      {
+        role: "assistant",
+        content: assistantNotice,
+        thinking: thinkingRequested && !shouldOfferVentChoice ? "🤔 Thinking..." : undefined,
+        ventChoicePending: shouldOfferVentChoice,
+      },
+    ]);
 
   let conversationId = "";
 
   try {
-    if (!isPrivateVenting) {
+    if (shouldPersistConversationData) {
       const cid = await ensureConversation(userVisibleText);
       conversationId = cid;
 
@@ -2117,7 +2238,7 @@ export function Chat() {
     let totalMessageCount = 0;
     let currentMessages: Msg[] = [];
 
-    if (isPrivateVenting) {
+    if (!shouldPersistConversationData) {
       currentMessages = messages.filter((m) => m.role === "user" || m.role === "assistant");
       totalMessageCount = currentMessages.length;
     } else {
@@ -2152,11 +2273,29 @@ export function Chat() {
       "Business/Marketing mode is active. Do not begin with clarifying questions. Start with at least 3 practical options, include pros/cons and effort or cost, recommend one option, then provide a starter execution plan. Ask at most one optional follow-up question at the end.";
     const logicalExecutionInstruction =
       "Execution/startup mode is active. Options first, no upfront clarifying questions. Provide 2-4 practical options with pros/cons and effort/cost, recommend one, then provide a concrete starter plan. Ask at most one optional follow-up.";
+    const moneyCoachInstruction = [
+      "Money Coach mode is active. Keep this practical, calm, and non-judgmental for someone who may overthink spending.",
+      moneyAttachmentPresent
+        ? `The user attached ${moneyAttachmentCount} financial file(s). Extract useful spending patterns from those attachments first before giving advice.`
+        : "No financial file is attached, so provide a starter spending plan using the user's text and clearly label assumptions.",
+      moneyBalanceHint
+        ? `Possible current balance from user text: ${moneyBalanceHint}. Use it as a provisional figure unless contradicted by attachment data.`
+        : "If current balance is missing, infer a cautious temporary spending cap and ask one short follow-up question at the end.",
+      "Respond with these exact sections in order:",
+      "1) Snapshot (balance, fixed bills, debt pressure, assumptions).",
+      "2) Spending Leak Alerts (top 3 unnecessary spend risks).",
+      "3) 7-Day Safe-to-Spend Number (single clear amount + reasoning).",
+      "4) Concise Weekly Plan (3-5 bullet actions).",
+      "5) Money Checklist (markdown checkboxes with 5-8 actionable tasks).",
+      "6) One emergency rule for when the user feels like impulse spending.",
+      "Include this sentence at the end: 'This is educational guidance, not regulated financial advice.'",
+    ].join(" ");
     const outboundMessages = currentMessages.map((m, idx, arr) => {
       const isLatestUser = idx === arr.length - 1 && m.role === "user";
       const isBusinessPrompt = !scheduleRequested && isBusinessMarketingPrompt(m.content);
       const isLogicalExecution = !scheduleRequested && isLogicalExecutionPrompt(m.content);
-      if (!isLatestUser || (!thinkingRequested && !planningRequested && !isBusinessPrompt && !isLogicalExecution)) {
+      const isMoneyPrompt = !scheduleRequested && moneyIntentRequested;
+      if (!isLatestUser || (!thinkingRequested && !planningRequested && !isBusinessPrompt && !isLogicalExecution && !isMoneyPrompt)) {
         return { role: m.role, content: m.content };
       }
 
@@ -2169,6 +2308,8 @@ export function Chat() {
         injectedInstruction = businessFirstInstruction;
       } else if (isLogicalExecution) {
         injectedInstruction = logicalExecutionInstruction;
+      } else if (isMoneyPrompt) {
+        injectedInstruction = moneyCoachInstruction;
       }
 
       return {
@@ -2408,7 +2549,7 @@ export function Chat() {
     });
 
     if (assistantWithCvLink) {
-      if (!isPrivateVenting && conversationId) {
+      if (shouldPersistConversationData && conversationId) {
         const { data: saved } = await supabase
           .from("messages")
           .insert({
@@ -2470,6 +2611,15 @@ export function Chat() {
       }
 
       // Usage for thinking/plan is consumed before the request for strict enforcement.
+
+      // Consume money coach usage after successful bank statement analysis
+      if (moneyAttachmentPresent && user) {
+        void consumeMeteredFeature(user.id, "money_coach_plan").then((result) => {
+          setSubscriptionSnapshot(result.snapshot);
+        }).catch(() => {
+          // Non-blocking: analysis was already delivered
+        });
+      }
     }
 
     if (attachmentsForRequest.length > 0) {
@@ -2516,7 +2666,7 @@ export function Chat() {
         ];
       });
 
-      if (conversationId && !isPrivateVenting) {
+      if (conversationId && shouldPersistConversationData) {
         await supabase.from("messages").insert({
           conversation_id: conversationId,
           user_id: user.id,
@@ -2859,8 +3009,8 @@ export function Chat() {
   };
 
   const suggestions = [
-    "I want to plan budget spend",
-    "I am having rent issues",
+    "I uploaded my bank statement, audit my spending and set a strict weekly cap.",
+    "I am having rent issues and keep using savings, give me a recovery plan.",
     "How can I market my business",
   ];
 
@@ -3381,6 +3531,26 @@ export function Chat() {
                   ))}
                 </div>
               )}
+              {forceMoneyCoach && (
+                <div className="mt-4 flex flex-col items-center gap-2 w-full max-w-sm">
+                  <p className="text-xs text-muted-foreground mb-1">💸 Money Coach is on — try a quick start:</p>
+                  {[
+                    "I uploaded my statement. Audit my spending leaks and give me a 7-day money plan.",
+                    "Help me stop overspending this week.",
+                    "I keep running out of money before payday. Make me a realistic weekly budget.",
+                    "I have debt and no savings. Give me a simple plan I can actually stick to.",
+                  ].map((prompt) => (
+                    <button
+                      key={prompt}
+                      type="button"
+                      onClick={() => send(prompt)}
+                      className="w-full text-left px-4 py-2.5 rounded-xl border border-border bg-surface/60 hover:bg-surface-elevated text-sm text-foreground transition-colors"
+                    >
+                      {prompt}
+                    </button>
+                  ))}
+                </div>
+              )}
             </motion.div>
           ) : (
             <div className="space-y-4 pb-3">
@@ -3858,7 +4028,7 @@ export function Chat() {
           </div>
 
           <div className="rounded-2xl border border-border bg-surface focus-within:border-primary/60 transition-colors">
-            {(forceThinking || forcePlan || forceBenefits || forceVent || showEmailPanel || showSchedulePanel) && (
+            {(forceThinking || forcePlan || forceBenefits || forceMoneyCoach || forceVent || showEmailPanel || showSchedulePanel) && (
               <div className="px-4 pt-2 flex flex-wrap gap-2">
                 {forceThinking && (
                   <button
@@ -3884,6 +4054,15 @@ export function Chat() {
                     className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-primary/20 text-primary text-xs rounded-full hover:bg-primary/30 transition-colors"
                   >
                     🧾 Benefits Helper
+                    <span className="text-lg leading-none">×</span>
+                  </button>
+                )}
+                {forceMoneyCoach && (
+                  <button
+                    onClick={() => setForceMoneyCoach(false)}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-primary/20 text-primary text-xs rounded-full hover:bg-primary/30 transition-colors"
+                  >
+                    💸 Money Coach
                     <span className="text-lg leading-none">×</span>
                   </button>
                 )}
@@ -4116,6 +4295,11 @@ export function Chat() {
                 ))}
               </div>
             )}
+            {forceMoneyCoach && pendingAttachments.some((item) => isFinancialAttachment(item)) && (
+              <div className="px-4 pb-2 text-[11px] text-muted-foreground">
+                Money Coach will review your attached statement/transactions and return a concise spending plan plus checklist.
+              </div>
+            )}
             {(isVoiceListening || !isVoiceSupported) && (
               <div className="px-4 pb-1 text-xs">
                 {isVoiceListening ? (
@@ -4286,6 +4470,19 @@ export function Chat() {
                       )}
                       <button
                         onClick={() => {
+                          setForceMoneyCoach((prev) => !prev);
+                          setShowFeatureMenu(false);
+                        }}
+                        className={`w-full text-left px-3 py-2 text-sm rounded-md transition-colors ${
+                          forceMoneyCoach
+                            ? "bg-primary/20 text-primary"
+                            : "text-muted-foreground hover:bg-surface-elevated hover:text-foreground"
+                        }`}
+                      >
+                        💸 Money Coach
+                      </button>
+                      <button
+                        onClick={() => {
                           setForceVent(true);
                           setVentAdviceMode("none");
                           setShowFeatureMenu(false);
@@ -4417,6 +4614,68 @@ export function Chat() {
               </Button>
               <Button type="button" onClick={() => void saveQuickStartEdits()} disabled={!quickStartStruggle.trim() || !quickStartWin.trim()}>
                 Save
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={showFinancialConsentDialog}
+        onOpenChange={(open) => {
+          setShowFinancialConsentDialog(open);
+          if (!open) {
+            setFinancialConsentChecked(false);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Financial data consent</DialogTitle>
+            <DialogDescription>
+              Your upload appears to include sensitive financial information. We only process it in private mode and do not store the file or financial message content in the database.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between rounded-md border border-border px-3 py-2">
+              <Label htmlFor="financial-consent-switch" className="text-sm pr-3">
+                I agree to let RealTalk process this financial data for this request.
+              </Label>
+              <Switch
+                id="financial-consent-switch"
+                checked={financialConsentChecked}
+                onCheckedChange={setFinancialConsentChecked}
+              />
+            </div>
+            <div className="flex items-center justify-end gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  setShowFinancialConsentDialog(false);
+                  setFinancialConsentChecked(false);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={() => {
+                  if (!financialConsentChecked) {
+                    toast.error("Please accept consent to continue.");
+                    return;
+                  }
+
+                  if (typeof window !== "undefined") {
+                    window.localStorage.setItem(FINANCIAL_CONSENT_STORAGE_KEY, "true");
+                  }
+                  setFinancialConsentAccepted(true);
+                  setShowFinancialConsentDialog(false);
+                  setFinancialConsentChecked(false);
+                  void send(undefined, undefined, true);
+                }}
+              >
+                Accept and continue
               </Button>
             </div>
           </div>

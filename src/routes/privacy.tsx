@@ -18,7 +18,7 @@ function PrivacyPage() {
       </button>
       <h1 className="font-serif text-3xl tracking-tight">Privacy Policy</h1>
       <p className="mt-3 text-sm text-muted-foreground">
-        Last updated: April 2026 (updated to cover CV Toolkit, voice input, subscriptions, and location-based guidance)
+        Last updated: May 2026 (updated to cover sensitive financial data handling and non-retention)
       </p>
 
       <div className="mt-6 space-y-6 text-sm leading-relaxed text-foreground/90">
@@ -52,7 +52,25 @@ function PrivacyPage() {
             <li>Feature usage counts (e.g. daily CV toolkit uses, voice input minutes)</li>
             <li>Subscription plan and billing status (managed via Stripe)</li>
             <li>Optional country/location context (from GPS, IP lookup, locale, or manual country selection)</li>
+            <li>Financial consent preference (whether you have accepted sensitive financial processing)</li>
+            <li>Money Planner data (savings goals, manual spending entries, to-do tasks, debt records, and AI-generated money plans — stored server-side and synced across devices)</li>
           </ul>
+        </section>
+
+        <section>
+          <h2 className="font-semibold text-base">2a. Sensitive Financial Data (Money Coach)</h2>
+          <p className="mt-2 text-muted-foreground">
+            If you upload bank statements, transaction exports, or similar financial files, RealTalk treats this as sensitive financial data.
+          </p>
+          <ul className="mt-2 list-disc pl-5 text-muted-foreground space-y-1">
+            <li>Explicit consent is required before processing sensitive financial uploads</li>
+            <li>Sensitive financial requests are handled in private mode</li>
+            <li>We do not store sensitive financial attachments in database or storage for these requests</li>
+            <li>We do not store the underlying sensitive financial message content for these requests</li>
+          </ul>
+          <p className="mt-2 text-muted-foreground">
+            Only a non-sensitive placeholder may be kept for product integrity (for example, to preserve chat flow state without retaining sensitive content).
+          </p>
         </section>
 
         <section>
@@ -230,15 +248,18 @@ function PrivacyPage() {
           <p className="mt-2 text-muted-foreground">
             Your data is retained for as long as your account exists.
           </p>
+          <p className="mt-2 text-muted-foreground">
+            Exception: sensitive financial uploads and message content processed in private financial mode are not retained.
+          </p>
           <p className="mt-2 text-muted-foreground">You can:</p>
           <ul className="mt-2 list-disc pl-5 text-muted-foreground space-y-1">
             <li>export your data</li>
             <li>delete your account at any time</li>
           </ul>
           <p className="mt-2 text-muted-foreground">
-            On deletion, all server-side data (including conversations, insights, and preferences) is permanently removed.
+            On deletion, all server-side data (including conversations, insights, Money Planner data, and preferences) is permanently removed.
           </p>
-          <p className="mt-2 text-muted-foreground">Local browser data must be cleared manually.</p>
+          <p className="mt-2 text-muted-foreground">Other local browser data (e.g. location context) must be cleared manually.</p>
         </section>
 
         <section>
