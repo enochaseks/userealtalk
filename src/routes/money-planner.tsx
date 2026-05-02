@@ -28,6 +28,7 @@ type SavingsGoal = {
   targetAmount: number;
   targetDate: string;
   currentBalance: number;
+  weeklyEssentialsBudget: number;
   active: boolean;
 };
 
@@ -77,6 +78,14 @@ type JobIncome = {
   nextPayDate: string; // ISO date string YYYY-MM-DD
 };
 
+type UnemployedIncomeSource = {
+  id: string;
+  name: string;
+  amount: number;
+  frequency: JobIncome["frequency"];
+  nextPayDate: string;
+};
+
 type MoneyPlannerState = {
   goal: SavingsGoal;
   spends: SpendEntry[];
@@ -87,9 +96,24 @@ type MoneyPlannerState = {
   nextBenefitPayDate: string; // ISO date string YYYY-MM-DD
   employmentType: EmploymentType;
   jobIncome: JobIncome;
+  unemployedIncomeSources: UnemployedIncomeSource[];
   adviceMarkdown: string;
 };
 
+type StoredUserLocation = {
+  countryCode: string;
+  label: string;
+  source?: "gps" | "locale" | "manual";
+  updatedAt?: string;
+};
+
+type MoneySupportOrg = {
+  name: string;
+  help: string;
+  url: string;
+};
+
+const USER_LOCATION_STORAGE_KEY = "realtalk_user_location";
 const FINANCIAL_CONSENT_STORAGE_KEY = "realtalk_financial_data_consent_v1";
 
 const DEFAULT_STATE: MoneyPlannerState = {
@@ -98,6 +122,7 @@ const DEFAULT_STATE: MoneyPlannerState = {
     targetAmount: 0,
     targetDate: "",
     currentBalance: 0,
+    weeklyEssentialsBudget: 0,
     active: false,
   },
   spends: [],
@@ -108,7 +133,42 @@ const DEFAULT_STATE: MoneyPlannerState = {
   nextBenefitPayDate: "",
   employmentType: null,
   jobIncome: { employer: "", amount: 0, frequency: "monthly", nextPayDate: "" },
+  unemployedIncomeSources: [],
   adviceMarkdown: "",
+};
+
+const COMMON_UNEMPLOYED_INCOME_OPTIONS = [
+  "Family support",
+  "Partner support",
+  "Savings drawdown",
+  "Severance or redundancy pay",
+  "Casual or part-time work",
+  "Cash gifts",
+  "Pension drawdown",
+  "Grant or stipend",
+  "Community or charity support",
+  "Other support",
+] as const;
+
+const US_UNEMPLOYED_INCOME_OPTIONS = [
+  "Short-term state cash aid",
+  "Worker's compensation",
+  "Crowdfunding support",
+] as const;
+
+const UK_UNEMPLOYED_INCOME_OPTIONS = [
+  "Redundancy package",
+  "Local welfare assistance",
+  "Discretionary housing support",
+] as const;
+
+const resolveUnemployedIncomeOptions = (countryCode: string): string[] => {
+  const regional = countryCode === "US"
+    ? US_UNEMPLOYED_INCOME_OPTIONS
+    : countryCode === "GB"
+    ? UK_UNEMPLOYED_INCOME_OPTIONS
+    : [];
+  return Array.from(new Set([...regional, ...COMMON_UNEMPLOYED_INCOME_OPTIONS]));
 };
 
 const UK_BENEFITS_LIST = [
@@ -131,6 +191,26 @@ const UK_BENEFITS_LIST = [
   "Other benefit / grant",
 ] as const;
 
+const US_BENEFITS_LIST = [
+  "Unemployment Insurance",
+  "SNAP",
+  "TANF",
+  "SSI / SSDI",
+  "Section 8 / Housing Voucher",
+  "WIC",
+  "Medicaid",
+  "LIHEAP",
+  "Other benefit / grant",
+] as const;
+
+const BENEFITS_BY_COUNTRY: Record<string, readonly string[]> = {
+  GB: UK_BENEFITS_LIST,
+  US: US_BENEFITS_LIST,
+};
+
+const resolveBenefitsListForCountry = (countryCode: string): string[] =>
+  [...(BENEFITS_BY_COUNTRY[countryCode] ?? [])];
+
 const DEBT_CATEGORIES: Array<{ value: DebtCategory; label: string }> = [
   { value: "credit-card", label: "Credit card" },
   { value: "loan", label: "Loan" },
@@ -142,7 +222,89 @@ const DEBT_CATEGORIES: Array<{ value: DebtCategory; label: string }> = [
   { value: "other", label: "Other" },
 ];
 
-const UK_MONEY_SUPPORT_ORGS = [
+const COUNTRY_CURRENCY_MAP: Record<string, string> = {
+  US: "USD",
+  CA: "CAD",
+  MX: "MXN",
+  BR: "BRL",
+  AR: "ARS",
+  CL: "CLP",
+  CO: "COP",
+  PE: "PEN",
+  AU: "AUD",
+  NZ: "NZD",
+  JP: "JPY",
+  KR: "KRW",
+  CN: "CNY",
+  HK: "HKD",
+  SG: "SGD",
+  IN: "INR",
+  PK: "PKR",
+  BD: "BDT",
+  TH: "THB",
+  MY: "MYR",
+  ID: "IDR",
+  PH: "PHP",
+  VN: "VND",
+  TR: "TRY",
+  AE: "AED",
+  SA: "SAR",
+  QA: "QAR",
+  EG: "EGP",
+  ZA: "ZAR",
+  NG: "NGN",
+  KE: "KES",
+  CH: "CHF",
+  SE: "SEK",
+  NO: "NOK",
+  DK: "DKK",
+  PL: "PLN",
+  CZ: "CZK",
+  HU: "HUF",
+  RO: "RON",
+  GB: "GBP",
+  IE: "EUR",
+  FR: "EUR",
+  DE: "EUR",
+  ES: "EUR",
+  IT: "EUR",
+  NL: "EUR",
+  BE: "EUR",
+  PT: "EUR",
+  AT: "EUR",
+  FI: "EUR",
+  GR: "EUR",
+};
+
+const US_MONEY_SUPPORT_ORGS: MoneySupportOrg[] = [
+  {
+    name: "211",
+    help: "Connects you to local support for food, housing, and financial hardship",
+    url: "https://www.211.org",
+  },
+  {
+    name: "NFCC",
+    help: "Nonprofit credit counseling and debt management help",
+    url: "https://www.nfcc.org",
+  },
+  {
+    name: "MoneyHelper (CFPB)",
+    help: "Budgeting and debt resources for US consumers",
+    url: "https://www.consumerfinance.gov/consumer-tools/",
+  },
+  {
+    name: "Benefits.gov",
+    help: "Find federal and state benefit programs",
+    url: "https://www.benefits.gov",
+  },
+  {
+    name: "SAMHSA Crisis Support",
+    help: "Financial stress can impact wellbeing. 24/7 crisis and distress support",
+    url: "https://988lifeline.org",
+  },
+];
+
+const UK_MONEY_SUPPORT_ORGS: MoneySupportOrg[] = [
   {
     name: "StepChange Debt Charity",
     help: "Free debt advice and debt management support",
@@ -170,12 +332,87 @@ const UK_MONEY_SUPPORT_ORGS = [
   },
 ];
 
+const GLOBAL_MONEY_SUPPORT_ORGS: MoneySupportOrg[] = [
+  {
+    name: "Find local social support",
+    help: "Use local government or municipal support portals for emergency aid",
+    url: "https://www.google.com/search?q=local+government+financial+assistance",
+  },
+  {
+    name: "Mental Health Helplines",
+    help: "If money stress is overwhelming, find local crisis support",
+    url: "https://findahelpline.com",
+  },
+  {
+    name: "National debt counseling",
+    help: "Search for nonprofit debt counseling services in your country",
+    url: "https://www.google.com/search?q=nonprofit+debt+counseling+near+me",
+  },
+];
+
+const parseStoredUserLocation = (value: string | null): StoredUserLocation | null => {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value) as Partial<StoredUserLocation>;
+    const countryCode = String(parsed.countryCode ?? "").trim().toUpperCase();
+    const label = String(parsed.label ?? "").trim();
+    if (!countryCode || !label) return null;
+    return {
+      countryCode,
+      label,
+      source: parsed.source,
+      updatedAt: parsed.updatedAt,
+    };
+  } catch {
+    return null;
+  }
+};
+
+const inferCountryCodeFromLocale = (): string | null => {
+  if (typeof navigator === "undefined") return null;
+  const locale = navigator.language || "";
+  const match = locale.match(/-([A-Za-z]{2})$/);
+  return match?.[1]?.toUpperCase() ?? null;
+};
+
+const resolvePlannerCountryCode = (): string => {
+  if (typeof window !== "undefined") {
+    const stored = parseStoredUserLocation(window.localStorage.getItem(USER_LOCATION_STORAGE_KEY));
+    if (stored?.countryCode) return stored.countryCode;
+  }
+  return inferCountryCodeFromLocale() || "GB";
+};
+
+const resolveCurrencyForCountry = (countryCode: string): string =>
+  COUNTRY_CURRENCY_MAP[countryCode] || "USD";
+
+const resolveLocaleForCountry = (countryCode: string): string => {
+  if (typeof navigator !== "undefined") {
+    const locale = navigator.language || "en-GB";
+    if (/-[A-Za-z]{2}$/.test(locale)) {
+      return locale.replace(/-[A-Za-z]{2}$/, `-${countryCode}`);
+    }
+  }
+  return `en-${countryCode}`;
+};
+
+const resolvePlannerSupportOrganisations = (countryCode: string): MoneySupportOrg[] => {
+  if (countryCode === "GB") return UK_MONEY_SUPPORT_ORGS;
+  if (countryCode === "US") return US_MONEY_SUPPORT_ORGS;
+  return GLOBAL_MONEY_SUPPORT_ORGS;
+};
+
 const formatMoney = (value: number) =>
-  new Intl.NumberFormat("en-GB", {
+  (() => {
+    const countryCode = resolvePlannerCountryCode();
+    const currency = resolveCurrencyForCountry(countryCode);
+    const locale = resolveLocaleForCountry(countryCode);
+    return new Intl.NumberFormat(locale, {
     style: "currency",
-    currency: "GBP",
+    currency,
     maximumFractionDigits: 2,
-  }).format(Number.isFinite(value) ? value : 0);
+    }).format(Number.isFinite(value) ? value : 0);
+  })();
 
 const parseAmount = (value: string): number => {
   const parsed = Number(String(value).replace(/[^0-9.-]/g, ""));
@@ -190,6 +427,9 @@ const activeDebtCount = (state: MoneyPlannerState) =>
   state.debts.filter((debt) => debt.balance > 0 && debt.paymentStatus !== "paid-off").length;
 
 const totalSpendAmount = (state: MoneyPlannerState) => state.spends.reduce((sum, spend) => sum + spend.amount, 0);
+
+const currentLiveBalanceFromState = (state: MoneyPlannerState) =>
+  Math.max(0, state.goal.currentBalance - totalSpendAmount(state));
 
 const totalBenefitMonthly = (state: MoneyPlannerState) => state.benefits.reduce((sum, benefit) => {
   if (benefit.paymentFrequency === "weekly") return sum + benefit.amountMonthly * (52 / 12);
@@ -210,7 +450,7 @@ const getPlannerChangeLines = (previous: MoneyPlannerState | null, next: MoneyPl
     previous.goal.currentBalance !== next.goal.currentBalance
   ) {
     lines.push(
-      `Goal updated: ${next.goal.title || "No title"}, target ${formatMoney(next.goal.targetAmount)}, live balance ${formatMoney(next.goal.currentBalance)}.`,
+      `Goal updated: ${next.goal.title || "No title"}, target ${formatMoney(next.goal.targetAmount)}, starting balance ${formatMoney(next.goal.currentBalance)}, live balance ${formatMoney(currentLiveBalanceFromState(next))}.`,
     );
   }
 
@@ -249,10 +489,11 @@ const getPlannerChangeLines = (previous: MoneyPlannerState | null, next: MoneyPl
     previous.jobIncome.employer !== next.jobIncome.employer ||
     previous.jobIncome.amount !== next.jobIncome.amount ||
     previous.jobIncome.frequency !== next.jobIncome.frequency ||
-    previous.jobIncome.nextPayDate !== next.jobIncome.nextPayDate
+    previous.jobIncome.nextPayDate !== next.jobIncome.nextPayDate ||
+    JSON.stringify(previous.unemployedIncomeSources) !== JSON.stringify(next.unemployedIncomeSources)
   ) {
     lines.push(
-      `Income details changed: ${next.employmentType ?? "not set"}, ${next.jobIncome.employer || "no employer"}, ${formatMoney(next.jobIncome.amount)} ${next.jobIncome.frequency}.`,
+      `Income details changed: ${next.employmentType ?? "not set"}, ${next.jobIncome.employer || "no employer"}, ${formatMoney(next.jobIncome.amount)} ${next.jobIncome.frequency}, ${next.unemployedIncomeSources.length} unemployment support source(s).`,
     );
   }
 
@@ -276,12 +517,14 @@ const buildPlannerSecurityEmailBody = (previous: MoneyPlannerState | null, next:
     "",
     `Current goal: ${next.goal.title || "Not set"}`,
     `Target amount: ${formatMoney(next.goal.targetAmount)}`,
-    `Current balance: ${formatMoney(next.goal.currentBalance)}`,
+    `Starting balance: ${formatMoney(next.goal.currentBalance)}`,
+    `Current live balance: ${formatMoney(currentLiveBalanceFromState(next))}`,
     `Spending logged: ${next.spends.length} entries totalling ${formatMoney(totalSpendAmount(next))}`,
     `Tasks: ${completedTasks}/${next.tasks.length} complete`,
     `Debt tracked: ${activeDebtCount(next)} active item(s), ${formatMoney(totalDebtBalance(next))} total`,
     `Employment: ${next.employmentType ?? "not set"}`,
     `Job income: ${next.jobIncome.employer || "Not set"} - ${formatMoney(next.jobIncome.amount)} ${next.jobIncome.frequency}`,
+    `Unemployment support: ${next.unemployedIncomeSources.length} source(s)`,
     `Benefits: ${next.benefits.length} item(s), about ${formatMoney(totalBenefitMonthly(next))} per month`,
     "",
     "If this wasn't you, review your account immediately.",
@@ -339,6 +582,7 @@ const buildDebtSecurityEmailBody = (previous: MoneyPlannerState | null, next: Mo
 function MoneyPlannerPage() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
+  const [userLocation, setUserLocation] = useState<StoredUserLocation | null>(null);
 
   const [consentAccepted, setConsentAccepted] = useState(false);
   const [consentChecked, setConsentChecked] = useState(false);
@@ -373,9 +617,14 @@ function MoneyPlannerPage() {
   const [jobAmountInput, setJobAmountInput] = useState(
     state.jobIncome.amount > 0 ? String(state.jobIncome.amount) : ""
   );
-  const [benefitName, setBenefitName] = useState(UK_BENEFITS_LIST[0] as string);
+  const [benefitName, setBenefitName] = useState("Other benefit / grant");
   const [benefitAmount, setBenefitAmount] = useState("");
   const [benefitFrequency, setBenefitFrequency] = useState<BenefitEntry["paymentFrequency"]>("monthly");
+  const [unemployedIncomeName, setUnemployedIncomeName] = useState("Other support");
+  const [unemployedIncomeCustomName, setUnemployedIncomeCustomName] = useState("");
+  const [unemployedIncomeAmount, setUnemployedIncomeAmount] = useState("");
+  const [unemployedIncomeFrequency, setUnemployedIncomeFrequency] = useState<JobIncome["frequency"]>("monthly");
+  const [unemployedIncomeNextPayDate, setUnemployedIncomeNextPayDate] = useState("");
 
   const [balanceEditOpen, setBalanceEditOpen] = useState(false);
   const [balanceEditInput, setBalanceEditInput] = useState("");
@@ -393,6 +642,22 @@ function MoneyPlannerPage() {
   const lastPlannerEmailSentRef = useRef<number>(0);
 
   const [adviceBusy, setAdviceBusy] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const syncLocation = () => {
+      setUserLocation(parseStoredUserLocation(window.localStorage.getItem(USER_LOCATION_STORAGE_KEY)));
+    };
+
+    syncLocation();
+    window.addEventListener("storage", syncLocation);
+    window.addEventListener("userLocationUpdated", syncLocation as EventListener);
+
+    return () => {
+      window.removeEventListener("storage", syncLocation);
+      window.removeEventListener("userLocationUpdated", syncLocation as EventListener);
+    };
+  }, []);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -413,6 +678,7 @@ function MoneyPlannerPage() {
       targetAmount: Number(parsed.goal?.targetAmount ?? 0) || 0,
       targetDate: String(parsed.goal?.targetDate ?? ""),
       currentBalance: Number(parsed.goal?.currentBalance ?? 0) || 0,
+      weeklyEssentialsBudget: Number(parsed.goal?.weeklyEssentialsBudget ?? 0) || 0,
       active: Boolean(parsed.goal?.active),
     },
     spends: Array.isArray(parsed.spends)
@@ -474,6 +740,17 @@ function MoneyPlannerPage() {
         : "monthly",
       nextPayDate: String(parsed.jobIncome?.nextPayDate ?? ""),
     },
+    unemployedIncomeSources: Array.isArray(parsed.unemployedIncomeSources)
+      ? parsed.unemployedIncomeSources.map((source) => ({
+          id: String(source.id ?? crypto.randomUUID()),
+          name: String(source.name ?? "Support income"),
+          amount: Number(source.amount ?? 0) || 0,
+          frequency: (["weekly", "fortnightly", "four-weekly", "monthly"] as string[]).includes(source.frequency as string)
+            ? source.frequency as JobIncome["frequency"]
+            : "monthly",
+          nextPayDate: String(source.nextPayDate ?? ""),
+        }))
+      : [],
     adviceMarkdown: String(parsed.adviceMarkdown ?? ""),
   });
 
@@ -527,6 +804,9 @@ function MoneyPlannerPage() {
           nextBenefitPayDate: data.next_benefit_pay_date ?? "",
           employmentType: data.employment_type ?? null,
           jobIncome: data.job_income ?? { employer: "", amount: 0, frequency: "monthly", nextPayDate: "" },
+          unemployedIncomeSources: Array.isArray((data.job_income as any)?.unemployedIncomeSources)
+            ? (data.job_income as any).unemployedIncomeSources
+            : [],
           adviceMarkdown: String(data.advice_markdown ?? ""),
         });
         setState(next);
@@ -592,7 +872,7 @@ function MoneyPlannerPage() {
           on_benefits: state.onBenefits,
           next_benefit_pay_date: state.nextBenefitPayDate || null,
           employment_type: state.employmentType,
-          job_income: state.jobIncome,
+          job_income: { ...state.jobIncome, unemployedIncomeSources: state.unemployedIncomeSources },
           advice_markdown: state.adviceMarkdown,
           updated_at: new Date().toISOString(),
         }, { onConflict: "user_id" });
@@ -682,7 +962,18 @@ function MoneyPlannerPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.nextBenefitPayDate, state.onBenefits, state.benefits]);
 
-  const totalIncomeDue = (jobIncomeDue ?? 0) + (benefitIncomeDue ?? 0);
+  const unemployedSupportIncomeDue = useMemo(() => {
+    if (state.employmentType !== "unemployed") return null;
+    const dueTotal = state.unemployedIncomeSources.reduce((sum, source) => {
+      if (!source.nextPayDate || !source.amount) return sum;
+      if (!isDateDue(source.nextPayDate)) return sum;
+      return sum + source.amount;
+    }, 0);
+    return dueTotal > 0 ? dueTotal : null;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.employmentType, state.unemployedIncomeSources]);
+
+  const totalIncomeDue = (jobIncomeDue ?? 0) + (benefitIncomeDue ?? 0) + (unemployedSupportIncomeDue ?? 0);
 
   const remainingToGoal = useMemo(
     () => Math.max(0, state.goal.targetAmount - currentLiveBalance),
@@ -710,10 +1001,28 @@ function MoneyPlannerPage() {
     return dailyRate * 7;
   }, [goalActive, remainingToGoal, daysLeft]);
 
+  const weeklyEssentialsFloor = useMemo(
+    () => Math.max(0, state.goal.weeklyEssentialsBudget || 0),
+    [state.goal.weeklyEssentialsBudget],
+  );
+
+  const affordableEssentialsThisWeek = useMemo(
+    () => Math.min(currentLiveBalance, weeklyEssentialsFloor),
+    [currentLiveBalance, weeklyEssentialsFloor],
+  );
+
   const safeToSpendThisWeek = useMemo(() => {
     if (!goalActive) return 0;
-    return Math.max(0, currentLiveBalance - weeklySaveRequired);
-  }, [goalActive, currentLiveBalance, weeklySaveRequired]);
+    const strictGoalSpend = Math.max(0, currentLiveBalance - weeklySaveRequired);
+    // Keep a protected essentials floor so users can still cover basic living costs.
+    return Math.max(affordableEssentialsThisWeek, strictGoalSpend);
+  }, [goalActive, currentLiveBalance, weeklySaveRequired, affordableEssentialsThisWeek]);
+
+  const goalShortfallThisWeek = useMemo(() => {
+    if (!goalActive) return 0;
+    const projectedWeeklySaving = Math.max(0, currentLiveBalance - safeToSpendThisWeek);
+    return Math.max(0, weeklySaveRequired - projectedWeeklySaving);
+  }, [goalActive, currentLiveBalance, safeToSpendThisWeek, weeklySaveRequired]);
 
   const totalDebt = useMemo(() => state.debts.reduce((sum, debt) => sum + debt.balance, 0), [state.debts]);
   const totalMinDebtPayment = useMemo(
@@ -724,6 +1033,12 @@ function MoneyPlannerPage() {
     if (!totalDebt || !totalMinDebtPayment) return null;
     return Math.ceil(totalDebt / totalMinDebtPayment);
   }, [totalDebt, totalMinDebtPayment]);
+
+  const plannerCountryCode = userLocation?.countryCode || resolvePlannerCountryCode();
+  const supportOrganisations = useMemo(
+    () => resolvePlannerSupportOrganisations(plannerCountryCode),
+    [plannerCountryCode],
+  );
 
   const applyConsent = () => {
     if (!consentChecked) {
@@ -891,7 +1206,7 @@ function MoneyPlannerPage() {
       on_benefits: state.onBenefits,
       next_benefit_pay_date: state.nextBenefitPayDate || null,
       employment_type: state.employmentType,
-      job_income: state.jobIncome,
+      job_income: { ...state.jobIncome, unemployedIncomeSources: state.unemployedIncomeSources },
       advice_markdown: state.adviceMarkdown,
       updated_at: new Date().toISOString(),
     }, { onConflict: "user_id" });
@@ -947,22 +1262,91 @@ function MoneyPlannerPage() {
     toast.success("Debt updates saved.");
   };
 
-  const frequencyToMonthlyMultiplier = (freq: BenefitEntry["paymentFrequency"]): number => {
+  function frequencyToMonthlyMultiplier(freq: BenefitEntry["paymentFrequency"]): number {
     if (freq === "weekly") return 52 / 12;
     if (freq === "fortnightly") return 26 / 12;
     if (freq === "four-weekly") return 13 / 12;
     return 1; // monthly
-  };
+  }
 
   const totalMonthlyBenefits = useMemo(
     () => state.benefits.reduce((sum, b) => sum + b.amountMonthly * frequencyToMonthlyMultiplier(b.paymentFrequency), 0),
     [state.benefits],
   );
 
+  const totalMonthlyUnemployedSupport = useMemo(
+    () => state.unemployedIncomeSources.reduce(
+      (sum, source) => sum + source.amount * frequencyToMonthlyMultiplier(source.frequency),
+      0,
+    ),
+    [state.unemployedIncomeSources],
+  );
+
+  const unemployedIncomeOptions = useMemo(
+    () => resolveUnemployedIncomeOptions(plannerCountryCode),
+    [plannerCountryCode],
+  );
+
+  const benefitsOptions = useMemo(
+    () => resolveBenefitsListForCountry(plannerCountryCode),
+    [plannerCountryCode],
+  );
+
+  const benefitsSupportedInCountry = benefitsOptions.length > 0;
+
   const openDebts = useMemo(
     () => state.debts.filter((debt) => debt.balance > 0 && debt.paymentStatus !== "paid-off"),
     [state.debts],
   );
+
+  const addUnemployedIncomeSource = () => {
+    const name = (unemployedIncomeName === "Other support"
+      ? unemployedIncomeCustomName.trim()
+      : unemployedIncomeName.trim()) || "Other support";
+    const amount = parseAmount(unemployedIncomeAmount);
+
+    if (!name || amount <= 0) {
+      toast.error("Add a support source name and amount.");
+      return;
+    }
+
+    setState((prev) => ({
+      ...prev,
+      unemployedIncomeSources: [
+        ...prev.unemployedIncomeSources,
+        {
+          id: crypto.randomUUID(),
+          name,
+          amount,
+          frequency: unemployedIncomeFrequency,
+          nextPayDate: unemployedIncomeNextPayDate,
+        },
+      ],
+      adviceMarkdown: "",
+    }));
+
+    setUnemployedIncomeAmount("");
+    setUnemployedIncomeCustomName("");
+    setUnemployedIncomeNextPayDate("");
+  };
+
+  const removeUnemployedIncomeSource = (id: string) => {
+    setState((prev) => ({
+      ...prev,
+      unemployedIncomeSources: prev.unemployedIncomeSources.filter((source) => source.id !== id),
+      adviceMarkdown: "",
+    }));
+  };
+
+  useEffect(() => {
+    if (!benefitsSupportedInCountry) {
+      setBenefitName("Other benefit / grant");
+      return;
+    }
+    if (!benefitsOptions.includes(benefitName)) {
+      setBenefitName(benefitsOptions[0]);
+    }
+  }, [benefitName, benefitsOptions, benefitsSupportedInCountry]);
 
   const debtCheckinPrompt = useMemo(() => {
     if (openDebts.length === 0) return "";
@@ -1085,7 +1469,7 @@ function MoneyPlannerPage() {
       on_benefits: state.onBenefits,
       next_benefit_pay_date: state.nextBenefitPayDate || null,
       employment_type: state.employmentType,
-      job_income: state.jobIncome,
+      job_income: { ...state.jobIncome, unemployedIncomeSources: state.unemployedIncomeSources },
       advice_markdown: state.adviceMarkdown,
       updated_at: new Date().toISOString(),
     }, { onConflict: "user_id" });
@@ -1121,6 +1505,7 @@ function MoneyPlannerPage() {
               `Live balance: ${formatMoney(currentLiveBalance)}`,
               `Employment: ${state.employmentType ?? "not set"}`,
               `Job income: ${formatMoney(state.jobIncome.amount)} ${state.jobIncome.frequency}`,
+              `Unemployment support income: ${formatMoney(totalMonthlyUnemployedSupport)}/month`,
               `Benefits: ${formatMoney(totalMonthlyBenefits)}/month`,
               "",
               "Open debts:",
@@ -1257,8 +1642,12 @@ function MoneyPlannerPage() {
       : state.employmentType === "self-employed"
       ? `Self-employed — take-home income ${formatMoney(state.jobIncome.amount)} ${state.jobIncome.frequency} (~${formatMoney(jobIncomeMonthly)}/month)${nextPayLabel}`
       : state.employmentType === "unemployed"
-      ? "Unemployed"
+      ? `Unemployed — support income ${state.unemployedIncomeSources.length > 0 ? `~${formatMoney(totalMonthlyUnemployedSupport)}/month across ${state.unemployedIncomeSources.length} source(s)` : "not recorded yet"}`
       : "Employment status not provided";
+
+    const unemployedSupportRows = state.unemployedIncomeSources
+      .map((source) => `- ${source.name}: ${formatMoney(source.amount)} ${source.frequency} (~${formatMoney(source.amount * frequencyToMonthlyMultiplier(source.frequency))}/month)${source.nextPayDate ? `, next payment ${source.nextPayDate}` : ""}`)
+      .join("\n");
 
     return [
       "You are a practical money accountability coach.",
@@ -1284,10 +1673,14 @@ function MoneyPlannerPage() {
       `- Target date: ${state.goal.targetDate || "Not set"}`,
       `- Days left: ${daysLeft ?? "Unknown"}`,
       `- Weekly save required: ${formatMoney(weeklySaveRequired)}`,
+      `- Essentials budget floor: ${formatMoney(weeklyEssentialsFloor)}`,
       `- Safe to spend this week: ${formatMoney(safeToSpendThisWeek)}`,
+      `- Weekly goal shortfall at this spend level: ${formatMoney(goalShortfallThisWeek)}`,
       "",
       "Employment & income:",
       `- Status: ${employmentContext}`,
+      `- Unemployment support sources: ${state.unemployedIncomeSources.length > 0 ? `~${formatMoney(totalMonthlyUnemployedSupport)}/month` : "None recorded"}`,
+      unemployedSupportRows || "",
       "",
       "Benefits income:",
       `- On benefits: ${onBenefitsContext}`,
@@ -1338,7 +1731,7 @@ function MoneyPlannerPage() {
       on_benefits: state.onBenefits,
       next_benefit_pay_date: state.nextBenefitPayDate || null,
       employment_type: state.employmentType,
-      job_income: state.jobIncome,
+      job_income: { ...state.jobIncome, unemployedIncomeSources: state.unemployedIncomeSources },
       advice_markdown: state.adviceMarkdown,
       updated_at: new Date().toISOString(),
     }, { onConflict: "user_id" });
@@ -1553,7 +1946,7 @@ function MoneyPlannerPage() {
                   </div>
                 </CardContent>
               )}
-              {(jobIncomeDue !== null || benefitIncomeDue !== null) && (
+              {(jobIncomeDue !== null || benefitIncomeDue !== null || unemployedSupportIncomeDue !== null) && (
                 <CardContent className="pt-0 space-y-1">
                   {jobIncomeDue !== null && (
                     <p className="text-xs text-green-600 dark:text-green-400 font-medium">
@@ -1565,6 +1958,16 @@ function MoneyPlannerPage() {
                   {benefitIncomeDue !== null && (
                     <p className="text-xs text-green-600 dark:text-green-400 font-medium">
                       + {formatMoney(benefitIncomeDue)} benefits received
+                    </p>
+                  )}
+                  {unemployedSupportIncomeDue !== null && (
+                    <p className="text-xs text-green-600 dark:text-green-400 font-medium">
+                      + {formatMoney(unemployedSupportIncomeDue)} unemployment support received
+                    </p>
+                  )}
+                  {totalIncomeDue > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      Total income due now: {formatMoney(totalIncomeDue)}
                     </p>
                   )}
                   <p className="text-xs text-muted-foreground">
@@ -1648,11 +2051,36 @@ function MoneyPlannerPage() {
                   onChange={(event) => setGoalDraft((prev) => ({ ...prev, targetDate: event.target.value }))}
                 />
               </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="goal-essentials">Weekly essentials budget</Label>
+                <Input
+                  id="goal-essentials"
+                  inputMode="decimal"
+                  value={String(goalDraft.weeklyEssentialsBudget || "")}
+                  onChange={(event) =>
+                    setGoalDraft((prev) => ({ ...prev, weeklyEssentialsBudget: parseAmount(event.target.value) }))
+                  }
+                  placeholder="80"
+                />
+              </div>
               <div className="flex items-end">
                 <Button type="button" className="w-full" onClick={saveGoal}>Save goal</Button>
               </div>
             </CardContent>
           </Card>
+
+          {goalActive && goalShortfallThisWeek > 0 && (
+            <Card className="border-amber-300/60 bg-amber-50/30 dark:bg-amber-950/20">
+              <CardContent className="py-3 text-sm">
+                <p className="font-medium text-amber-700 dark:text-amber-300">
+                  Essentials mode is active.
+                </p>
+                <p className="text-amber-700/90 dark:text-amber-200/90 mt-1">
+                  Your essentials floor is {formatMoney(weeklyEssentialsFloor)} this week, so your goal is projected to be short by {formatMoney(goalShortfallThisWeek)} unless balance increases or the target changes.
+                </p>
+              </CardContent>
+            </Card>
+          )}
 
           {!goalActive && (
             <Card className="border-dashed">
@@ -1894,7 +2322,7 @@ function MoneyPlannerPage() {
                 <CardDescription>Trusted help for debt and financial stress.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-2">
-                {UK_MONEY_SUPPORT_ORGS.map((org) => (
+                {supportOrganisations.map((org) => (
                   <a
                     key={org.name}
                     href={org.url}
@@ -2001,33 +2429,119 @@ function MoneyPlannerPage() {
               {/* Benefits section — only for unemployed */}
               {state.employmentType === "unemployed" && (
                 <div className="border-t border-border/60 pt-3 space-y-4">
-                  <p className="text-sm font-medium">Benefits income</p>
+                  <p className="text-sm font-medium">How are you receiving money right now?</p>
                   <CardDescription>
-                    Are you receiving any benefits? Adding them helps RealTalk plan around your actual income and flag any saving limits that apply.
+                    Use this for non-benefit money sources (for example family support, temporary work, grants, or savings drawdown). Add government benefits in the Benefits section below.
                   </CardDescription>
 
-                  {onBenefits === null && (
-                    <div className="flex gap-3">
-                      <Button type="button" variant="outline" onClick={() => setOnBenefits(true)}>
-                        Yes, I'm on benefits
-                      </Button>
-                      <Button type="button" variant="ghost" onClick={() => setOnBenefits(false)}>
-                        No, skip this
-                      </Button>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div className="space-y-1.5 sm:col-span-2">
+                      <Label>Support source</Label>
+                      <select
+                        value={unemployedIncomeName}
+                        onChange={(e) => setUnemployedIncomeName(e.target.value)}
+                        className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+                      >
+                        {unemployedIncomeOptions.map((option) => (
+                          <option key={option} value={option}>{option}</option>
+                        ))}
+                      </select>
+                    </div>
+                    {unemployedIncomeName === "Other support" && (
+                      <div className="space-y-1.5 sm:col-span-2">
+                        <Label>Custom support name</Label>
+                        <Input
+                          value={unemployedIncomeCustomName}
+                          onChange={(e) => setUnemployedIncomeCustomName(e.target.value)}
+                          placeholder="e.g. Community mutual aid"
+                        />
+                      </div>
+                    )}
+                    <div className="space-y-1.5">
+                      <Label>Amount you receive</Label>
+                      <Input
+                        inputMode="decimal"
+                        value={unemployedIncomeAmount}
+                        onChange={(e) => setUnemployedIncomeAmount(e.target.value)}
+                        placeholder="e.g. 400"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Payment frequency</Label>
+                      <select
+                        value={unemployedIncomeFrequency}
+                        onChange={(e) => setUnemployedIncomeFrequency(e.target.value as JobIncome["frequency"])}
+                        className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+                      >
+                        <option value="weekly">Weekly</option>
+                        <option value="fortnightly">Fortnightly</option>
+                        <option value="four-weekly">Every 4 weeks</option>
+                        <option value="monthly">Monthly</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1.5 sm:col-span-2">
+                      <Label>Next payment date (optional)</Label>
+                      <Input
+                        type="date"
+                        value={unemployedIncomeNextPayDate}
+                        onChange={(e) => setUnemployedIncomeNextPayDate(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  <Button type="button" onClick={addUnemployedIncomeSource}>Add support source</Button>
+
+                  {state.unemployedIncomeSources.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="rounded-md border border-border/70 p-2.5 text-sm font-medium">
+                        Total unemployment support income: ~{formatMoney(totalMonthlyUnemployedSupport)}/month
+                      </div>
+                      {state.unemployedIncomeSources.map((source) => (
+                        <div key={source.id} className="rounded-md border border-border/70 p-2.5 flex items-start justify-between gap-2">
+                          <div>
+                            <p className="text-sm font-medium">{source.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {formatMoney(source.amount)} {source.frequency} · ~{formatMoney(source.amount * frequencyToMonthlyMultiplier(source.frequency))}/month
+                              {source.nextPayDate ? ` · next ${source.nextPayDate}` : ""}
+                            </p>
+                          </div>
+                          <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeUnemployedIncomeSource(source.id)}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      ))}
                     </div>
                   )}
 
-                  {onBenefits === false && (
-                    <p className="text-sm text-muted-foreground">
-                      No benefits recorded.{" "}
-                      <button type="button" className="underline text-primary" onClick={() => setOnBenefits(null)}>
-                        Change
-                      </button>
-                    </p>
-                  )}
-
-                  {onBenefits === true && (
+                  {benefitsSupportedInCountry ? (
                     <>
+                      <p className="text-sm font-medium">Benefits income</p>
+                      <CardDescription>
+                        Are you receiving any benefits? Adding them helps RealTalk plan around your actual income and flag any saving limits that apply.
+                      </CardDescription>
+
+                      {onBenefits === null && (
+                        <div className="flex gap-3">
+                          <Button type="button" variant="outline" onClick={() => setOnBenefits(true)}>
+                            Yes, I'm on benefits
+                          </Button>
+                          <Button type="button" variant="ghost" onClick={() => setOnBenefits(false)}>
+                            No, skip this
+                          </Button>
+                        </div>
+                      )}
+
+                      {onBenefits === false && (
+                        <p className="text-sm text-muted-foreground">
+                          No benefits recorded.{" "}
+                          <button type="button" className="underline text-primary" onClick={() => setOnBenefits(null)}>
+                            Change
+                          </button>
+                        </p>
+                      )}
+
+                      {onBenefits === true && (
+                        <>
                       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <div className="space-y-1.5 sm:col-span-2">
                           <Label>Benefit type</Label>
@@ -2036,7 +2550,7 @@ function MoneyPlannerPage() {
                             onChange={(e) => setBenefitName(e.target.value)}
                             className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
                           >
-                            {UK_BENEFITS_LIST.map((b) => (
+                            {benefitsOptions.map((b) => (
                               <option key={b} value={b}>{b}</option>
                             ))}
                           </select>
@@ -2093,7 +2607,9 @@ function MoneyPlannerPage() {
                       )}
 
                       <p className="text-xs text-muted-foreground">
-                        Note: if you are on Universal Credit, savings over £6,000 may reduce your payments. The AI will factor this into your plan.
+                        {plannerCountryCode === "GB"
+                          ? "Note: if you are on Universal Credit, savings over £6,000 may reduce your payments. The AI will factor this into your plan."
+                          : "Note: benefit rules and asset limits vary by country and program. The AI will factor this into your plan where relevant."}
                       </p>
 
                       <div className="space-y-1.5">
@@ -2109,6 +2625,15 @@ function MoneyPlannerPage() {
                           </p>
                         )}
                       </div>
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-sm font-medium">Benefits income</p>
+                      <CardDescription>
+                        Benefits capture is not localized for your country yet, so this section is hidden for now.
+                      </CardDescription>
                     </>
                   )}
                 </div>
