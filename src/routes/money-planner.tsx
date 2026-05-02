@@ -703,9 +703,12 @@ function MoneyPlannerPage() {
   }, [daysLeft]);
 
   const weeklySaveRequired = useMemo(() => {
-    if (!goalActive || !weeksLeft) return 0;
-    return remainingToGoal / weeksLeft;
-  }, [goalActive, remainingToGoal, weeksLeft]);
+    if (!goalActive || !daysLeft) return 0;
+    // Use daily rate × 7 instead of dividing by whole weeks — avoids cliff-edge
+    // step changes when crossing a week boundary (e.g. 8 days → 7 days).
+    const dailyRate = remainingToGoal / Math.max(1, daysLeft);
+    return dailyRate * 7;
+  }, [goalActive, remainingToGoal, daysLeft]);
 
   const safeToSpendThisWeek = useMemo(() => {
     if (!goalActive) return 0;
