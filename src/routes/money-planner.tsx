@@ -390,6 +390,7 @@ function MoneyPlannerPage() {
   const [debtSaveBusy, setDebtSaveBusy] = useState(false);
   const lastSavedSnapshotRef = useRef("");
   const lastSavedStateRef = useRef<MoneyPlannerState | null>(null);
+  const lastPlannerEmailSentRef = useRef<number>(0);
 
   const [adviceBusy, setAdviceBusy] = useState(false);
 
@@ -573,6 +574,10 @@ function MoneyPlannerPage() {
 
     if (lastSavedSnapshotRef.current === nextSnapshot) return;
 
+    const previousStateForEmail = lastSavedStateRef.current;
+    const emailEnabledForSave = plannerEmailNotificationsEnabled;
+    const userEmailForSave = user.email;
+
     // Debounced Supabase save (300ms) — cross-device sync
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
@@ -599,13 +604,46 @@ function MoneyPlannerPage() {
 
         lastSavedSnapshotRef.current = nextSnapshot;
         lastSavedStateRef.current = state;
+
+        // Send security email for meaningful planner changes, at most once per 2 minutes
+        if (emailEnabledForSave && userEmailForSave) {
+          const now = Date.now();
+          const minutesSinceLast = (now - lastPlannerEmailSentRef.current) / 60_000;
+          const changeLines = getPlannerChangeLines(previousStateForEmail, state);
+          if (changeLines.length > 0 && minutesSinceLast >= 2) {
+            lastPlannerEmailSentRef.current = now;
+            void (async () => {
+              try {
+                const { data: sessionData } = await supabase.auth.getSession();
+                const token = sessionData?.session?.access_token;
+                if (!token) return;
+                await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gmail-send`, {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${token}`,
+                    apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "",
+                  },
+                  body: JSON.stringify({
+                    to: userEmailForSave,
+                    subject: "RealTalk Money Planner updated",
+                    body: buildPlannerSecurityEmailBody(previousStateForEmail, state),
+                    skipQuota: true,
+                  }),
+                });
+              } catch (emailErr) {
+                console.warn("[money-planner] Planner security email error:", emailErr);
+              }
+            })();
+          }
+        }
       })();
     }, 300);
 
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
-  }, [state, user, dbLoaded, storageKey]);
+  }, [state, user, dbLoaded, storageKey, plannerEmailNotificationsEnabled]);
 
   const goalActive = state.goal.active && state.goal.targetAmount > 0;
 

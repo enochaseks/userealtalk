@@ -1165,13 +1165,17 @@ const buildMoneyPlannerContext = (planner: any): string => {
   const completedTasks = tasks.filter((task: any) => task?.done).length;
   const jobIncomeMonthly = moneyFrequencyToMonthlyAmount(Number(jobIncome?.amount ?? 0) || 0, String(jobIncome?.frequency ?? "monthly"));
 
+  const currentBalance = Number(goal?.currentBalance ?? 0) || 0;
+  const liveBalance = Math.max(0, currentBalance - totalSpent);
+
   return [
     "Money Planner context (use this as the user's real financial baseline):",
     `- Goal: ${String(goal?.title ?? "Not set")}`,
     `- Target amount: GBP ${(Number(goal?.targetAmount ?? 0) || 0).toFixed(2)}`,
-    `- Current balance: GBP ${(Number(goal?.currentBalance ?? 0) || 0).toFixed(2)}`,
+    `- Starting balance (before logged spending): GBP ${currentBalance.toFixed(2)}`,
+    `- Live balance (starting balance minus all logged spending): GBP ${liveBalance.toFixed(2)}`,
     `- Target date: ${String(goal?.targetDate ?? "Not set")}`,
-    `- Spending entries: ${spends.length}, total spend GBP ${totalSpent.toFixed(2)}`,
+    `- Spending entries: ${spends.length}, total logged spend GBP ${totalSpent.toFixed(2)}`,
     `- Tasks completed: ${completedTasks}/${tasks.length}`,
     `- Debts tracked: ${debts.length}, total debt GBP ${totalDebt.toFixed(2)}`,
     `- Employment: ${String(planner.employment_type ?? "not set")}`,

@@ -219,6 +219,13 @@ function AccountDataPage() {
             You are currently signed out. <Link to="/auth" className="text-primary hover:underline">Sign in</Link> to export your data.
           </div>
         )}
+      <div className="pt-4 border-t border-border flex flex-wrap gap-3 text-xs text-muted-foreground">
+          <Link to="/privacy" className="text-primary hover:underline">Privacy Policy</Link>
+          <Link to="/terms" className="text-primary hover:underline">Terms of Service</Link>
+          <Link to="/security" className="text-primary hover:underline">Security</Link>
+          <Link to="/refund-policy" className="text-primary hover:underline">Refund &amp; Cancellation</Link>
+          <Link to="/account-data" className="text-primary hover:underline">Your Data</Link>
+        </div>
       </div>
     </div>
   );

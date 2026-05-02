@@ -1187,6 +1187,7 @@ function RootError() {
           <a href="/" className="text-primary hover:underline">Go home</a>
           <a href="/privacy" className="text-primary hover:underline">Privacy Policy</a>
           <a href="/terms" className="text-primary hover:underline">Terms of Service</a>
+          <a href="/security" className="text-primary hover:underline">Security</a>
         </div>
       </div>
     </div>

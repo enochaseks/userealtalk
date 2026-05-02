@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as SecurityRouteImport } from './routes/security'
 import { Route as SafetyAdminRouteImport } from './routes/safety-admin'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as RefundPolicyRouteImport } from './routes/refund-policy'
@@ -35,6 +36,11 @@ const TermsRoute = TermsRouteImport.update({
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SecurityRoute = SecurityRouteImport.update({
+  id: '/security',
+  path: '/security',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SafetyAdminRoute = SafetyAdminRouteImport.update({
@@ -128,6 +134,7 @@ export interface FileRoutesByFullPath {
   '/refund-policy': typeof RefundPolicyRoute
   '/reset-password': typeof ResetPasswordRoute
   '/safety-admin': typeof SafetyAdminRoute
+  '/security': typeof SecurityRoute
   '/settings': typeof SettingsRoute
   '/terms': typeof TermsRoute
   '/advice/$slug': typeof AdviceSlugRoute
@@ -147,6 +154,7 @@ export interface FileRoutesByTo {
   '/refund-policy': typeof RefundPolicyRoute
   '/reset-password': typeof ResetPasswordRoute
   '/safety-admin': typeof SafetyAdminRoute
+  '/security': typeof SecurityRoute
   '/settings': typeof SettingsRoute
   '/terms': typeof TermsRoute
   '/advice/$slug': typeof AdviceSlugRoute
@@ -167,6 +175,7 @@ export interface FileRoutesById {
   '/refund-policy': typeof RefundPolicyRoute
   '/reset-password': typeof ResetPasswordRoute
   '/safety-admin': typeof SafetyAdminRoute
+  '/security': typeof SecurityRoute
   '/settings': typeof SettingsRoute
   '/terms': typeof TermsRoute
   '/advice/$slug': typeof AdviceSlugRoute
@@ -188,6 +197,7 @@ export interface FileRouteTypes {
     | '/refund-policy'
     | '/reset-password'
     | '/safety-admin'
+    | '/security'
     | '/settings'
     | '/terms'
     | '/advice/$slug'
@@ -207,6 +217,7 @@ export interface FileRouteTypes {
     | '/refund-policy'
     | '/reset-password'
     | '/safety-admin'
+    | '/security'
     | '/settings'
     | '/terms'
     | '/advice/$slug'
@@ -226,6 +237,7 @@ export interface FileRouteTypes {
     | '/refund-policy'
     | '/reset-password'
     | '/safety-admin'
+    | '/security'
     | '/settings'
     | '/terms'
     | '/advice/$slug'
@@ -246,6 +258,7 @@ export interface RootRouteChildren {
   RefundPolicyRoute: typeof RefundPolicyRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   SafetyAdminRoute: typeof SafetyAdminRoute
+  SecurityRoute: typeof SecurityRoute
   SettingsRoute: typeof SettingsRoute
   TermsRoute: typeof TermsRoute
 }
@@ -264,6 +277,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/security': {
+      id: '/security'
+      path: '/security'
+      fullPath: '/security'
+      preLoaderRoute: typeof SecurityRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/safety-admin': {
@@ -400,6 +420,7 @@ const rootRouteChildren: RootRouteChildren = {
   RefundPolicyRoute: RefundPolicyRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   SafetyAdminRoute: SafetyAdminRoute,
+  SecurityRoute: SecurityRoute,
   SettingsRoute: SettingsRoute,
   TermsRoute: TermsRoute,
 }

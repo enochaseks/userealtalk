@@ -928,6 +928,7 @@ export function Landing() {
             <Link to="/terms" className="hover:text-foreground transition-colors">Terms</Link>
             <Link to="/refund-policy" className="hover:text-foreground transition-colors">Refund &amp; Cancellation</Link>
             <Link to="/account-data" className="hover:text-foreground transition-colors">Account & data export</Link>
+            <Link to="/security" className="hover:text-foreground transition-colors">Security</Link>
           </div>
           <p className="mt-4 text-xs text-muted-foreground/80">
             © ™ 2026 RealTalk LTD. All Rights Reserved. &nbsp;·&nbsp; v1.1

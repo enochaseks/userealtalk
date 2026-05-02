@@ -1056,6 +1056,7 @@ function SettingsPage() {
           <div className="flex flex-wrap gap-3 text-sm">
             <Link to="/privacy" className="text-primary hover:underline">Privacy Policy</Link>
             <Link to="/terms" className="text-primary hover:underline">Terms</Link>
+            <Link to="/security" className="text-primary hover:underline">Security</Link>
             <Link to="/refund-policy" className="text-primary hover:underline">Refund &amp; Cancellation</Link>
             <Link to="/account-data" className="text-primary hover:underline">Account & data export</Link>
             <Link to="/safety-admin" className="text-primary hover:underline">App policy</Link>
