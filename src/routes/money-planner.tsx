@@ -1028,6 +1028,29 @@ function MoneyPlannerPage() {
       return;
     }
 
+    // Flush latest state to Supabase immediately before the AI call so the
+    // chat edge function always reads the most up-to-date money planner row.
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    await (supabase as any).from("user_money_planner").upsert({
+      user_id: user.id,
+      goal: state.goal,
+      spends: state.spends,
+      tasks: state.tasks,
+      debts: state.debts,
+      benefits: state.benefits,
+      on_benefits: state.onBenefits,
+      next_benefit_pay_date: state.nextBenefitPayDate || null,
+      employment_type: state.employmentType,
+      job_income: state.jobIncome,
+      advice_markdown: state.adviceMarkdown,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "user_id" });
+    lastSavedSnapshotRef.current = serializePlannerState(state);
+    lastSavedStateRef.current = state;
+
     setDebtSupportBusy(true);
     setDebtSupportMarkdown("");
 
@@ -1068,6 +1091,7 @@ function MoneyPlannerPage() {
           logicalMode: true,
           thinkDeeply: false,
           forcePlan: true,
+          forceMoneyCoach: true,
           forceVent: false,
           ventAdviceMode: "none",
           userId: user.id,
@@ -1257,6 +1281,29 @@ function MoneyPlannerPage() {
       return;
     }
 
+    // Flush latest state to Supabase immediately before the AI call so the
+    // chat edge function always reads the most up-to-date money planner row.
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    await (supabase as any).from("user_money_planner").upsert({
+      user_id: user.id,
+      goal: state.goal,
+      spends: state.spends,
+      tasks: state.tasks,
+      debts: state.debts,
+      benefits: state.benefits,
+      on_benefits: state.onBenefits,
+      next_benefit_pay_date: state.nextBenefitPayDate || null,
+      employment_type: state.employmentType,
+      job_income: state.jobIncome,
+      advice_markdown: state.adviceMarkdown,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "user_id" });
+    lastSavedSnapshotRef.current = serializePlannerState(state);
+    lastSavedStateRef.current = state;
+
     setAdviceBusy(true);
     try {
       const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`, {
@@ -1272,6 +1319,7 @@ function MoneyPlannerPage() {
           logicalMode: true,
           thinkDeeply: false,
           forcePlan: true,
+          forceMoneyCoach: true,
           forceVent: false,
           ventAdviceMode: "none",
           userId: user?.id,

@@ -339,6 +339,39 @@ const isPracticalLogicRequest = (text: string): boolean => {
   return practicalKeywords.some((k) => lower.includes(k));
 };
 
+const isMoneyIntentRequest = (text: string): boolean => {
+  const lower = String(text ?? "").toLowerCase();
+  if (!lower.trim()) return false;
+
+  const moneyKeywords = [
+    "money",
+    "budget",
+    "debt",
+    "rent",
+    "bill",
+    "bills",
+    "salary",
+    "income",
+    "payday",
+    "paycheck",
+    "pay check",
+    "spend",
+    "spending",
+    "expense",
+    "expenses",
+    "savings",
+    "saving",
+    "financial",
+    "benefits",
+    "universal credit",
+    "overdraft",
+    "credit card",
+    "loan",
+  ];
+
+  return moneyKeywords.some((k) => lower.includes(k));
+};
+
 const isBenefitsSupportRequest = (text: string): boolean => {
   const lower = text.toLowerCase();
   const benefitsKeywords = [
@@ -1105,6 +1138,52 @@ const buildMemoryInstruction = (memoryProfile: any, recentMessages?: Array<{ rol
   return lines.join("\n");
 };
 
+const moneyFrequencyToMonthlyAmount = (amount: number, frequency: string): number => {
+  if (!Number.isFinite(amount)) return 0;
+  if (frequency === "weekly") return amount * (52 / 12);
+  if (frequency === "fortnightly") return amount * (26 / 12);
+  if (frequency === "four-weekly") return amount * (13 / 12);
+  return amount;
+};
+
+const buildMoneyPlannerContext = (planner: any): string => {
+  if (!planner) return "";
+
+  const spends = Array.isArray(planner.spends) ? planner.spends : [];
+  const tasks = Array.isArray(planner.tasks) ? planner.tasks : [];
+  const debts = Array.isArray(planner.debts) ? planner.debts : [];
+  const benefits = Array.isArray(planner.benefits) ? planner.benefits : [];
+  const goal = planner.goal && typeof planner.goal === "object" ? planner.goal : {};
+  const jobIncome = planner.job_income && typeof planner.job_income === "object" ? planner.job_income : {};
+
+  const totalSpent = spends.reduce((sum: number, item: any) => sum + (Number(item?.amount ?? 0) || 0), 0);
+  const totalDebt = debts.reduce((sum: number, item: any) => sum + (Number(item?.balance ?? 0) || 0), 0);
+  const totalBenefitsMonthly = benefits.reduce(
+    (sum: number, item: any) => sum + moneyFrequencyToMonthlyAmount(Number(item?.amountMonthly ?? 0) || 0, String(item?.paymentFrequency ?? "monthly")),
+    0,
+  );
+  const completedTasks = tasks.filter((task: any) => task?.done).length;
+  const jobIncomeMonthly = moneyFrequencyToMonthlyAmount(Number(jobIncome?.amount ?? 0) || 0, String(jobIncome?.frequency ?? "monthly"));
+
+  return [
+    "Money Planner context (use this as the user's real financial baseline):",
+    `- Goal: ${String(goal?.title ?? "Not set")}`,
+    `- Target amount: GBP ${(Number(goal?.targetAmount ?? 0) || 0).toFixed(2)}`,
+    `- Current balance: GBP ${(Number(goal?.currentBalance ?? 0) || 0).toFixed(2)}`,
+    `- Target date: ${String(goal?.targetDate ?? "Not set")}`,
+    `- Spending entries: ${spends.length}, total spend GBP ${totalSpent.toFixed(2)}`,
+    `- Tasks completed: ${completedTasks}/${tasks.length}`,
+    `- Debts tracked: ${debts.length}, total debt GBP ${totalDebt.toFixed(2)}`,
+    `- Employment: ${String(planner.employment_type ?? "not set")}`,
+    `- Job income: ${String(jobIncome?.employer ?? "Not set")}, GBP ${(Number(jobIncome?.amount ?? 0) || 0).toFixed(2)} ${String(jobIncome?.frequency ?? "monthly")} (~GBP ${jobIncomeMonthly.toFixed(2)}/month), next pay ${String(jobIncome?.nextPayDate ?? "not set")}`,
+    `- Benefits: ${benefits.length}, about GBP ${totalBenefitsMonthly.toFixed(2)}/month, next benefit pay ${String(planner.next_benefit_pay_date ?? "not set")}`,
+    planner.advice_markdown ? `- Latest Money Planner AI notes: ${String(planner.advice_markdown).slice(0, 600)}` : "",
+    "Instruction: For money/debt/budget questions, combine this baseline with the latest user message before recommending actions.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+};
+
 const buildSearchQuery = (text: string): string => {
   return text
     .replace(/\s+/g, " ")
@@ -1804,7 +1883,7 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { messages, attachments, beReal, emotionalMode, logicalMode, thinkDeeply, forcePlan, forceBenefits, forceVent, ventAdviceMode, userId, userPlan, totalMessageCount, memoryLimit, userLocation } = await req.json();
+    const { messages, attachments, beReal, emotionalMode, logicalMode, thinkDeeply, forcePlan, forceBenefits, forceMoneyCoach, forceVent, ventAdviceMode, userId, userPlan, totalMessageCount, memoryLimit, userLocation } = await req.json();
     const plan = userPlan ?? "free";
     const MISTRAL_API_KEY = Deno.env.get("MISTRAL_API_KEY");
     const WORKERS_API_KEY = Deno.env.get("WORKERS_API_KEY");
@@ -2036,6 +2115,7 @@ Deno.serve(async (req) => {
         isInternetSearchConversation(messages ?? []) ||
         isQueryRequiresWebSearch(lastUserMessage)
       );
+    const moneyRequested = Boolean(forceMoneyCoach) || isMoneyIntentRequest(lastUserMessage);
     const deepThinkingRequested = thinkDeeply || emailRequested;
     const ventMode = Boolean(forceVent) || isVentingRequest(lastUserMessage);
   const benefitsRequested = Boolean(forceBenefits) || isBenefitsSupportRequest(lastUserMessage);
@@ -2118,6 +2198,16 @@ Deno.serve(async (req) => {
       emotionalRequested,
       emotionalMode,
     });
+    let moneyPlannerContext = "";
+    if (admin && userId && moneyRequested) {
+      const { data: plannerData } = await admin
+        .from("user_money_planner")
+        .select("goal,spends,tasks,debts,benefits,on_benefits,next_benefit_pay_date,employment_type,job_income,advice_markdown")
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      moneyPlannerContext = buildMoneyPlannerContext(plannerData ?? null);
+    }
     const attachmentContext = await buildAttachmentContext(attachments, MISTRAL_API_KEY);
     const locationInstruction = buildLocationInstruction(userLocation);
 
@@ -2137,6 +2227,9 @@ Deno.serve(async (req) => {
     }
     if (adviceContext) {
       systemMessages.push({ role: "system", content: adviceContext });
+    }
+    if (moneyPlannerContext) {
+      systemMessages.push({ role: "system", content: moneyPlannerContext });
     }
     if (attachmentContext) {
       systemMessages.push({ role: "system", content: ATTACHMENT_ANALYSIS_MODE });

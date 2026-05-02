@@ -2380,6 +2380,7 @@ export function Chat() {
           thinkDeeply: thinkingRequested && !shouldOfferVentChoice,
           forcePlan: planningRequested,
           forceBenefits,
+          forceMoneyCoach: moneyIntentRequested,
           forceVent: activeVent,
           ventAdviceMode: activeVentAdviceMode,
           userId: user.id,
