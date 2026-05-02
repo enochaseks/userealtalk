@@ -936,6 +936,18 @@ function SettingsPage() {
             </span>
           </div>
 
+          {!mfaLoading && !hasActiveTotp && !totpSetup && (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/8 px-3 py-2.5 flex items-start gap-2.5">
+              <span className="text-amber-500 mt-px text-base leading-none">⚠</span>
+              <div>
+                <p className="text-xs font-medium text-foreground">Your account has no 2FA</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  Protect your conversations with a one-time code from an authenticator app. Takes under a minute.
+                </p>
+              </div>
+            </div>
+          )}
+
           {!totpSetup && (
             <div className="flex flex-wrap gap-2">
               <Button type="button" size="sm" variant="outline" onClick={() => void startTotpSetup()} disabled={mfaBusy}>
@@ -1001,7 +1013,7 @@ function SettingsPage() {
           <div className="rounded-lg border border-dashed border-border/60 bg-background/20 p-3">
             <p className="text-xs font-medium text-foreground">Passkeys</p>
             <p className="text-[11px] text-muted-foreground mt-1">
-              Passkey sign-in is planned next. For now, authenticator app 2FA is available above.
+              Passkey sign-in is not yet available on this project. Authenticator app 2FA is available above.
             </p>
           </div>
         </div>

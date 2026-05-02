@@ -294,6 +294,66 @@ function OfflineBanner() {
   );
 }
 
+function MfaNudgeBanner() {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const path = useRouterState({ select: (s) => s.location.pathname });
+  const [show, setShow] = useState(false);
+
+  useEffect(() => {
+    if (!user || path === "/auth" || path === "/settings") {
+      setShow(false);
+      return;
+    }
+
+    const dismissedKey = `realtalk_mfa_nudge_dismissed:${user.id}`;
+    if (sessionStorage.getItem(dismissedKey) === "1") return;
+
+    const mfaApi = (supabase.auth as any).mfa;
+    if (!mfaApi?.listFactors) return;
+
+    let cancelled = false;
+    mfaApi.listFactors().then(({ data }: any) => {
+      if (cancelled) return;
+      const hasTotp = Array.isArray(data?.totp) && data.totp.some((f: any) => f.status === "verified");
+      if (!hasTotp) setShow(true);
+    }).catch(() => {});
+
+    return () => { cancelled = true; };
+  }, [user?.id, path]);
+
+  const dismiss = () => {
+    if (user) sessionStorage.setItem(`realtalk_mfa_nudge_dismissed:${user.id}`, "1");
+    setShow(false);
+  };
+
+  if (!show) return null;
+
+  return (
+    <div className="w-full bg-amber-500/10 border-b border-amber-500/25 text-xs px-4 py-2 flex items-center justify-between gap-4">
+      <span className="text-foreground/80">
+        🔐 Your account has no two-factor authentication.{" "}
+        <button
+          type="button"
+          onClick={() => { dismiss(); navigate({ to: "/settings" }); }}
+          className="underline underline-offset-2 font-medium hover:text-foreground transition-colors"
+        >
+          Enable 2FA in Settings
+        </button>{" "}
+        to protect your account.
+      </span>
+      <button
+        type="button"
+        onClick={dismiss}
+        aria-label="Dismiss"
+        className="text-muted-foreground hover:text-foreground transition-colors shrink-0"
+      >
+        ✕
+      </button>
+    </div>
+  );
+}
+
 function AppFrame() {
   const { user, session, loading } = useAuth();
   const path = useRouterState({ select: (s) => s.location.pathname });
@@ -455,6 +515,7 @@ function AppFrame() {
   return (
     <div className="min-h-screen min-h-[100dvh] flex flex-col">
       <OfflineBanner />
+      <MfaNudgeBanner />
       {showNav && <TopNav />}
       <main className="flex-1 flex flex-col">
         {showLoadingState ? (

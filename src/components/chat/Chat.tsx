@@ -48,6 +48,7 @@ import {
   buildQuickStartPrompt,
   clearQuickStartPayload,
   getQuickStartToolRecommendations,
+    isQuickStartDone,
   loadQuickStartProfile,
   markQuickStartApplied,
   markQuickStartDone,
@@ -640,7 +641,7 @@ export function Chat() {
   }, [search?.c]);
 
   useEffect(() => {
-    if (!user || convId || messages.length > 0) return;
+    if (!user || convId || messages.length > 0 || isQuickStartDone()) return;
 
     let cancelled = false;
 
@@ -683,7 +684,7 @@ export function Chat() {
   }, [convId, messages.length, user]);
 
   useEffect(() => {
-    if (!user || busy || convId || messages.length > 0 || !quickStartProfile || !quickStartPending || quickStartDismissed || quickStartConsumedRef.current) {
+    if (!user || busy || convId || messages.length > 0 || !quickStartProfile || !quickStartPending || quickStartDismissed || quickStartConsumedRef.current || isQuickStartDone()) {
       return;
     }
 

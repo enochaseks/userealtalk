@@ -292,6 +292,7 @@ function AuthPage() {
                 Back to sign in
               </Button>
             )}
+
           </form>
 
           {!mfaStep && (
