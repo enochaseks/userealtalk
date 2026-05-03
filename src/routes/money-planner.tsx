@@ -484,18 +484,7 @@ const getPlannerChangeLines = (previous: MoneyPlannerState | null, next: MoneyPl
     );
   }
 
-  if (
-    previous.employmentType !== next.employmentType ||
-    previous.jobIncome.employer !== next.jobIncome.employer ||
-    previous.jobIncome.amount !== next.jobIncome.amount ||
-    previous.jobIncome.frequency !== next.jobIncome.frequency ||
-    previous.jobIncome.nextPayDate !== next.jobIncome.nextPayDate ||
-    JSON.stringify(previous.unemployedIncomeSources) !== JSON.stringify(next.unemployedIncomeSources)
-  ) {
-    lines.push(
-      `Income details changed: ${next.employmentType ?? "not set"}, ${next.jobIncome.employer || "no employer"}, ${formatMoney(next.jobIncome.amount)} ${next.jobIncome.frequency}, ${next.unemployedIncomeSources.length} unemployment support source(s).`,
-    );
-  }
+  // Employment/benefits changes are excluded here — email is only sent on explicit Save in the employment section.
 
   if (previous.adviceMarkdown !== next.adviceMarkdown) {
     lines.push("RealTalk money plan notes were updated.");
@@ -606,13 +595,17 @@ function MoneyPlannerPage() {
 
   const [onBenefits, setOnBenefits] = [
     state.onBenefits,
-    (val: boolean | null) => setState((prev) => ({ ...prev, onBenefits: val })),
+    (val: boolean | null) => { setState((prev) => ({ ...prev, onBenefits: val })); setEmploymentDirty(true); },
   ] as const;
 
-  const setEmploymentType = (val: EmploymentType) =>
+  const setEmploymentType = (val: EmploymentType) => {
     setState((prev) => ({ ...prev, employmentType: val }));
-  const setJobIncome = (patch: Partial<JobIncome>) =>
+    setEmploymentDirty(true);
+  };
+  const setJobIncome = (patch: Partial<JobIncome>) => {
     setState((prev) => ({ ...prev, jobIncome: { ...prev.jobIncome, ...patch } }));
+    setEmploymentDirty(true);
+  };
 
   const [jobAmountInput, setJobAmountInput] = useState(
     state.jobIncome.amount > 0 ? String(state.jobIncome.amount) : ""
@@ -637,6 +630,9 @@ function MoneyPlannerPage() {
   const [debtSupportMarkdown, setDebtSupportMarkdown] = useState("");
   const [debtChangesPending, setDebtChangesPending] = useState(false);
   const [debtSaveBusy, setDebtSaveBusy] = useState(false);
+  const [employmentSaveBusy, setEmploymentSaveBusy] = useState(false);
+  const [employmentDirty, setEmploymentDirty] = useState(false);
+  const [goalDirty, setGoalDirty] = useState(false);
   const lastSavedSnapshotRef = useRef("");
   const lastSavedStateRef = useRef<MoneyPlannerState | null>(null);
   const lastPlannerEmailSentRef = useRef<number>(0);
@@ -925,6 +921,102 @@ function MoneyPlannerPage() {
     };
   }, [state, user, dbLoaded, storageKey, plannerEmailNotificationsEnabled]);
 
+  const saveEmploymentNow = async () => {
+    if (!user) return;
+    setEmploymentSaveBusy(true);
+    try {
+      const { error } = await (supabase as any).from("user_money_planner").upsert({
+        user_id: user.id,
+        goal: state.goal,
+        spends: state.spends,
+        tasks: state.tasks,
+        debts: state.debts,
+        benefits: state.benefits,
+        on_benefits: state.onBenefits,
+        next_benefit_pay_date: state.nextBenefitPayDate || null,
+        employment_type: state.employmentType,
+        job_income: { ...state.jobIncome, unemployedIncomeSources: state.unemployedIncomeSources },
+        advice_markdown: state.adviceMarkdown,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "user_id" });
+      if (error) {
+        toast.error("Could not save employment details.");
+      } else {
+        setEmploymentDirty(false);
+        toast.success("Employment details saved.");
+        // Send security email on explicit employment save
+        if (plannerEmailNotificationsEnabled && user.email) {
+          try {
+            const { data: sessionData } = await supabase.auth.getSession();
+            const token = sessionData?.session?.access_token;
+            if (token) {
+              const emailType = state.employmentType === "employed"
+                ? "employment"
+                : state.employmentType === "self-employed"
+                  ? "self-employment"
+                  : "unemployment";
+              const body = [
+                "Hi,",
+                "",
+                `Your RealTalk Money Planner ${emailType} details were saved.`,
+                "",
+                `Employment status: ${state.employmentType ?? "not set"}`,
+                ...(state.employmentType === "employed" || state.employmentType === "self-employed"
+                  ? [
+                      `Employer / business: ${state.jobIncome.employer || "Not set"}`,
+                      `Take-home pay: ${formatMoney(state.jobIncome.amount)} ${state.jobIncome.frequency}`,
+                      `Next pay date: ${state.jobIncome.nextPayDate || "Not set"}`,
+                    ]
+                  : [
+                      `Support sources: ${state.unemployedIncomeSources.length} source(s)`,
+                      `Benefits: ${state.benefits.length} item(s), about ${formatMoney(totalBenefitMonthly(state))} per month`,
+                    ]
+                ),
+                "",
+                "If this wasn't you, review your account immediately.",
+                "Money Planner: userealtalk.co.uk/money-planner",
+                "",
+                "This is an automated RealTalk security notification.",
+              ].join("\n");
+              await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gmail-send`, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${token}`,
+                  apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "",
+                },
+                body: JSON.stringify({
+                  to: user.email,
+                  subject: "RealTalk Money Planner — employment details updated",
+                  body,
+                  skipQuota: true,
+                }),
+              });
+            }
+          } catch (emailErr) {
+            console.warn("[money-planner] Employment save email error:", emailErr);
+          }
+        }
+      }
+    } finally {
+      setEmploymentSaveBusy(false);
+    }
+  };
+
+  const clearEmployment = () => {
+    setState((prev) => ({
+      ...prev,
+      employmentType: null,
+      jobIncome: { employer: "", amount: 0, frequency: "monthly", nextPayDate: "" },
+      unemployedIncomeSources: [],
+      benefits: [],
+      onBenefits: null,
+      nextBenefitPayDate: "",
+    }));
+    setJobAmountInput("");
+    setEmploymentDirty(true);
+  };
+
   const goalActive = state.goal.active && state.goal.targetAmount > 0;
 
   const totalSpent = useMemo(
@@ -1072,6 +1164,7 @@ function MoneyPlannerPage() {
       ...prev,
       adviceMarkdown: "",
     }));
+    setGoalDirty(false);
     toast.success("Savings goal updated.");
   };
 
@@ -1328,6 +1421,7 @@ function MoneyPlannerPage() {
     setUnemployedIncomeAmount("");
     setUnemployedIncomeCustomName("");
     setUnemployedIncomeNextPayDate("");
+    setEmploymentDirty(true);
   };
 
   const removeUnemployedIncomeSource = (id: string) => {
@@ -1336,6 +1430,7 @@ function MoneyPlannerPage() {
       unemployedIncomeSources: prev.unemployedIncomeSources.filter((source) => source.id !== id),
       adviceMarkdown: "",
     }));
+    setEmploymentDirty(true);
   };
 
   useEffect(() => {
@@ -1604,10 +1699,12 @@ function MoneyPlannerPage() {
       ],
     }));
     setBenefitAmount("");
+    setEmploymentDirty(true);
   };
 
   const removeBenefit = (id: string) => {
     setState((prev) => ({ ...prev, benefits: prev.benefits.filter((b) => b.id !== id) }));
+    setEmploymentDirty(true);
   };
 
   const buildAdvisorPrompt = () => {
@@ -2014,7 +2111,7 @@ function MoneyPlannerPage() {
                 <Input
                   id="goal-title"
                   value={goalDraft.title}
-                  onChange={(event) => setGoalDraft((prev) => ({ ...prev, title: event.target.value }))}
+                  onChange={(event) => { setGoalDraft((prev) => ({ ...prev, title: event.target.value })); setGoalDirty(true); }}
                   placeholder="Emergency fund, rent buffer, laptop, etc."
                 />
               </div>
@@ -2025,7 +2122,7 @@ function MoneyPlannerPage() {
                   inputMode="decimal"
                   value={String(goalDraft.targetAmount || "")}
                   onChange={(event) =>
-                    setGoalDraft((prev) => ({ ...prev, targetAmount: parseAmount(event.target.value) }))
+                    setGoalDraft((prev) => { setGoalDirty(true); return { ...prev, targetAmount: parseAmount(event.target.value) }; })
                   }
                   placeholder="2000"
                 />
@@ -2037,7 +2134,7 @@ function MoneyPlannerPage() {
                   inputMode="decimal"
                   value={String(goalDraft.currentBalance || "")}
                   onChange={(event) =>
-                    setGoalDraft((prev) => ({ ...prev, currentBalance: parseAmount(event.target.value) }))
+                    setGoalDraft((prev) => { setGoalDirty(true); return { ...prev, currentBalance: parseAmount(event.target.value) }; })
                   }
                   placeholder="850"
                 />
@@ -2048,7 +2145,7 @@ function MoneyPlannerPage() {
                   id="goal-date"
                   type="date"
                   value={goalDraft.targetDate}
-                  onChange={(event) => setGoalDraft((prev) => ({ ...prev, targetDate: event.target.value }))}
+                  onChange={(event) => { setGoalDraft((prev) => ({ ...prev, targetDate: event.target.value })); setGoalDirty(true); }}
                 />
               </div>
               <div className="space-y-1.5">
@@ -2058,13 +2155,13 @@ function MoneyPlannerPage() {
                   inputMode="decimal"
                   value={String(goalDraft.weeklyEssentialsBudget || "")}
                   onChange={(event) =>
-                    setGoalDraft((prev) => ({ ...prev, weeklyEssentialsBudget: parseAmount(event.target.value) }))
+                    setGoalDraft((prev) => { setGoalDirty(true); return { ...prev, weeklyEssentialsBudget: parseAmount(event.target.value) }; })
                   }
                   placeholder="80"
                 />
               </div>
               <div className="flex items-end">
-                <Button type="button" className="w-full" onClick={saveGoal}>Save goal</Button>
+                <Button type="button" className="w-full" onClick={saveGoal} disabled={!goalDirty}>Save goal</Button>
               </div>
             </CardContent>
           </Card>
@@ -2125,7 +2222,7 @@ function MoneyPlannerPage() {
                   placeholder="What was this spend for?"
                   disabled={!goalActive}
                 />
-                <Button type="button" onClick={addSpend} disabled={!goalActive}>Log spend</Button>
+                <Button type="button" onClick={addSpend} disabled={!goalActive || !spendAmount || parseFloat(spendAmount) <= 0}>Log spend</Button>
 
                 <div className="space-y-2">
                   {state.spends.length === 0 ? (
@@ -2163,7 +2260,7 @@ function MoneyPlannerPage() {
                     onChange={(event) => setTaskDraft(event.target.value)}
                     placeholder="Add a money task"
                   />
-                  <Button type="button" onClick={addTask}>Add</Button>
+                  <Button type="button" onClick={addTask} disabled={!taskDraft.trim()}>Add</Button>
                 </div>
 
                 <div className="space-y-2">
@@ -2214,7 +2311,7 @@ function MoneyPlannerPage() {
                   <Input type="date" value={debtNextPaymentDate} onChange={(event) => setDebtNextPaymentDate(event.target.value)} />
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <Button type="button" onClick={addDebt}>
+                  <Button type="button" onClick={addDebt} disabled={!debtName.trim() || !debtBalance || parseFloat(debtBalance) <= 0}>
                     <Plus className="mr-1.5 h-4 w-4" />
                     Add debt
                   </Button>
@@ -2489,7 +2586,7 @@ function MoneyPlannerPage() {
                     </div>
                   </div>
 
-                  <Button type="button" onClick={addUnemployedIncomeSource}>Add support source</Button>
+                  <Button type="button" onClick={addUnemployedIncomeSource} disabled={!unemployedIncomeAmount || parseFloat(unemployedIncomeAmount) <= 0}>Add support source</Button>
 
                   {state.unemployedIncomeSources.length > 0 && (
                     <div className="space-y-2">
@@ -2579,7 +2676,7 @@ function MoneyPlannerPage() {
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
-                        <Button type="button" onClick={addBenefit}>Add benefit</Button>
+                        <Button type="button" onClick={addBenefit} disabled={!benefitAmount || parseFloat(benefitAmount) <= 0}>Add benefit</Button>
                         <button type="button" className="text-xs text-muted-foreground underline" onClick={() => setOnBenefits(null)}>
                           I'm not on benefits
                         </button>
@@ -2617,7 +2714,7 @@ function MoneyPlannerPage() {
                         <Input
                           type="date"
                           value={state.nextBenefitPayDate}
-                          onChange={(e) => setState((prev) => ({ ...prev, nextBenefitPayDate: e.target.value }))}
+                          onChange={(e) => { setState((prev) => ({ ...prev, nextBenefitPayDate: e.target.value })); setEmploymentDirty(true); }}
                         />
                         {state.nextBenefitPayDate && isDateDue(state.nextBenefitPayDate) && (
                           <p className="text-xs text-green-600 dark:text-green-400">
@@ -2642,6 +2739,25 @@ function MoneyPlannerPage() {
               {state.employmentType === null && (
                 <p className="text-xs text-muted-foreground">Select your employment status above to continue.</p>
               )}
+
+              <div className="flex gap-2 pt-2 border-t border-border/60">
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => void saveEmploymentNow()}
+                  disabled={employmentSaveBusy || !employmentDirty}
+                >
+                  {employmentSaveBusy ? "Saving..." : "Save"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={clearEmployment}
+                >
+                  Clear
+                </Button>
+              </div>
             </CardContent>
           </Card>
 
